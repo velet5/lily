@@ -46,7 +46,27 @@
         "language": "lilypond",
         "path": "./snippets/lilypond.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Lily",
+      "properties": {
+        "lily.lilypond.path": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "Path to the `lilypond` executable, or to the directory that contains it. Leave empty to search `PATH` and the usual install locations."
+        },
+        "lily.compile.extraArgs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "resource",
+          "markdownDescription": "Extra command-line arguments for every `lilypond` run, one argument per item, for example `--include=/path/to/my library` or `-dno-point-and-click`."
+        }
+      }
+    }
   },
   "scripts": {
     "build": "node esbuild.mjs",
@@ -55,7 +75,8 @@
     "check-types": "tsc --noEmit",
     "test:grammar": "vscode-tmgrammar-snap \"test/grammar/*.ly\"",
     "test:grammar:update": "vscode-tmgrammar-snap --updateSnapshot \"test/grammar/*.ly\"",
-    "pretest": "npm run check-types && node esbuild.mjs --tests && npm run test:grammar",
+    "test:unit": "node esbuild.mjs --unit && node --test \"out/unit/**/*.test.js\"",
+    "pretest": "npm run check-types && node esbuild.mjs --tests && npm run test:grammar && npm run test:unit",
     "test": "vscode-test"
   },
   "devDependencies": {

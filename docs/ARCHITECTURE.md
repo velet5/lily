@@ -134,13 +134,18 @@ interface CompileResult {
   rootFile: string            // absolute path that was compiled
   ok: boolean                 // exit code 0
   cancelled: boolean          // superseded by a newer run
+  exitCode: number | null
   pages: string[]             // absolute SVG paths, in page order
   midi: string[]              // any .midi files produced
-  stderr: string              // raw, unmodified
-  diagnostics: LyDiagnostic[] // parsed from stderr, vscode-free shape
+  stdout: string
+  stderr: string              // raw, unmodified, always English (D15)
+  outputDir?: string          // the run's temp directory; gone when cancelled
+  diagnostics: LyDiagnostic[] // parsed from stderr, vscode-free shape (step 5)
   durationMs: number
 }
 ```
+
+Everything except `diagnostics` is implemented in `src/compile/compiler.ts`.
 
 ### 3.2 Planned layout
 
@@ -149,9 +154,10 @@ src/
   extension.ts          activation, command + listener wiring only
   compile/
     locate.ts           setting → PATH → well-known install dirs
-    service.ts          spawn, temp dir, cancellation, page ordering
+    compiler.ts         CompileService: spawn, temp dir, cancellation, page ordering
     stderr.ts           stderr → LyDiagnostic[] (pure function)
     rootFile.ts         \include graph → root resolution
+  config.ts             typed, uncached access to the `lily.*` settings
   diagnostics.ts        LyDiagnostic → vscode.Diagnostic, status bar, channel
   preview/
     panel.ts            WebviewPanel lifecycle, message protocol
@@ -175,9 +181,10 @@ lets it be unit-tested without an extension host.
 ### 3.3 Compile invocation
 
 ```
-lilypond --loglevel=WARNING --svg -dpoint-and-click \
+lilypond --loglevel=WARNING --svg -dpoint-and-click <extra args> \
          -o <tmp>/<run-id>/<basename>  <root file>
 cwd = dirname(root file)      # so relative \include keeps working
+env = process.env + LANGUAGE=en
 ```
 
 Facts the implementation must respect, all **[verified]**:
@@ -192,6 +199,15 @@ Facts the implementation must respect, all **[verified]**:
 - A run with errors frequently still exits 1 **and** writes SVG. Show the
   pages and the diagnostics together; only keep the previous render when no
   page was produced.
+- The directory part of `-o` must already exist (`fatal error: unable to
+  change directory to …` otherwise). Relative `\include` still resolves
+  against `cwd`.
+- The `error:` / `warning:` / `fatal error:` keywords are **translated** with
+  the user's locale (`Fehler:` under `LANG=de_DE.UTF-8`). `LANGUAGE=en` forces
+  the English catalogue and, unlike `LC_ALL=C`, keeps UTF-8 handling of paths.
+- `\bookOutputSuffix "alto"` yields `<base>-alto.svg` / `<base>-alto.midi`.
+  A second plain `\book` reuses the first book's page names and overwrites
+  them; that is LilyPond's behaviour and we do not work around it.
 - `\midi {}` in the source yields `<base>.midi` in the same directory at no
   extra cost.
 - The source must be compiled **from disk**. Feeding stdin makes every
@@ -247,18 +263,26 @@ syntax-only mode to fall back on.
 
 ## 4. Handoff to implementation
 
-Repository state: the extension skeleton exists (D13) and ships its own
-grammar and snippets (D14). `src/extension.ts` still has an empty
-`activate()`; `package.json` contributes the `lilypond` language (`.ly`,
-`.ily`), `language-configuration.json`, `syntaxes/lilypond.tmLanguage.json`
-and `snippets/lilypond.json`. No commands or settings yet.
+Repository state: the extension skeleton exists (D13), ships its own grammar
+and snippets (D14), and has the compile service (D15): `src/compile/` plus
+`src/config.ts` for the two settings `lily.lilypond.path` and
+`lily.compile.extraArgs`. **Nothing calls the service yet** —
+`src/extension.ts` still has an empty `activate()` and there are no commands.
+The intended call is
+
+```ts
+const result = await service.compile({ rootFile, ...getCompileSettings(uri) })
+```
+
+with one `CompileService` per extension host, disposed on deactivation.
 
 ```
 npm install
 npm run build         # esbuild → dist/extension.js   (watch: npm run watch)
 npm run check-types   # tsc --noEmit over src/ and test/
 npm run test:grammar  # grammar snapshots only (no extension host)
-npm test              # type-check, build, grammar snapshots, extension-host tests
+npm run test:unit     # pure-module tests under test/*/ with node --test (~5 s)
+npm test              # type-check, build, grammar, unit, extension-host tests
 ```
 
 `npm test` downloads a VS Code build into `.vscode-test/` on first run. F5
@@ -270,8 +294,8 @@ Where each piece of upcoming work should look first:
 | --- | --- |
 | Extension skeleton, language id, bundling (done) | §3.2, D2, D9, D12, D13 (name/publisher still *proposed*) |
 | Grammar and snippets (done) | D2 — **do not copy** from the CC BY-NC grammar; D14 for scopes, modes, snapshot workflow |
-| Compile service | §3.3, D3, D5; keep `src/compile/**` free of `vscode` |
-| Diagnostics | §3.5 (stderr rows), D6 |
+| Compile service (done) | §3.3, D3, D5, D15; keep `src/compile/**` free of `vscode` |
+| Diagnostics | §3.5 (stderr rows), D6; D15 for where `diagnostics` joins `CompileResult` and for the unit-test tier |
 | Preview panel, refresh on save | §3.4, §3.6, D1, D4, D10 |
 | Score ↔ source sync | §3.5 (SVG link row), D7 |
 | IntelliSense data | D8 (includes the verified Scheme recipe) |
@@ -297,6 +321,12 @@ Probes run with `GNU LilyPond 2.26.0 (running Guile 3.0)`:
 | `é ♪` before the token | stderr column counts code points, not bytes (`2:35` for char 34, byte 37) |
 | Tab + Unicode before notes | links `2:31:33`, `2:34:36`, `2:36:38` ⇒ `CHAR` 0-based unexpanded, `COLUMN` 1-based expanded |
 | stdin with `-dbackend=null` | `warning: ignoring option -dbackend="null"`, locations as `-:3:14`, **`-.pdf` written to cwd** |
+| `-o missing-dir/score` | ``fatal error: unable to change directory to: `missing-dir'``, exit 1 |
+| `LANG=de_DE.UTF-8`, source with `\foo` | `…:2:6: Fehler: unknown command`, `schwerer Fehler: failed files` |
+| Same with `LANGUAGE=en` added (also with `LC_ALL=de_DE.UTF-8`, and a `süß dir/één ♪.ly` path) | English keywords, path printed intact |
+| Three `\book`s: two pages, one page, one with `\bookOutputSuffix "alto"` + `\midi` | `base-1.svg`, `base-2.svg`, `base-alto.svg`, `base-alto.midi`; book 2 overwrote `base-1.svg` |
+| `\include "x.ily"` immediately followed by top-level `\tune` defined in `x.ily` | `unknown command` (lexer lookahead); `{ \tune }` works |
+| `\repeat unfold 400` of eight quavers, SVG backend | ≈ 33 s; killed by `SIGKILL` in < 1 s, no orphan process |
 | No `\version` | `file:1: warning:` with no column and a multi-line message |
 | Trivial score wall time | ≈ 0.43 s |
 | Scheme introspection from a `.ly` file | 167 grobs, 43 contexts, 199 music functions with docstrings and signatures (recipe in DECISIONS D8) |

@@ -332,6 +332,66 @@ into the compile and stderr modules.
 
 ---
 
+## D15 — Compile service conventions
+
+**Status:** accepted · **Refines:** D3, D5, D9, D13
+
+- **Files.** `src/compile/compiler.ts` exports `CompileService`
+  (ARCHITECTURE §3.2 first called the file `service.ts`), `locate.ts` exports
+  `locateLilyPond`. `src/config.ts` is the only reader of `lily.*` settings and
+  the only one of the three that imports `vscode`; the service takes plain
+  values (`{ rootFile, lilypondPath, extraArgs }`).
+- **Rejections vs. results.** `compile()` rejects when the root file is not
+  readable (the plain `ENOENT`/`EACCES` error; checked first, because a missing
+  source *directory* would otherwise surface as `spawn lilypond ENOENT`), when
+  lilypond cannot be located (`LilyPondNotFoundError`, carrying the offending
+  `configuredPath` for the D9 message) or when it cannot be started.
+  Everything lilypond itself reports is a result with `ok: false` and raw
+  stderr.
+- **A configured path that does not resolve is an error.** It never falls back
+  to `PATH`: compiling with a different binary than the one asked for would
+  hide the mistake. The setting accepts the executable, its directory, the
+  install root (`<root>/bin/lilypond`), `~/…`, or a bare command name looked up
+  on `PATH`. The binary is located on every compile and not cached (D9).
+- **Cancellation.** Runs are keyed by absolute root path. A newer `compile()`
+  or `cancel()` marks the older run and `SIGKILL`s it; that promise resolves
+  with `cancelled: true`, no pages and its directory already deleted. The new
+  run does not wait for the old process to exit (separate directories).
+- **Directory lifetime.** One `fs.mkdtemp(<tmp>/lily-)` per run. The service
+  keeps the last completed run per root and deletes it when the next run of
+  that root completes, on `release(rootFile)` (preview closed) or on
+  `dispose()`. Consumers therefore read `pages` when the result arrives and
+  hold the SVG text, not the paths. A headless caller (step 11) that wants the
+  files to outlive the process simply does not call `dispose()`.
+- **Page order.** All `*.svg` in the run directory are pages: the root's own
+  stems first, ordered by a numeric-aware comparison of the part after the base
+  name (so `-10` follows `-9` and a base such as `etude-2` is not mistaken for
+  page 2), then stems renamed by `\bookOutputName`.
+- **English stderr.** The child gets `LANGUAGE=en` because lilypond translates
+  the severity keywords; `LC_ALL=C` was rejected since it also changes how
+  non-ASCII paths are decoded. Step 5's parser may rely on English keywords.
+- **User arguments** go before `-o`, so they can switch features off
+  (`-dno-point-and-click`) but the output location is always ours (D5).
+- **Settings scope.** `lily.lilypond.path` is `machine-overridable`,
+  `lily.compile.extraArgs` is `resource`. The manifest does **not** declare
+  `capabilities.untrustedWorkspaces`, so VS Code disables the extension in
+  Restricted Mode — the safe default, since compiling a `.ly` file executes
+  its embedded Scheme. Declaring `"limited"` later (to keep highlighting in
+  untrusted folders) requires gating every compile on
+  `vscode.workspace.isTrusted` and listing both settings under
+  `restrictedConfigurations`.
+- **Unit-test tier (settles the D12/D13 open point).** `node:test`, no new
+  dependency. `node esbuild.mjs --unit` bundles every `*.test.ts` in a
+  *subdirectory* of `test/` into `out/unit/`, and `npm run test:unit` runs
+  them; top-level `test/*.test.ts` stay extension-host tests. Compile tests
+  use the real binary and skip (not fail) when it is absent; step 12's CI must
+  install LilyPond or they silently stop covering anything.
+- **Not verified.** Windows: `.exe` lookup, `Program Files` directories,
+  backslashes in `-o`, and `SIGKILL` semantics are written from documentation,
+  not run.
+
+---
+
 ## Out of scope
 
 MIDI keyboard input, MIDI playback, and `python-ly` formatting. Revisit only
