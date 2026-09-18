@@ -119,6 +119,9 @@ export class CompileService {
       if (run.cancelled) return result({ ...exit, cancelled: true })
 
       const produced = await fs.readdir(run.outputDir)
+      // Re-checked after the last await: from here to the bookkeeping in
+      // `finally` nothing yields, so a superseded or disposed run is never kept.
+      if (run.cancelled) return result({ ...exit, cancelled: true })
       const absolute = (name: string) => path.join(run.outputDir!, name)
       keepOutput = true
       return result({

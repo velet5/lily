@@ -311,6 +311,20 @@ describe('CompileService', () => {
     assert.equal(await exists(hello.outputDir!), false)
   })
 
+  test('dispose() kills runs in flight and leaves the temp root empty', killTimeout, async (t) => {
+    if (!needsLilyPond(t)) return
+    const ownRoot = await fs.mkdtemp(path.join(scratch, 'disposed-'))
+    const own = new CompileService({ tmpRoot: ownRoot })
+    await own.compile({ rootFile: path.join(fixtures, 'simple.ly') })
+    const pending = own.compile({ rootFile: await source('slow.ly', slowBody) })
+    await new Promise((resolve) => setTimeout(resolve, 400))
+
+    await own.dispose()
+
+    assert.equal((await pending).cancelled, true)
+    assert.deepEqual(await fs.readdir(ownRoot), [])
+  })
+
   test('rejects with the file error when the root file does not exist', async () => {
     const rootFile = path.join(scratch, 'no-such-dir', 'score.ly')
     await assert.rejects(service.compile({ rootFile }), { code: 'ENOENT', path: rootFile })
