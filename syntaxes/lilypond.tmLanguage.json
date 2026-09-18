@@ -113,7 +113,7 @@
 
     "rest": {
       "comment": "r rest, s spacer, R multi-measure rest, q chord repetition.",
-      "match": "(?<![A-Za-z\\\\_-])([rsRq])(?![A-Za-z])((?:\\d+|\\\\(?:breve|longa|maxima)(?![A-Za-z]))\\.*)?",
+      "match": "(?<![\\p{L}\\\\_-])([rsRq])(?!\\p{L})((?:\\d+|\\\\(?:breve|longa|maxima)(?![A-Za-z]))\\.*)?",
       "captures": {
         "1": { "name": "constant.language.rest.lilypond" },
         "2": { "name": "constant.numeric.duration.lilypond" }
@@ -122,7 +122,7 @@
 
     "note": {
       "comment": "Pitch names of the input languages documented in the Notation Reference (Dutch default, English, German, solfège families), then octave marks, forced or cautionary accidental, duration.",
-      "match": "(?<![A-Za-z\\\\_-])((?:[a-h](?:isis|eses|isih|eseh|is|es|ih|eh|ses|sas|ss|s|ff|f|x|tqs|tqf|qs|qf|-sharpsharp|-flatflat|-sharp|-flat|-natural)?|(?:do|r[eé]|mi|fa|sol|la|si)(?:dd|bb|d|b|ss|s|x|sd|sb|dsd|bsb)?))(?![A-Za-z])('+|,+)?([!?])?((?:\\d+|\\\\(?:breve|longa|maxima)(?![A-Za-z]))\\.*)?",
+      "match": "(?<![\\p{L}\\\\_-])((?:[a-h](?:isis|eses|isih|eseh|is|es|ih|eh|ses|sas|ss|s|ff|f|x|tqs|tqf|qs|qf|-sharpsharp|-flatflat|-sharp|-flat|-natural)?|(?:do|r[eé]|mi|fa|sol|la|si)(?:dd|bb|d|b|ss|s|x|sd|sb|dsd|bsb)?))(?!\\p{L})('+|,+)?([!?])?((?:\\d+|\\\\(?:breve|longa|maxima)(?![A-Za-z]))\\.*)?",
       "captures": {
         "1": { "name": "variable.other.pitch.lilypond" },
         "2": { "name": "keyword.operator.octave.lilypond" },
@@ -239,14 +239,15 @@
     },
 
     "markup": {
-      "comment": "\\markup takes one argument: a { } block, a string or a single word, possibly after markup commands and their Scheme arguments. Words inside are text, never pitches.",
+      "comment": "\\markup takes one argument: a { } block, a string or a single word, possibly after markup commands and their Scheme arguments. A string followed by { on the same line is such an argument (\\with-color \"red\" { }). Words inside are text, never pitches.",
       "name": "meta.markup.lilypond",
       "begin": "\\\\markup(?:list)?(?![A-Za-z]|[-_][A-Za-z])",
-      "end": "(?<=\\})|(\"(?:[^\"\\\\]|\\\\.)*\")|[^\\s\\\\#\"{}%]+",
+      "end": "(?<=\\})|(\"(?:[^\"\\\\]|\\\\.)*\")(?!\\s*\\{)|[^\\s\\\\#\"{}%]+",
       "beginCaptures": { "0": { "name": "keyword.other.markup.lilypond" } },
       "endCaptures": { "1": { "name": "string.quoted.double.lilypond" } },
       "patterns": [
         { "include": "#comments" },
+        { "include": "#string" },
         { "include": "#scheme" },
         { "include": "#markup-command" },
         { "include": "#markup-block" }

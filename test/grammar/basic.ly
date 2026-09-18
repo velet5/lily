@@ -67,7 +67,11 @@ rhythm = \drummode { bd4 hh8 hh sn4 r }
 
 \markup \bold word
 \markup "just a string"
+\markup \with-color "red" { a string argument, then text }
 \markup {
   \column { "Title" \with-color #red \fontsize #2 a b c }
   % a comment in markup
 }
+
+\language "français"
+solfege = { do'4 ré8 réd mib sol2 r4 }

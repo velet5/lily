@@ -650,6 +650,18 @@
 #^^^^^^^ source.lilypond meta.markup.lilypond keyword.other.markup.lilypond
 #       ^ source.lilypond meta.markup.lilypond
 #        ^^^^^^^^^^^^^^^ source.lilypond meta.markup.lilypond string.quoted.double.lilypond
+>\markup \with-color "red" { a string argument, then text }
+#^^^^^^^ source.lilypond meta.markup.lilypond keyword.other.markup.lilypond
+#       ^ source.lilypond meta.markup.lilypond
+#        ^^^^^^^^^^^ source.lilypond meta.markup.lilypond support.function.markup.lilypond
+#                   ^ source.lilypond meta.markup.lilypond
+#                    ^ source.lilypond meta.markup.lilypond string.quoted.double.lilypond punctuation.definition.string.begin.lilypond
+#                     ^^^ source.lilypond meta.markup.lilypond string.quoted.double.lilypond
+#                        ^ source.lilypond meta.markup.lilypond string.quoted.double.lilypond punctuation.definition.string.end.lilypond
+#                         ^ source.lilypond meta.markup.lilypond
+#                          ^ source.lilypond meta.markup.lilypond punctuation.section.braces.begin.lilypond
+#                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ source.lilypond meta.markup.lilypond
+#                                                         ^ source.lilypond meta.markup.lilypond punctuation.section.braces.end.lilypond
 >\markup {
 #^^^^^^^ source.lilypond meta.markup.lilypond keyword.other.markup.lilypond
 #       ^ source.lilypond meta.markup.lilypond
@@ -681,4 +693,36 @@
 #   ^^^^^^^^^^^^^^^^^^^^ source.lilypond meta.markup.lilypond comment.line.percentage.lilypond
 >}
 #^ source.lilypond meta.markup.lilypond punctuation.section.braces.end.lilypond
+>
+>\language "français"
+#^^^^^^^^^ source.lilypond keyword.control.directive.lilypond
+#         ^ source.lilypond
+#          ^ source.lilypond string.quoted.double.lilypond punctuation.definition.string.begin.lilypond
+#           ^^^^^^^^ source.lilypond string.quoted.double.lilypond
+#                   ^ source.lilypond string.quoted.double.lilypond punctuation.definition.string.end.lilypond
+>solfege = { do'4 ré8 réd mib sol2 r4 }
+#^^^^^^^ source.lilypond entity.name.function.definition.lilypond
+#       ^ source.lilypond
+#        ^ source.lilypond keyword.operator.assignment.lilypond
+#         ^ source.lilypond
+#          ^ source.lilypond punctuation.section.braces.begin.lilypond
+#           ^ source.lilypond
+#            ^^ source.lilypond variable.other.pitch.lilypond
+#              ^ source.lilypond keyword.operator.octave.lilypond
+#               ^ source.lilypond constant.numeric.duration.lilypond
+#                ^ source.lilypond
+#                 ^^ source.lilypond variable.other.pitch.lilypond
+#                   ^ source.lilypond constant.numeric.duration.lilypond
+#                    ^ source.lilypond
+#                     ^^^ source.lilypond variable.other.pitch.lilypond
+#                        ^ source.lilypond
+#                         ^^^ source.lilypond variable.other.pitch.lilypond
+#                            ^ source.lilypond
+#                             ^^^ source.lilypond variable.other.pitch.lilypond
+#                                ^ source.lilypond constant.numeric.duration.lilypond
+#                                 ^ source.lilypond
+#                                  ^ source.lilypond constant.language.rest.lilypond
+#                                   ^ source.lilypond constant.numeric.duration.lilypond
+#                                    ^ source.lilypond
+#                                     ^ source.lilypond punctuation.section.braces.end.lilypond
 >
