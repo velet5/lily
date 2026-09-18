@@ -283,14 +283,17 @@ and snippets (D14), and has the compile service (D15): `src/compile/` plus
 `src/config.ts` for the two settings `lily.lilypond.path` and
 `lily.compile.extraArgs`. Compile results reach the user through
 `src/diagnostics/` (D16). `src/extension.ts` owns the one `CompileService`
-(disposed in `deactivate()`) and the one `CompileReporter`, and registers two
-commands: `lily.compile` (active editor or a `Uri` argument; saves a dirty
+(disposed in `deactivate()`) and the one `CompileReporter`. `lily.compile`
+(a `Uri` argument, the active preview's root or the active editor; saves a dirty
 document first; resolves with the `CompileResult`, or `undefined` when nothing
-ran) and `lily.showOutput`. `lily.preview.openToSide` opens the preview (D17),
+ran) and `lily.showOutput` report through them. `lily.preview.openToSide` opens the preview (D17),
 and the one save listener refreshes open previews (D18). Score and source are
 linked both ways (D19): a click on a note ends in `revealSource()`, and the
-selection and active-editor listeners feed `previews.followCursor()`. There are
-no menus or keybindings yet. **Every compile must go through `compileRoot(rootFile)` in
+selection and active-editor listeners feed `previews.followCursor()`. All
+commands are registered in `src/commands.ts`; menus, keybindings, the webview
+toolbar and PDF/MIDI export are described in D20. An export is a run of its own
+(`CompileService.export()`), reported by the reporter but never shown in the
+preview. **Every compile must go through `compileRoot(rootFile)` in
 `extension.ts`**, whatever triggers it: it tells `AutoPreview` that the root is
 being compiled, runs the service inside the reporter and hands the run to the
 root's preview:
@@ -325,6 +328,7 @@ Where each piece of upcoming work should look first:
 | Diagnostics (done) | §3.5 (stderr rows), D6, D16 |
 | Preview panel, refresh on save (done) | §3.4, §3.6, D1, D4, D10, D17, D18 |
 | Score ↔ source sync (done) | §3.5 (SVG link row), D7, D19 |
+| Toolbar, commands, menus, export (done) | D5, D20 |
 | IntelliSense data | D8 (includes the verified Scheme recipe) |
 | CLI / MCP for agents | §3.1 `CompileResult`, D11 |
 

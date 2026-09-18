@@ -26,6 +26,7 @@ export type HostMessage =
   | { type: 'status'; busy: boolean; note?: string }
   | { type: 'colors'; colors: PreviewColors }
   | { type: 'zoom'; action: ZoomAction }
+  | { type: 'page'; action: PageAction }
   /** The links to mark as the cursor's; `reveal` scrolls the first one into view. */
   | { type: 'highlight'; hrefs: string[]; reveal: boolean }
 
@@ -37,8 +38,25 @@ export type WebviewMessage =
   | { type: 'reveal'; href: string }
   /** Answers every `highlight` with the number of elements now marked. */
   | { type: 'highlighted'; elements: number }
+  /** What the toolbar shows, whenever it changes: 1-based page, page count, zoom. */
+  | ({ type: 'view' } & PreviewView)
+  /** A toolbar button that only the host can act on. */
+  | { type: 'command'; command: ToolbarCommand }
 
 export type ZoomAction = 'in' | 'out' | 'fit'
+export type PageAction = 'next' | 'previous'
+
+/** The webview names one of these, never a VS Code command (D20). */
+export const TOOLBAR_COMMANDS = ['refresh', 'exportPdf', 'exportMidi'] as const
+export type ToolbarCommand = (typeof TOOLBAR_COMMANDS)[number]
+
+export interface PreviewView {
+  /** 0 while there are no pages. */
+  page: number
+  pages: number
+  /** 1 is fit-width. */
+  zoom: number
+}
 
 /** Where the editor's cursor is, in the editor's own terms. */
 export interface EditorCursor {
@@ -95,10 +113,24 @@ export function previewHtml(options: PreviewHtmlOptions): string {
 <main id="pages"></main>
 <p id="empty"></p>
 <p id="note" role="status" hidden></p>
-<div id="zoom" role="toolbar" aria-label="Zoom">
+<div id="toolbar" role="toolbar" aria-label="Preview">
+<button id="refresh" type="button" title="Refresh Preview" aria-label="Refresh Preview">&#x21bb;</button>
+<span id="pager" class="group" hidden>
+<button id="page-previous" type="button" title="Previous Page" aria-label="Previous Page">&lsaquo;</button>
+<span id="page-label"></span>
+<button id="page-next" type="button" title="Next Page" aria-label="Next Page">&rsaquo;</button>
+</span>
+<span class="spacer"></span>
+<span class="group">
 <button id="zoom-out" type="button" title="Zoom Out (-)" aria-label="Zoom Out">&minus;</button>
 <button id="zoom-fit" type="button" title="Fit Width (0)">Fit</button>
 <button id="zoom-in" type="button" title="Zoom In (+)" aria-label="Zoom In">+</button>
+</span>
+<span class="spacer"></span>
+<span class="group">
+<button id="export-pdf" type="button" title="Export PDF next to the source">PDF</button>
+<button id="export-midi" type="button" title="Export MIDI next to the source">MIDI</button>
+</span>
 </div>
 <script nonce="${attribute(nonce)}" src="${attribute(options.scriptUri)}"></script>
 </body>
@@ -116,6 +148,8 @@ export interface PreviewPanelOptions {
   onDidDispose?: () => void
   /** A `textedit:` link of the score was clicked (D19). */
   onDidClickSource?: (location: SourceLocation) => void
+  /** A toolbar button asked for something only the host can do (D20). */
+  onDidRequestCommand?: (command: ToolbarCommand) => void
 }
 
 /** One preview of one root file. Holds the SVG text, not the paths (D15). */
@@ -140,6 +174,7 @@ export class PreviewPanel {
   /** Whether the webview was last told to mark something, and what it then marked. */
   private marking = false
   private marked = 0
+  private shown: PreviewView | undefined
   private readonly subscriptions: vscode.Disposable[]
 
   constructor(
@@ -170,6 +205,16 @@ export class PreviewPanel {
   /** How many elements the webview has marked as the cursor's. */
   get highlighted(): number {
     return this.marked
+  }
+
+  /** What the webview's toolbar last reported; undefined until it has. */
+  get view(): PreviewView | undefined {
+    return this.shown
+  }
+
+  /** Whether this is the tab the user is in. */
+  get active(): boolean {
+    return this.panel.active
   }
 
   /** Undefined while the panel is hidden behind another tab of its group. */
@@ -215,6 +260,11 @@ export class PreviewPanel {
 
   zoom(action: ZoomAction): void {
     this.post({ type: 'zoom', action })
+  }
+
+  /** Scrolls to the top of the next or the previous page. */
+  page(action: PageAction): void {
+    this.post({ type: 'page', action })
   }
 
   /**
@@ -310,6 +360,18 @@ export class PreviewPanel {
       case 'highlighted':
         this.marked = Number(message.elements) || 0
         break
+      case 'view':
+        this.shown = {
+          page: Number(message.page) || 0,
+          pages: Number(message.pages) || 0,
+          zoom: Number(message.zoom) || 1,
+        }
+        break
+      case 'command':
+        if (TOOLBAR_COMMANDS.includes(message.command)) {
+          this.options.onDidRequestCommand?.(message.command)
+        }
+        break
     }
   }
 
@@ -331,6 +393,8 @@ export interface PreviewHost {
   onDidClose?(rootFile: string): void
   /** Shows `location` in an editor; `preview` is where the click happened. */
   revealSource?(location: SourceLocation, preview: PreviewPanel): void
+  /** Carries out what a button of `preview`'s toolbar asked for. */
+  runToolbarCommand?(command: ToolbarCommand, preview: PreviewPanel): void
 }
 
 /** How long the cursor has to rest before the previews follow it. */
@@ -363,6 +427,7 @@ export class PreviewManager {
           this.host.onDidClose?.(preview.rootFile)
         },
         onDidClickSource: (location) => this.host.revealSource?.(location, preview),
+        onDidRequestCommand: (command) => this.host.runToolbarCommand?.(command, preview),
       },
     )
     this.panels.set(key, preview)
@@ -371,6 +436,23 @@ export class PreviewManager {
 
   get(rootFile: string): PreviewPanel | undefined {
     return this.panels.get(panelKey(rootFile))
+  }
+
+  /** The preview whose tab the user is in. */
+  get active(): PreviewPanel | undefined {
+    return [...this.panels.values()].find((preview) => preview.active)
+  }
+
+  /**
+   * The preview a command without an argument is about: the active one, else
+   * that of `file` (the active editor's), else the only one there is.
+   */
+  target(file?: string): PreviewPanel | undefined {
+    return (
+      this.active ??
+      (file === undefined ? undefined : this.get(file)) ??
+      (this.panels.size === 1 ? [...this.panels.values()][0] : undefined)
+    )
   }
 
   /** Root files of the open previews. */

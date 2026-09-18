@@ -30,6 +30,8 @@ class FakePanel {
   readonly posted: HostMessage[] = []
   readonly reveals: unknown[][] = []
   disposals = 0
+  /** Whether this is the tab the user is in. */
+  active = false
   private receive: (message: WebviewMessage) => void = () => {}
   private readonly disposeListeners: Array<() => void> = []
 
@@ -123,6 +125,20 @@ describe('previewHtml', () => {
 
   test('the initial colours are in the markup, so the first paint is right', () => {
     assert.match(html, /<body data-colors="paper">/)
+  })
+
+  test('the toolbar has a button for everything preview.js wires up', () => {
+    const ids = [...html.matchAll(/<button id="([^"]+)" type="button"/g)].map((match) => match[1])
+    assert.deepStrictEqual(ids, [
+      'refresh',
+      'page-previous',
+      'page-next',
+      'zoom-out',
+      'zoom-fit',
+      'zoom-in',
+      'export-pdf',
+      'export-midi',
+    ])
   })
 })
 
@@ -278,16 +294,39 @@ describe('PreviewPanel', () => {
     assert.strictEqual(await preview.whenRendered(), 2)
   })
 
-  test('zoom and colours are forwarded to the webview', () => {
+  test('zoom, page turns and colours are forwarded to the webview', () => {
     const { fake, preview } = create()
     preview.zoom('in')
     preview.zoom('fit')
+    preview.page('next')
     preview.setColors('paper')
     assert.deepStrictEqual(fake.take(), [
       { type: 'zoom', action: 'in' },
       { type: 'zoom', action: 'fit' },
+      { type: 'page', action: 'next' },
       { type: 'colors', colors: 'paper' },
     ])
+  })
+
+  test('remembers what the toolbar reports', () => {
+    const { fake, preview } = create()
+    assert.strictEqual(preview.view, undefined)
+    fake.fromWebview({ type: 'view', page: 2, pages: 3, zoom: 1.25 })
+    assert.deepStrictEqual(preview.view, { page: 2, pages: 3, zoom: 1.25 })
+  })
+
+  test('a toolbar button can ask for a known command and for nothing else', () => {
+    const fake = new FakePanel()
+    const requested: string[] = []
+    new PreviewPanel('/scores/song.ly', fake.asPanel, {
+      assets,
+      colors: 'theme',
+      onDidRequestCommand: (command) => requested.push(command),
+    })
+    fake.fromWebview({ type: 'command', command: 'exportPdf' })
+    fake.fromWebview({ type: 'command', command: 'workbench.action.quit' } as never)
+    fake.fromWebview({ type: 'command' } as never)
+    assert.deepStrictEqual(requested, ['exportPdf'])
   })
 
   describe('point-and-click', () => {
@@ -384,6 +423,7 @@ describe('PreviewManager', () => {
     const titles: string[] = []
     const closed: string[] = []
     const revealed: Array<[SourceLocation, string]> = []
+    const requested: Array<[string, string]> = []
     const manager = new PreviewManager({
       assets,
       colors: () => 'theme',
@@ -394,8 +434,9 @@ describe('PreviewManager', () => {
       },
       onDidClose: (rootFile) => closed.push(rootFile),
       revealSource: (location, preview) => revealed.push([location, preview.rootFile]),
+      runToolbarCommand: (command, preview) => requested.push([command, preview.rootFile]),
     })
-    return { manager, fakes, titles, closed, revealed }
+    return { manager, fakes, titles, closed, revealed, requested }
   }
   const song = path.resolve('/scores/song.ly')
 
@@ -411,6 +452,32 @@ describe('PreviewManager', () => {
 
     assert.strictEqual(manager.open(path.resolve('/scores/other.ly')).created, true)
     assert.strictEqual(fakes.length, 2)
+  })
+
+  test('a command is about the active preview, else the editor\'s, else the only one', () => {
+    const { manager, fakes } = create()
+    const other = path.resolve('/scores/other.ly')
+    assert.strictEqual(manager.target(song), undefined)
+
+    const first = manager.open(song).preview
+    assert.strictEqual(manager.target(), first)
+    assert.strictEqual(manager.target(other), first, 'an include of the only score')
+
+    const second = manager.open(other).preview
+    assert.strictEqual(manager.target(), undefined, 'two previews and nothing to choose by')
+    assert.strictEqual(manager.target(path.resolve('/scores/part.ily')), undefined)
+    assert.strictEqual(manager.target(other), second)
+
+    fakes[0].active = true
+    assert.strictEqual(manager.active, first)
+    assert.strictEqual(manager.target(other), first, 'the focused preview wins')
+  })
+
+  test('a toolbar request reaches the host together with its preview', () => {
+    const { manager, fakes, requested } = create()
+    manager.open(song)
+    fakes[0].fromWebview({ type: 'command', command: 'refresh' })
+    assert.deepStrictEqual(requested, [['refresh', song]])
   })
 
   test('a closed panel is forgotten and its root is released', () => {
@@ -514,6 +581,8 @@ describe('media/preview.js', () => {
     allowedAttribute(element: string, name: string, value: string): boolean
     isSourceLink(href: string): boolean
     scrollToShow(start: number, size: number, viewport: number): number
+    pageAt(pages: Rect[], y: number, atEnd: boolean): number
+    stepPage(pages: Rect[], y: number, direction: number): number
   }
 
   /** Pages of `height` stacked with the 16px padding and gap of preview.css. */
@@ -553,6 +622,28 @@ describe('media/preview.js', () => {
     assert.strictEqual(script.resolveAnchor(anchor, []), 0)
     assert.strictEqual(script.captureAnchor([], 300), null)
     assert.strictEqual(script.resolveAnchor(null, stack(2, 1000)), 0)
+  })
+
+  test('the pager names the page under the toolbar, and the last one at the end', () => {
+    const pages = stack(3, 1000)
+    assert.strictEqual(script.pageAt(pages, 17, false), 0)
+    assert.strictEqual(script.pageAt(pages, 1031, false), 0, 'the gap belongs to the page above')
+    assert.strictEqual(script.pageAt(pages, 1033, false), 1)
+    // A short last page never reaches the top of the pane.
+    assert.strictEqual(script.pageAt(pages, 1500, true), 2)
+    assert.strictEqual(script.pageAt([], 0, true), -1)
+  })
+
+  test('next goes to the following page; previous first returns to the top of this one', () => {
+    const pages = stack(3, 1000)
+    const top = (page: number) => pages[page].top + 1 // where turnPage() leaves the row
+    assert.strictEqual(script.stepPage(pages, top(0), 1), 1)
+    assert.strictEqual(script.stepPage(pages, top(1) + 600, 1), 2)
+    assert.strictEqual(script.stepPage(pages, top(2), 1), 2, 'stops at the last page')
+    assert.strictEqual(script.stepPage(pages, top(1) + 600, -1), 1)
+    assert.strictEqual(script.stepPage(pages, top(1), -1), 0)
+    assert.strictEqual(script.stepPage(pages, top(0), -1), 0, 'stops at the first page')
+    assert.strictEqual(script.stepPage([], 0, 1), -1)
   })
 
   test('only drawing elements pass the allow-list', () => {

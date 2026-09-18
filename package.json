@@ -51,17 +51,236 @@
       {
         "command": "lily.compile",
         "title": "Compile",
-        "category": "LilyPond"
+        "category": "LilyPond",
+        "icon": "$(play)"
       },
       {
         "command": "lily.showOutput",
         "title": "Show Output",
-        "category": "LilyPond"
+        "category": "LilyPond",
+        "icon": "$(output)"
       },
       {
         "command": "lily.preview.openToSide",
         "title": "Open Preview to the Side",
-        "category": "LilyPond"
+        "category": "LilyPond",
+        "icon": {
+          "light": "./media/icons/preview.svg",
+          "dark": "./media/icons/preview-dark.svg"
+        }
+      },
+      {
+        "command": "lily.preview.refresh",
+        "title": "Refresh Preview",
+        "category": "LilyPond",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "lily.preview.zoomIn",
+        "title": "Zoom In Preview",
+        "category": "LilyPond",
+        "icon": "$(zoom-in)"
+      },
+      {
+        "command": "lily.preview.zoomOut",
+        "title": "Zoom Out Preview",
+        "category": "LilyPond",
+        "icon": "$(zoom-out)"
+      },
+      {
+        "command": "lily.preview.zoomFit",
+        "title": "Fit Preview to Width",
+        "category": "LilyPond",
+        "icon": "$(screen-full)"
+      },
+      {
+        "command": "lily.preview.nextPage",
+        "title": "Next Page in Preview",
+        "category": "LilyPond",
+        "icon": "$(arrow-down)"
+      },
+      {
+        "command": "lily.preview.previousPage",
+        "title": "Previous Page in Preview",
+        "category": "LilyPond",
+        "icon": "$(arrow-up)"
+      },
+      {
+        "command": "lily.export.pdf",
+        "title": "Export PDF",
+        "category": "LilyPond",
+        "icon": "$(file-pdf)"
+      },
+      {
+        "command": "lily.export.midi",
+        "title": "Export MIDI",
+        "category": "LilyPond",
+        "icon": "$(music)"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "lily.compile",
+          "when": "editorLangId == lilypond || activeWebviewPanelId == 'lily.preview'"
+        },
+        {
+          "command": "lily.export.pdf",
+          "when": "editorLangId == lilypond || activeWebviewPanelId == 'lily.preview'"
+        },
+        {
+          "command": "lily.export.midi",
+          "when": "editorLangId == lilypond || activeWebviewPanelId == 'lily.preview'"
+        },
+        {
+          "command": "lily.preview.openToSide",
+          "when": "editorLangId == lilypond"
+        },
+        {
+          "command": "lily.preview.refresh",
+          "when": "lily.previewOpen"
+        },
+        {
+          "command": "lily.preview.zoomIn",
+          "when": "lily.previewOpen"
+        },
+        {
+          "command": "lily.preview.zoomOut",
+          "when": "lily.previewOpen"
+        },
+        {
+          "command": "lily.preview.zoomFit",
+          "when": "lily.previewOpen"
+        },
+        {
+          "command": "lily.preview.nextPage",
+          "when": "lily.previewOpen"
+        },
+        {
+          "command": "lily.preview.previousPage",
+          "when": "lily.previewOpen"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "lily.preview.openToSide",
+          "when": "editorLangId == lilypond && !notebookEditorFocused",
+          "group": "navigation"
+        },
+        {
+          "command": "lily.compile",
+          "when": "editorLangId == lilypond && !notebookEditorFocused",
+          "group": "1_lily@1"
+        },
+        {
+          "command": "lily.export.pdf",
+          "when": "editorLangId == lilypond && !notebookEditorFocused",
+          "group": "1_lily@2"
+        },
+        {
+          "command": "lily.export.midi",
+          "when": "editorLangId == lilypond && !notebookEditorFocused",
+          "group": "1_lily@3"
+        },
+        {
+          "command": "lily.preview.refresh",
+          "when": "activeWebviewPanelId == 'lily.preview'",
+          "group": "navigation@1"
+        },
+        {
+          "command": "lily.export.pdf",
+          "when": "activeWebviewPanelId == 'lily.preview'",
+          "group": "navigation@2"
+        },
+        {
+          "command": "lily.export.midi",
+          "when": "activeWebviewPanelId == 'lily.preview'",
+          "group": "1_lily@1"
+        },
+        {
+          "command": "lily.preview.zoomIn",
+          "when": "activeWebviewPanelId == 'lily.preview'",
+          "group": "2_zoom@1"
+        },
+        {
+          "command": "lily.preview.zoomOut",
+          "when": "activeWebviewPanelId == 'lily.preview'",
+          "group": "2_zoom@2"
+        },
+        {
+          "command": "lily.preview.zoomFit",
+          "when": "activeWebviewPanelId == 'lily.preview'",
+          "group": "2_zoom@3"
+        },
+        {
+          "command": "lily.preview.previousPage",
+          "when": "activeWebviewPanelId == 'lily.preview'",
+          "group": "3_pages@1"
+        },
+        {
+          "command": "lily.preview.nextPage",
+          "when": "activeWebviewPanelId == 'lily.preview'",
+          "group": "3_pages@2"
+        },
+        {
+          "command": "lily.showOutput",
+          "when": "activeWebviewPanelId == 'lily.preview'",
+          "group": "9_output"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "lily.preview.openToSide",
+          "when": "resourceLangId == lilypond",
+          "group": "1_open"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "lily.preview.openToSide",
+          "when": "resourceLangId == lilypond",
+          "group": "navigation@90"
+        },
+        {
+          "command": "lily.export.pdf",
+          "when": "resourceLangId == lilypond",
+          "group": "7_lily@1"
+        },
+        {
+          "command": "lily.export.midi",
+          "when": "resourceLangId == lilypond",
+          "group": "7_lily@2"
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "lily.preview.openToSide",
+        "key": "ctrl+k v",
+        "mac": "cmd+k v",
+        "when": "editorLangId == lilypond && !notebookEditorFocused"
+      },
+      {
+        "command": "lily.compile",
+        "key": "ctrl+k b",
+        "mac": "cmd+k b",
+        "when": "editorLangId == lilypond && !notebookEditorFocused"
+      },
+      {
+        "command": "lily.preview.refresh",
+        "key": "ctrl+k b",
+        "mac": "cmd+k b",
+        "when": "activeWebviewPanelId == 'lily.preview'"
+      },
+      {
+        "command": "lily.preview.nextPage",
+        "key": "alt+pagedown",
+        "when": "activeWebviewPanelId == 'lily.preview'"
+      },
+      {
+        "command": "lily.preview.previousPage",
+        "key": "alt+pageup",
+        "when": "activeWebviewPanelId == 'lily.preview'"
       }
     ],
     "configuration": {

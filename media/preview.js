@@ -53,6 +53,25 @@
     return pages[page].top + offset * pages[page].height
   }
 
+  // ---- pages ------------------------------------------------------------------
+
+  /** How far below a page's top still counts as being at its top. */
+  const PAGE_SLACK = 8
+
+  /** Index of the page at document row `y`; the last page once scrolled to the end. */
+  function pageAt(pages, y, atEnd) {
+    if (pages.length === 0) return -1
+    return atEnd ? pages.length - 1 : captureAnchor(pages, y).page
+  }
+
+  /** Where a step from row `y` goes. Part-way down a page, "previous" is that page's top. */
+  function stepPage(pages, y, direction) {
+    if (pages.length === 0) return -1
+    const { page } = captureAnchor(pages, y)
+    if (direction > 0) return Math.min(page + 1, pages.length - 1)
+    return y - pages[page].top > PAGE_SLACK ? page : Math.max(page - 1, 0)
+  }
+
   // ---- SVG allow-list ---------------------------------------------------------
 
   // The CSP already stops scripts and inline styles. This keeps everything else a
@@ -102,7 +121,7 @@
 
   const pure = {
     MIN_ZOOM, MAX_ZOOM, clampZoom, stepZoom, zoomLabel,
-    captureAnchor, resolveAnchor, allowedElement, allowedAttribute,
+    captureAnchor, resolveAnchor, pageAt, stepPage, allowedElement, allowedAttribute,
     isSourceLink, scrollToShow,
   }
 
@@ -114,6 +133,7 @@
   // ---- webview ----------------------------------------------------------------
 
   const PADDING = 16 // #pages padding in preview.css
+  const TOOLBAR = 32 // #toolbar height in preview.css
 
   const vscode = acquireVsCodeApi()
   const pagesEl = document.getElementById('pages')
@@ -121,6 +141,10 @@
   const noteEl = document.getElementById('note')
   const progressEl = document.getElementById('progress')
   const fitButton = document.getElementById('zoom-fit')
+  const pagerEl = document.getElementById('pager')
+  const pageLabel = document.getElementById('page-label')
+  const previousButton = document.getElementById('page-previous')
+  const nextButton = document.getElementById('page-next')
 
   // Survives the webview being destroyed while its tab is hidden.
   const state = { zoom: 1, anchor: null, x: 0.5, ...vscode.getState() }
@@ -130,6 +154,7 @@
   /** href → the `<a>` elements of the pages on screen that carry it. */
   let sourceLinks = new Map()
   let current = []
+  let reported = ''
 
   function pageRects() {
     return Array.from(pagesEl.children, (page) => {
@@ -161,6 +186,36 @@
     fitButton.textContent = zoomLabel(state.zoom)
   }
 
+  /** The document row just under the toolbar, where a page turned to has its top. */
+  function pageRow() {
+    return window.scrollY + TOOLBAR + PADDING + 1
+  }
+
+  /** Updates the pager and tells the host what the toolbar shows now. */
+  function showPage() {
+    const rects = pageRects()
+    const { scrollHeight, clientHeight } = document.documentElement
+    const atEnd = window.scrollY + clientHeight >= scrollHeight - 1
+    const page = pageAt(rects, pageRow(), atEnd) + 1
+    pagerEl.hidden = rects.length < 2
+    pageLabel.textContent = `${page} / ${rects.length}`
+    previousButton.disabled = page <= 1
+    nextButton.disabled = page >= rects.length
+    const view = { type: 'view', page, pages: rects.length, zoom: state.zoom }
+    if (JSON.stringify(view) === reported) return
+    reported = JSON.stringify(view)
+    vscode.postMessage(view)
+  }
+
+  function turnPage(direction) {
+    const rects = pageRects()
+    const page = stepPage(rects, pageRow(), direction)
+    if (page < 0) return
+    window.scrollTo(window.scrollX, rects[page].top - TOOLBAR - PADDING)
+    showPage()
+    remember()
+  }
+
   function remember() {
     // An empty document has no place to remember; keep the one to return to.
     if (pagesEl.children.length === 0) return
@@ -175,6 +230,7 @@
     layout()
     restore(position, viewportY)
     remember()
+    showPage()
   }
 
   function setZoom(zoom, viewportY = window.innerHeight / 2) {
@@ -251,7 +307,8 @@
       const rect = current[0].getBoundingClientRect()
       const { clientWidth, clientHeight } = document.documentElement
       const dx = scrollToShow(rect.left, rect.width, clientWidth)
-      const dy = scrollToShow(rect.top, rect.height, clientHeight)
+      // The toolbar covers the top of the pane.
+      const dy = scrollToShow(rect.top - TOOLBAR, rect.height, clientHeight - TOOLBAR)
       if (dx !== 0 || dy !== 0) window.scrollBy(dx, dy)
     }
     vscode.postMessage({ type: 'highlighted', elements: current.length })
@@ -268,6 +325,7 @@
       restore(position, 0)
       remember()
       showStatus()
+      showPage()
     }
     vscode.postMessage({ type: 'rendered', revision, pages: pagesEl.children.length })
   }
@@ -295,11 +353,28 @@
       case 'zoom':
         setZoom(data.action === 'fit' ? 1 : stepZoom(state.zoom, data.action === 'in' ? 1 : -1))
         break
+      case 'page':
+        turnPage(data.action === 'next' ? 1 : -1)
+        break
       case 'highlight':
         highlight(data)
         break
     }
   })
+
+  // What only the host can do; it maps the name to a command of its own (D20).
+  for (const [id, command] of [
+    ['refresh', 'refresh'],
+    ['export-pdf', 'exportPdf'],
+    ['export-midi', 'exportMidi'],
+  ]) {
+    document
+      .getElementById(id)
+      .addEventListener('click', () => vscode.postMessage({ type: 'command', command }))
+  }
+
+  previousButton.addEventListener('click', () => turnPage(-1))
+  nextButton.addEventListener('click', () => turnPage(1))
 
   document.getElementById('zoom-in').addEventListener('click', () => setZoom(stepZoom(state.zoom, 1)))
   document.getElementById('zoom-out').addEventListener('click', () => setZoom(stepZoom(state.zoom, -1)))
@@ -334,6 +409,7 @@
     setTimeout(() => {
       saving = false
       remember()
+      showPage()
     }, 100)
   })
 
@@ -350,5 +426,6 @@
 
   layout()
   showStatus()
+  showPage()
   vscode.postMessage({ type: 'ready' })
 })()

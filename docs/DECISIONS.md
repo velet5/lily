@@ -464,7 +464,7 @@ into the compile and stderr modules.
 - **Files.** `src/preview/panel.ts` (`previewHtml`, `PreviewPanel`,
   `PreviewManager`, the `HostMessage` / `WebviewMessage` types),
   `media/preview.js`, `media/preview.css`. The command is
-  `lily.preview.openToSide`, palette only until step 9.
+  `lily.preview.openToSide`; menus and keys are in D20.
 - **Types-only `vscode`.** `panel.ts` never calls into `vscode`: `extension.ts`
   hands the manager a `createPanel(title)` closure (`ViewColumn.Beside`,
   `preserveFocus`) and the asset URIs. The whole lifecycle therefore runs under
@@ -494,7 +494,7 @@ into the compile and stderr modules.
   notehead.
 - **Zoom is relative to fit-width.** `1` means "page width = pane width" and is
   labelled *Fit*; range 0.25–4; a resized pane keeps the proportion. Controls:
-  the floating −/Fit/+ group, `+` `-` `0`, Ctrl/Cmd+wheel (also a trackpad
+  the −/Fit/+ group (part of the toolbar since D20), `+` `-` `0`, Ctrl/Cmd+wheel (also a trackpad
   pinch, anchored at the pointer), and the host message
   `{ type: 'zoom', action: 'in' | 'out' | 'fit' }` behind `PreviewPanel.zoom()`
   for step 9's commands.
@@ -520,7 +520,8 @@ into the compile and stderr modules.
 - **`activate()` returns `{ previews }`** (`LilyApi`), so extension-host tests
   can reach a panel.
 - **Not done here.** No `WebviewPanelSerializer`: previews are not restored
-  after a window reload (it would need a compile at startup). No panel icon.
+  after a window reload (it would need a compile at startup). The panel icon
+  came with D20.
 - **Verified** by loading the real script and stylesheet in headless Chrome
   under the same policy: a hostile SVG (script, `onload`, `foreignObject`,
   `javascript:` link, SMIL) left nothing behind, a refresh kept `scrollY`
@@ -666,6 +667,99 @@ into the compile and stderr modules.
 - **Not verified.** Windows link spelling (`textedit:///C:/…` is handled from
   documentation). Grobs other than noteheads, scripts and text were not
   surveyed: whatever carries a `textedit:` link is clickable and markable.
+
+---
+
+## D20 — Command surface conventions
+
+**Status:** accepted · **Refines:** D4, D5, D12, D17 · **Addresses:** G9
+
+- **Files.** `src/commands.ts` registers every `lily.*` command
+  (`registerCommands(host)`; `extension.ts` keeps `compileRoot`, the listeners
+  and `revealSource`). `package.json` holds the menus, keybindings and `when`
+  clauses; `media/icons/preview.svg` / `preview-dark.svg` are the icon of
+  `Open Preview to the Side` and of the preview's tab (D17 had none).
+- **Commands.** `lily.compile`, `lily.showOutput`, `lily.preview.openToSide`,
+  `lily.preview.refresh`, `lily.preview.zoomIn` / `zoomOut` / `zoomFit`,
+  `lily.preview.nextPage` / `previousPage`, `lily.export.pdf`,
+  `lily.export.midi`. Compile, preview and export take an optional file `Uri`
+  and resolve with their result (the tests use that).
+- **What a command is about.** Compile, preview and export: the `Uri` argument,
+  else the root of the *active* preview, else the active editor. A preview's
+  title bar passes the webview's own `webview-panel:` URI, which is ignored.
+  Zoom, page and refresh: `PreviewManager.target(file)` — the active preview,
+  else the preview of the active editor's file, else the only preview. So
+  *Refresh Preview* from an editor that shows an `.ily` recompiles the score
+  that is on screen, while `lily.compile` still treats the active file as the
+  root (D18). With several previews and nothing to choose by, the user is asked
+  to focus one.
+- **Where they appear.** A LilyPond editor's title bar has the preview button;
+  *Compile*, *Export PDF* and *Export MIDI* are in its `…` menu. The preview's
+  title bar has *Refresh Preview* and *Export PDF*; MIDI, zoom, pages and
+  *Show Output* are in its `…` menu. The explorer and tab context menus offer
+  the preview and the exports for `.ly` / `.ily` files. In the palette, compile
+  and export need a LilyPond editor or a focused preview, and the preview's own
+  commands need `lily.previewOpen`, a context key that `extension.ts` keeps
+  true while any preview is open. `activeWebviewPanelId == 'lily.preview'` is
+  the `when` clause for "the preview has the focus".
+- **Keys.** `Ctrl/Cmd+K V` opens the preview (as Markdown does) and
+  `Ctrl/Cmd+K B` compiles, or refreshes when the preview has the focus: chords
+  under `Ctrl/Cmd+K` shadow no built-in binding, which `Ctrl+Alt+B` (secondary
+  side bar) would. `Alt+PageDown` / `Alt+PageUp` turn pages in a focused
+  preview. Zoom stays inside the webview (`+` `-` `0`, Ctrl/Cmd+wheel, D17): a
+  contributed key would fire together with the webview's own handler.
+- **Webview toolbar.** A fixed 32 px bar at the top of the preview replaces
+  D17's floating zoom group: refresh, `‹ 1 / 3 ›` (hidden for one page),
+  `− Fit +`, *PDF*, *MIDI*. Text glyphs, no icon font, so the CSP is unchanged.
+  Fixed rather than sticky, because a zoomed score scrolls sideways. The cursor
+  reveal (D19) treats the bar as outside the viewport. Below 400 px the gaps
+  shrink so the export buttons stay visible.
+- **Pages.** "The page" is the one under the toolbar — the row `32 + 16 + 1` px
+  below the pane's top — or the last one once scrolled to the end, since a short
+  last page never gets there. *Next* puts the following page's top on that row;
+  *Previous* first returns to the top of the current page when more than 8 px
+  into it. The arithmetic (`pageAt`, `stepPage`) is in the pure half of
+  `preview.js`.
+- **Protocol.** Host → webview `{ type: 'page', action: 'next' | 'previous' }`.
+  Webview → host `{ type: 'view', page, pages, zoom }` whenever the toolbar
+  shows something new (`PreviewPanel.view`; nothing but the tests reads it yet)
+  and `{ type: 'command', command }` for the three buttons only the host can
+  serve. `command` is one of `refresh` / `exportPdf` / `exportMidi`; the panel
+  drops anything else and `commands.ts` maps the name to a command id, so a
+  score's markup can never name a VS Code command.
+- **Export** (D5). `CompileService.export({ rootFile, format, targetDir? })` is
+  a second run in its own temp directory and its own `live` slot: it neither
+  kills a preview compile nor replaces the kept pages, and only a newer export
+  of the same file and format supersedes it (`cancelExport()` serves the
+  notification's *Cancel*). PDF runs with `--pdf -dno-point-and-click`, so the
+  file carries no `textedit:` links with the author's paths; MIDI runs with
+  `-dno-print-pages`, which engraves nothing and still writes what `\midi`
+  asks for **[verified on 2.26]**. D5 planned MIDI as a copy from the preview
+  run; a run of its own costs a fraction of a second and cannot hand out a
+  stale or already deleted file. Every `.pdf` / `.mid(i)` the run wrote is
+  copied next to the source under lilypond's own names (`score.pdf`,
+  `score-alto.pdf`), replacing older files as `lilypond score.ly` would. A
+  dirty document is saved first. The run goes through `reporter.run()`, so
+  errors reach the Problems panel and the output channel (summary: `n files`),
+  but never through `compileRoot()`: it has no pages to show. Outcome messages
+  offer *Open* (system viewer) and *Reveal*; a score without `\midi` is told
+  which block to add.
+- **Tests.** `test/commands.test.ts` (extension host) checks the manifest
+  against the registered commands — every menu and keybinding names a
+  contributed command and has a `when` — and drives zoom, page turns, refresh
+  and both exports, reading the real webview's `view` reports.
+  `test/compile/compiler.test.ts` covers `export()`;
+  `test/preview/panel.test.ts` the protocol, `target()` and the pager
+  arithmetic. The toolbar's look was checked once in headless Chrome at 600 px
+  and 340 px in both themes; the harness was not kept.
+- **Not verified.** That a preview's title bar really passes a
+  `webview-panel:` URI was read in the VS Code sources, not observed; without an
+  argument the active preview is used anyway. Menus and keybindings cannot be
+  invoked from a test, only checked for consistency. Windows and Linux key
+  handling was not tried.
+- **Not done here.** No save dialog or export directory setting (`targetDir`
+  exists in the service for step 11's CLI). D10's root resolution for a compile
+  started in an `.ily` is still open.
 
 ---
 

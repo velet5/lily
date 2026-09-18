@@ -36,6 +36,21 @@ export interface CompileResult {
   durationMs: number
 }
 
+/** What an export writes into the user's folder (D5, D20). */
+export type ExportFormat = 'pdf' | 'midi'
+
+export interface ExportRequest extends CompileRequest {
+  format: ExportFormat
+  /** Where the files go. Defaults to the root file's directory. */
+  targetDir?: string
+}
+
+/** `pages`, `midi` and `outputDir` are empty: the run's directory is gone already. */
+export interface ExportResult extends CompileResult {
+  /** Absolute paths of the files written, named as lilypond names them. */
+  exported: string[]
+}
+
 export interface CompileServiceOptions {
   /** Parent of the per-run directories. Defaults to the OS temp dir. */
   tmpRoot?: string
@@ -45,6 +60,24 @@ interface Run {
   cancelled: boolean
   child?: ChildProcess
   outputDir?: string
+}
+
+interface RunMode {
+  /** Slot in `live`; a new run kills the one that holds it. */
+  key: string
+  /** What lilypond is to write. */
+  formatArgs: readonly string[]
+  /** Keep the output directory as the root's current one, or delete it with the run. */
+  keep: boolean
+  /** Called with the names lilypond wrote, while their directory still exists. */
+  collect?(outputDir: string, produced: string[]): Promise<void>
+}
+
+const EXPORTS: Record<ExportFormat, { formatArgs: string[]; pattern: RegExp }> = {
+  // Links to the author's file paths have no place in a PDF that is handed on.
+  pdf: { formatArgs: ['--pdf', '-dno-point-and-click'], pattern: /\.pdf$/i },
+  // No pages at all; a \midi block still writes its file [verified on 2.26].
+  midi: { formatArgs: ['-dno-print-pages'], pattern: /\.midi?$/i },
 }
 
 export class CompileService {
@@ -69,10 +102,46 @@ export class CompileService {
    * The previous completed run's directory for this file is deleted once this
    * one completes, so read `pages` before the next result arrives.
    */
-  async compile(request: CompileRequest): Promise<CompileResult> {
+  compile(request: CompileRequest): Promise<CompileResult> {
+    return this.run(request, {
+      key: runKey(path.resolve(request.rootFile)),
+      formatArgs: ['--svg', '-dpoint-and-click'],
+      keep: true,
+    })
+  }
+
+  /**
+   * Compiles `rootFile` once more, for `format`, and copies what that wrote into
+   * `targetDir`, replacing files of the same name. The run has its own temp
+   * directory and its own slot: it neither supersedes a preview compile nor
+   * touches the kept pages, only an export of the same file and format in flight.
+   * Rejects like `compile()`, and when a file cannot be written.
+   */
+  async export(request: ExportRequest): Promise<ExportResult> {
+    const rootFile = path.resolve(request.rootFile)
+    const { formatArgs, pattern } = EXPORTS[request.format]
+    const targetDir = path.resolve(request.targetDir ?? path.dirname(rootFile))
+    let exported: string[] = []
+    const result = await this.run(request, {
+      key: exportKey(rootFile, request.format),
+      formatArgs,
+      keep: false,
+      collect: async (outputDir, produced) => {
+        const names = produced.filter((name) => pattern.test(name)).sort()
+        await fs.mkdir(targetDir, { recursive: true })
+        await Promise.all(
+          names.map((name) => fs.copyFile(path.join(outputDir, name), path.join(targetDir, name))),
+        )
+        exported = names.map((name) => path.join(targetDir, name))
+      },
+    })
+    return { ...result, pages: [], midi: [], outputDir: undefined, exported }
+  }
+
+  private async run(request: CompileRequest, mode: RunMode): Promise<CompileResult> {
     const started = performance.now()
     const rootFile = path.resolve(request.rootFile)
-    const key = runKey(rootFile)
+    const { key } = mode
 
     this.kill(this.live.get(key))
     const run: Run = { cancelled: false }
@@ -107,8 +176,7 @@ export class CompileService {
       const base = path.basename(rootFile, path.extname(rootFile))
       const args = [
         '--loglevel=WARNING',
-        '--svg',
-        '-dpoint-and-click',
+        ...mode.formatArgs,
         ...(request.extraArgs ?? []),
         // Last, so extra arguments cannot redirect output into the source tree (D5).
         '-o',
@@ -119,11 +187,12 @@ export class CompileService {
       if (run.cancelled) return result({ ...exit, cancelled: true })
 
       const produced = await fs.readdir(run.outputDir)
+      if (!run.cancelled) await mode.collect?.(run.outputDir, produced)
       // Re-checked after the last await: from here to the bookkeeping in
       // `finally` nothing yields, so a superseded or disposed run is never kept.
       if (run.cancelled) return result({ ...exit, cancelled: true })
       const absolute = (name: string) => path.join(run.outputDir!, name)
-      keepOutput = true
+      keepOutput = mode.keep
       return result({
         ...exit,
         ok: exit.exitCode === 0,
@@ -142,13 +211,18 @@ export class CompileService {
     }
   }
 
-  /** Kills the in-flight run for `rootFile`, or every run when omitted. */
+  /** Kills the in-flight compile for `rootFile`, or every run, exports too, when omitted. */
   cancel(rootFile?: string): void {
     if (rootFile === undefined) {
       for (const run of this.live.values()) this.kill(run)
     } else {
       this.kill(this.live.get(runKey(path.resolve(rootFile))))
     }
+  }
+
+  /** Kills the export of `rootFile` to `format`, if one is running. */
+  cancelExport(rootFile: string, format: ExportFormat): void {
+    this.kill(this.live.get(exportKey(path.resolve(rootFile), format)))
   }
 
   /** Deletes the kept output of `rootFile`, e.g. when its preview closes (D5). */
@@ -228,6 +302,11 @@ function compileEnv(): NodeJS.ProcessEnv {
 
 function runKey(rootFile: string): string {
   return process.platform === 'win32' ? rootFile.toLowerCase() : rootFile
+}
+
+/** NUL cannot occur in a path, so an export never shares a slot with a compile. */
+function exportKey(rootFile: string, format: ExportFormat): string {
+  return `${runKey(rootFile)}\0${format}`
 }
 
 async function removeDir(dir: string | undefined): Promise<void> {

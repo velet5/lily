@@ -45,15 +45,15 @@ export class CompileReporter implements vscode.Disposable {
    * or with undefined when the compile could not run at all (the user has been
    * told). Never rejects.
    */
-  async run(
+  async run<T extends CompileResult>(
     rootFile: string,
-    compile: () => Promise<CompileResult>,
-  ): Promise<CompileResult | undefined> {
+    compile: () => Promise<T>,
+  ): Promise<T | undefined> {
     const run = ++this.latestRun
     this.setStatus(run, { kind: 'compiling', rootFile })
     this.log(`Compiling ${rootFile}`)
 
-    let result: CompileResult
+    let result: T
     try {
       result = await compile()
     } catch (error) {
@@ -223,13 +223,18 @@ async function readLines(file: string): Promise<string[] | undefined> {
   }
 }
 
-function summary(result: CompileResult, errors: number, warnings: number): string {
+function summary(
+  result: CompileResult & { exported?: string[] },
+  errors: number,
+  warnings: number,
+): string {
   const count = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`
   return [
     result.ok ? 'done' : `failed (exit code ${result.exitCode})`,
     count(errors, 'error'),
     count(warnings, 'warning'),
-    count(result.pages.length, 'page'),
+    // An export (D20) writes files, not pages.
+    result.exported ? count(result.exported.length, 'file') : count(result.pages.length, 'page'),
     `${(result.durationMs / 1000).toFixed(1)} s`,
   ].join(', ')
 }

@@ -325,6 +325,83 @@ describe('CompileService', () => {
     assert.deepEqual(await fs.readdir(ownRoot), [])
   })
 
+  test('export writes the PDF next to the source and nothing else', async (t) => {
+    if (!needsLilyPond(t)) return
+    const rootFile = await source('hymn.ly', "\\score { { c'4 d' } \\layout { } \\midi { } }")
+    const dir = path.dirname(rootFile)
+
+    const result = await service.export({ rootFile, format: 'pdf' })
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.exported, [path.join(dir, 'hymn.pdf')])
+    assert.deepEqual((await fs.readdir(dir)).sort(), ['hymn.ly', 'hymn.pdf'])
+    assert.equal((await fs.readFile(result.exported[0])).subarray(0, 5).toString(), '%PDF-')
+    // Point-and-click would put the author's absolute paths into the file.
+    assert.equal((await fs.readFile(result.exported[0], 'latin1')).includes('textedit'), false)
+    assert.deepEqual([result.pages, result.midi, result.outputDir], [[], [], undefined])
+  })
+
+  test('export writes MIDI without pages, one file per book, into a directory of choice', async (t) => {
+    if (!needsLilyPond(t)) return
+    const score = "\\score { { c'4 } \\layout { } \\midi { } }"
+    const rootFile = await source(
+      'parts.ly',
+      `\\book { ${score} }\n\\book { \\bookOutputSuffix "alto" ${score} }`,
+    )
+    const targetDir = path.join(path.dirname(rootFile), 'out', 'midi')
+
+    const result = await service.export({ rootFile, format: 'midi', targetDir })
+    assert.deepEqual(
+      result.exported,
+      ['parts-alto.midi', 'parts.midi'].map((name) => path.join(targetDir, name)),
+    )
+    assert.equal((await fs.readFile(result.exported[1])).subarray(0, 4).toString(), 'MThd')
+    assert.deepEqual(await fs.readdir(path.dirname(rootFile)), ['out', 'parts.ly'])
+  })
+
+  test('a score without \\midi exports nothing, and a broken one reports why', async (t) => {
+    if (!needsLilyPond(t)) return
+    const silent = await service.export({ rootFile: path.join(fixtures, 'simple.ly'), format: 'midi' })
+    assert.deepEqual([silent.ok, silent.exported], [true, []])
+
+    const broken = await service.export({
+      rootFile: await source('broken.ly', '{ c4 \\nonsense }'),
+      format: 'midi',
+    })
+    assert.equal(broken.ok, false)
+    assert.match(broken.stderr, /error: unknown command: `\\nonsense'/)
+  })
+
+  test('an export leaves the preview compile and its kept pages alone', killTimeout, async (t) => {
+    if (!needsLilyPond(t)) return
+    const own = new CompileService({ tmpRoot: await fs.mkdtemp(path.join(scratch, 'export-')) })
+    const rootFile = await source('both.ly', '{ c4 }')
+    const kept = await own.compile({ rootFile })
+
+    const [compiled, exported] = await Promise.all([
+      own.compile({ rootFile }),
+      own.export({ rootFile, format: 'pdf' }),
+    ])
+    assert.deepEqual([compiled.cancelled, exported.cancelled], [false, false])
+    assert.equal(await exists(kept.outputDir!), false, 'replaced by the second compile only')
+    assert.ok(await exists(compiled.pages[0]))
+    assert.deepEqual(await fs.readdir(path.dirname(compiled.outputDir!)), [
+      path.basename(compiled.outputDir!),
+    ])
+    await own.dispose()
+  })
+
+  test('cancelExport() kills the export and writes nothing', killTimeout, async (t) => {
+    if (!needsLilyPond(t)) return
+    const rootFile = await source('slow-export.ly', slowBody)
+    const running = service.export({ rootFile, format: 'pdf' })
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    service.cancelExport(rootFile, 'pdf')
+
+    const result = await running
+    assert.deepEqual([result.cancelled, result.exported], [true, []])
+    assert.deepEqual(await fs.readdir(path.dirname(rootFile)), ['slow-export.ly'])
+  })
+
   test('rejects with the file error when the root file does not exist', async () => {
     const rootFile = path.join(scratch, 'no-such-dir', 'score.ly')
     await assert.rejects(service.compile({ rootFile }), { code: 'ENOENT', path: rootFile })
