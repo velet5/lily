@@ -392,6 +392,65 @@ into the compile and stderr modules.
 
 ---
 
+## D16 — Diagnostics conventions
+
+**Status:** accepted · **Refines:** D3, D6, D9
+
+- **Files.** `src/diagnostics/parse.ts` (pure, no `vscode`; D6 called it
+  `compile/stderr.ts`) and `src/diagnostics/publish.ts` (`CompileReporter`).
+- **Not a field of `CompileResult`.** ARCHITECTURE §3.1 first listed
+  `diagnostics` there. The service keeps returning raw stderr and consumers
+  call `parseStderr(result.stderr, { rootFile })`: a pure function of data the
+  result already carries, so the service stays a process runner and the CLI
+  (step 11) makes the same one-line call.
+- **`LyDiagnostic` keeps lilypond's numbers.** `line` and `column` are 1-based
+  as printed (the JSON contract of D11). `columnToCharacter(lineText, column)`
+  and `diagnosticSpan(lineText, column?)` map them onto real text: tab stops of
+  8, code points → UTF-16 units, then widened to the token — `\command`, string,
+  word with its octave and duration marks, or the balanced `#( … )` for Scheme
+  errors, which lilypond reports at the parenthesis. At whitespace or end of
+  line the span covers one character so it never collapses. Line-only and
+  locationless messages span the line without its indentation.
+- **Line text comes from disk**, not the editor buffer: it is what lilypond
+  compiled. If the file cannot be read, the raw column is used.
+- **Message assembly.** A block runs from one header line to the next. Its two
+  context lines are recognised by width (ARCHITECTURE §3.5); every other line
+  joins the message with `\n`. Blank lines and `continuing, cross fingers` are
+  dropped. `programming error` is a warning whose message keeps that prefix.
+  Lines before the first header (Guile notes, backtraces) are only in the
+  output channel.
+- **`fatal error: failed files: …`** ends every failed run. It is dropped when
+  another error explains the failure and kept when it is the only one, so a
+  failure is never silent (D6) and never duplicated at line 1.
+- **Ownership.** The reporter remembers what each root reported per file and
+  replaces exactly that on the root's next completed run; an `.ily` shared by
+  two roots shows the de-duplicated union. Cancelled runs and runs that could
+  not start leave diagnostics untouched.
+- **Status bar** (`lily.compileStatus`, right side, only while a LilyPond
+  editor is active) follows the most recently *started* run: idle → click
+  compiles; spinning while compiling; `$(check)`, or error/warning counts with
+  the matching background → click opens Problems; start failure → click opens
+  the output. The **output channel** "LilyPond" gets a timestamped line per
+  run, the raw stdout/stderr and a one-line summary; it is never revealed
+  automatically.
+- **Failures to start** (D9): `LilyPondNotFoundError` shows one message with
+  *Open Settings* / *Download*, and not a second one while the first is open;
+  anything else shows the error with *Show Output*. `reporter.run()` never
+  rejects.
+- **Commands added here**, because diagnostics need a trigger: `lily.compile`
+  and `lily.showOutput`, palette only. Step 9 owns menus, keybindings and
+  `when` clauses.
+- **Tests.** `test/diagnostics/parse.test.ts` uses verbatim 2.26 stderr plus
+  one real compile that maps every message back onto its source token.
+  `test/diagnostics.test.ts` (extension host, skipped without the binary)
+  drives `lily.compile` on `test/fixtures/broken.ly`, which is broken on
+  purpose together with `parts/broken-part.ily`. The status bar and channel
+  have no readable API and are not covered.
+- **Not verified.** Windows path output, and LilyPond older than 2.26 (which
+  may print relative paths; they resolve against the root's directory).
+
+---
+
 ## Out of scope
 
 MIDI keyboard input, MIDI playback, and `python-ly` formatting. Revisit only

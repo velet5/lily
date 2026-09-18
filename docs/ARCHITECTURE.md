@@ -140,12 +140,14 @@ interface CompileResult {
   stdout: string
   stderr: string              // raw, unmodified, always English (D15)
   outputDir?: string          // the run's temp directory; gone when cancelled
-  diagnostics: LyDiagnostic[] // parsed from stderr, vscode-free shape (step 5)
   durationMs: number
 }
 ```
 
-Everything except `diagnostics` is implemented in `src/compile/compiler.ts`.
+Diagnostics are derived from it, not stored in it (D16):
+`parseStderr(result.stderr, { rootFile: result.rootFile })` returns the
+vscode-free `LyDiagnostic[]` (`file`, 1-based `line`, optional `column` as
+printed, `severity`, `message`).
 
 ### 3.2 Planned layout
 
@@ -155,10 +157,11 @@ src/
   compile/
     locate.ts           setting → PATH → well-known install dirs
     compiler.ts         CompileService: spawn, temp dir, cancellation, page ordering
-    stderr.ts           stderr → LyDiagnostic[] (pure function)
     rootFile.ts         \include graph → root resolution
   config.ts             typed, uncached access to the `lily.*` settings
-  diagnostics.ts        LyDiagnostic → vscode.Diagnostic, status bar, channel
+  diagnostics/
+    parse.ts            stderr → LyDiagnostic[], column → character, token span (no vscode)
+    publish.ts          CompileReporter: Problems, output channel, status bar item
   preview/
     panel.ts            WebviewPanel lifecycle, message protocol
     sync.ts             textedit link index, cursor ↔ element mapping
@@ -174,7 +177,7 @@ data/                   generated lilypond-data.json
 scripts/                data extraction from the installed lilypond
 ```
 
-Rule: nothing under `src/compile/` may import `vscode`. That is what lets the
+Rule: nothing under `src/compile/`, nor `src/diagnostics/parse.ts`, may import `vscode`. That is what lets the
 CLI and MCP server (step 11) reuse the exact code path the editor uses, and
 lets it be unit-tested without an extension host.
 
@@ -236,7 +239,7 @@ tab- and Unicode-bearing inputs:
 
 | Source | Format | Line | Column |
 | --- | --- | --- | --- |
-| stderr | `path:LINE:COL: error\|warning: msg` | 1-based | **1-based, tabs expanded to 8**, counted in code points |
+| stderr | `path:LINE:COL: error\|warning: msg` | 1-based | **1-based, tabs advance to the next multiple of 8**, counted in code points |
 | stderr (rare) | `path:LINE: warning: msg` (no column; message may span lines) | 1-based | — |
 | stderr | `warning: …` / `fatal error: …` (no location) | — | — |
 | SVG link | `textedit://PATH:LINE:CHAR:COLUMN` | 1-based | `CHAR` is **0-based code points, tabs not expanded**; `COLUMN` is the tab-expanded 1-based form |
@@ -251,7 +254,11 @@ Consequences:
 - `PATH` in links is percent-encoded (`src%20dir`) and absolute. Parse from
   the **right** (`:(\d+):(\d+):(\d+)$`) — Windows paths contain a colon.
 - stderr follows each located message with two context lines (source excerpt
-  and a caret-aligned continuation). They are not messages; skip them.
+  and a caret-aligned continuation). They are not messages; skip them. The
+  first is exactly `COL - 1` columns wide and the second starts with that many
+  spaces, which tells them apart from message text: lines can precede them
+  (`(search path: …)`) and follow them (`In procedure car: …`), and both
+  belong to the message.
 
 ### 3.6 What triggers a compile
 
@@ -266,15 +273,20 @@ syntax-only mode to fall back on.
 Repository state: the extension skeleton exists (D13), ships its own grammar
 and snippets (D14), and has the compile service (D15): `src/compile/` plus
 `src/config.ts` for the two settings `lily.lilypond.path` and
-`lily.compile.extraArgs`. **Nothing calls the service yet** —
-`src/extension.ts` still has an empty `activate()` and there are no commands.
-The intended call is
+`lily.compile.extraArgs`. Compile results reach the user through
+`src/diagnostics/` (D16). `src/extension.ts` owns the one `CompileService`
+(disposed in `deactivate()`) and the one `CompileReporter`, and registers two
+commands: `lily.compile` (active editor or a `Uri` argument; saves a dirty
+document first; resolves with the `CompileResult`, or `undefined` when nothing
+ran) and `lily.showOutput`. There are no menus, keybindings or save listeners
+yet. **Every compile must go through the reporter**, whatever triggers it:
 
 ```ts
-const result = await service.compile({ rootFile, ...getCompileSettings(uri) })
+const result = await reporter.run(rootFile, () =>
+  service.compile({ rootFile, ...getCompileSettings(uri) }),
+)
+if (result && !result.cancelled) { /* render result.pages */ }
 ```
-
-with one `CompileService` per extension host, disposed on deactivation.
 
 ```
 npm install
@@ -295,7 +307,7 @@ Where each piece of upcoming work should look first:
 | Extension skeleton, language id, bundling (done) | §3.2, D2, D9, D12, D13 (name/publisher still *proposed*) |
 | Grammar and snippets (done) | D2 — **do not copy** from the CC BY-NC grammar; D14 for scopes, modes, snapshot workflow |
 | Compile service (done) | §3.3, D3, D5, D15; keep `src/compile/**` free of `vscode` |
-| Diagnostics | §3.5 (stderr rows), D6; D15 for where `diagnostics` joins `CompileResult` and for the unit-test tier |
+| Diagnostics (done) | §3.5 (stderr rows), D6, D16 |
 | Preview panel, refresh on save | §3.4, §3.6, D1, D4, D10 |
 | Score ↔ source sync | §3.5 (SVG link row), D7 |
 | IntelliSense data | D8 (includes the verified Scheme recipe) |
@@ -328,5 +340,11 @@ Probes run with `GNU LilyPond 2.26.0 (running Guile 3.0)`:
 | `\include "x.ily"` immediately followed by top-level `\tune` defined in `x.ily` | `unknown command` (lexer lookahead); `{ \tune }` works |
 | `\repeat unfold 400` of eight quavers, SVG backend | ≈ 33 s; killed by `SIGKILL` in < 1 s, no orphan process |
 | No `\version` | `file:1: warning:` with no column and a multi-line message |
+| `{ c4<TAB>\foo }` and `{ c4 <TAB><TAB>\foo }` | columns `9` and `17`: tab **stops**, not a fixed 8 |
+| `{ 𝄞𝄞 \foo }` | column `6`: an astral character is one column (two UTF-16 units) |
+| Error at column 1; at end of input | first context line empty; second context line only spaces |
+| `#(display (car 5))` | `2:2` (the `(`, not the `#`), and `In procedure car: …` **after** the context lines |
+| `\include "missing.ily"` | `(search path: …)` **between** the message and the context lines |
+| Root compiled through a symlinked directory, or `/tmp` vs `/private/tmp` | paths are printed as given, never `realpath`ed; includes are `<cwd as given>/<name>` |
 | Trivial score wall time | ≈ 0.43 s |
 | Scheme introspection from a `.ly` file | 167 grobs, 43 contexts, 199 music functions with docstrings and signatures (recipe in DECISIONS D8) |

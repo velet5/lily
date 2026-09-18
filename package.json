@@ -47,6 +47,18 @@
         "path": "./snippets/lilypond.json"
       }
     ],
+    "commands": [
+      {
+        "command": "lily.compile",
+        "title": "Compile",
+        "category": "LilyPond"
+      },
+      {
+        "command": "lily.showOutput",
+        "title": "Show Output",
+        "category": "LilyPond"
+      }
+    ],
     "configuration": {
       "title": "Lily",
       "properties": {
