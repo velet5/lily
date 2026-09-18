@@ -509,9 +509,12 @@ into the compile and stderr modules.
   `{ type: 'rendered', revision, pages }`; `PreviewPanel.whenRendered()`
   resolves once the latest revision is drawn. The tests rely on it, and step 8
   can use it to know when the link index is current.
-- **Links are inert for now.** The webview `preventDefault`s every click on an
-  `<a>`; step 8 turns `textedit:` links into reveal requests and may open
-  `http(s):` links (from `\with-url`) externally.
+- **`textedit:` links are inert for now.** The webview `preventDefault`s every
+  click on an `<a>`, so nothing navigates; step 8 turns `textedit:` links into
+  reveal requests. VS Code's own webview click handler runs regardless of
+  `preventDefault` and hands `http(s):` and `mailto:` links (from `\with-url`)
+  to its opener, ignoring every other scheme (read in the 1.138 sources, not
+  clicked through), so those need no code of ours.
 - **Colours.** `lily.preview.colors`: `theme` (default; `currentColor` on the
   editor background, D1) or `paper` (black on white pages). Applied live.
 - **`activate()` returns `{ previews }`** (`LilyApi`), so extension-host tests

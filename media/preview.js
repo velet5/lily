@@ -279,8 +279,9 @@
     }, 100)
   })
 
-  // Links must not navigate the webview. Step 8 turns textedit: links into
-  // reveal requests; until then a click does nothing.
+  // Links must not navigate the webview. VS Code's own click handler still hands
+  // http(s) and mailto links (\with-url) to its opener and ignores every other
+  // scheme, so a textedit: link does nothing until step 8 makes it a reveal request.
   pagesEl.addEventListener('click', (event) => {
     if (event.target instanceof Element && event.target.closest('a')) event.preventDefault()
   })
