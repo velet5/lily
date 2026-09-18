@@ -329,6 +329,17 @@ describe('PreviewPanel', () => {
       assert.deepStrictEqual(fake.take(), [{ type: 'highlight', hrefs: [], reveal: true }])
     })
 
+    test('the cursor that a click placed marks the note without scrolling it away', async () => {
+      const { fake, preview } = await rendered()
+      fake.fromWebview({ type: 'reveal', href: href(6) })
+      preview.showCursor({ file: song, line: 2, char: 6 })
+      preview.showCursor({ file: song, line: 2, char: 6 })
+      assert.deepStrictEqual(fake.take(), [
+        { type: 'highlight', hrefs: [href(6)], reveal: false },
+        { type: 'highlight', hrefs: [href(6)], reveal: true },
+      ])
+    })
+
     test('a refresh and a reloaded webview mark the cursor again, without scrolling', async () => {
       const { fake, preview } = await rendered()
       preview.showCursor({ file: song, line: 2, char: 2 })

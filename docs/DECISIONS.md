@@ -633,6 +633,9 @@ into the compile and stderr modules.
   webview reload the panel marks its remembered cursor again with
   `reveal: false`, so the restored scroll position (D17) wins. A cursor placed
   before the first render is marked by that render, also without scrolling.
+  Neither does the cursor move that a click causes: the panel remembers the
+  clicked location and marks it with `reveal: false`, otherwise a note clicked
+  within the margin of the pane's edge would jump away from under the mouse.
 - **Same file, different spelling.** LilyPond prints paths as given; the editor
   may reach the file through a symlink. Index keys and cursors both go through
   `canonicalFile()` (`realpath`, falling back to the resolved path; lower-cased

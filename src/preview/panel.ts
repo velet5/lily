@@ -135,6 +135,8 @@ export class PreviewPanel {
   /** Where the pages on screen came from, and the cursor shown in them (D19). */
   private links = LinkIndex.empty
   private cursor: SourceLocation | undefined
+  /** The link just clicked here; the cursor it moves must not scroll the score. */
+  private clicked: SourceLocation | undefined
   /** Whether the webview was last told to mark something, and what it then marked. */
   private marking = false
   private marked = 0
@@ -221,6 +223,10 @@ export class PreviewPanel {
    * re-marks without it, so it never fights the restored scroll position.
    */
   showCursor(cursor: SourceLocation | undefined, reveal = true): void {
+    // The clicked note is under the mouse already, even when cut off by the edge.
+    const { clicked } = this
+    this.clicked = undefined
+    if (clicked && cursor?.line === clicked.line && cursor.char === clicked.char) reveal = false
     this.cursor = cursor
     const hrefs = cursor ? this.links.lookup(cursor.file, cursor.line, cursor.char) : []
     // Moving through a file this score does not use is not worth a message each.
@@ -296,7 +302,9 @@ export class PreviewPanel {
       case 'reveal': {
         // The href comes from the score, so it is parsed here, not trusted.
         const location = typeof message.href === 'string' && parseTextEdit(message.href)
-        if (location) this.options.onDidClickSource?.(location)
+        if (!location) break
+        this.clicked = location
+        this.options.onDidClickSource?.(location)
         break
       }
       case 'highlighted':

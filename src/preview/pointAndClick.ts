@@ -68,7 +68,8 @@ interface Link {
   href: string
 }
 
-const ANCHOR = /<a\b[^>]*?\bxlink:href="(textedit:[^"]*)"/g
+// 2.26 writes `xlink:href`; the webview reads a plain SVG 2 `href` as well.
+const ANCHOR = /<a\b[^>]*?\s(?:xlink:)?href="(textedit:[^"]*)"/g
 const ENTITIES: Record<string, string> = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'" }
 
 /**

@@ -136,6 +136,14 @@ describe('LinkIndex', () => {
     assert.equal(await canonicalFile(path.join(dir, 'missing', '..', 'gone.ly')), path.join(dir, 'gone.ly'))
   })
 
+  test('a plain href is a link too; an attribute that merely ends in href is not', async () => {
+    const plain = href(song, 5, 1)
+    const index = await LinkIndex.build([
+      `<svg><a href="${plain}"/><a data-href="${href(song, 5, 9)}"/></svg>`,
+    ])
+    assert.deepEqual(index.lookup(song, 5, 20), [plain])
+  })
+
   test('an href is compared as the webview will read it, entities decoded', async () => {
     const raw = `textedit://${dir}/a&amp;b.ly:1:0:1`
     const index = await LinkIndex.build([svg(raw)])
