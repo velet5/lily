@@ -6,6 +6,8 @@
 //   node esbuild.mjs --production   minified, no source maps (used for packaging)
 //   node esbuild.mjs --tests        also build the extension-host tests into out/test/
 //   node esbuild.mjs --unit         build only the pure-module tests into out/unit/
+//   node esbuild.mjs --e2e          build only the release pass and the screenshot
+//                                   run into out/e2e/ and out/screenshots/ (D23)
 import * as esbuild from 'esbuild'
 import { readdirSync, rmSync } from 'node:fs'
 
@@ -13,6 +15,7 @@ const production = process.argv.includes('--production')
 const watch = process.argv.includes('--watch')
 const tests = process.argv.includes('--tests')
 const unit = process.argv.includes('--unit')
+const e2e = process.argv.includes('--e2e')
 
 /** @type {import('esbuild').BuildOptions} */
 const shared = {
@@ -28,7 +31,7 @@ const shared = {
 }
 
 /** @type {import('esbuild').BuildOptions[]} */
-const builds = unit
+const builds = unit || e2e
   ? []
   : [
       { ...shared, entryPoints: ['src/extension.ts'], outfile: 'dist/extension.js' },
@@ -50,12 +53,18 @@ if (tests) {
 
 if (unit) {
   // Tests in subdirectories of test/ run under `node --test`, without an
-  // extension host (DECISIONS D13), so they must not import `vscode`.
+  // extension host (DECISIONS D13), so they must not import `vscode`. test/e2e/
+  // is the exception: it runs in a host, on the packaged extension.
   const unitTests = readdirSync('test', { recursive: true })
-    .filter((name) => name.endsWith('.test.ts') && /[\\/]/.test(name))
+    .filter((name) => name.endsWith('.test.ts') && /[\\/]/.test(name) && !/^e2e[\\/]/.test(name))
     .map((name) => `test/${name}`)
   rmSync('out/unit', { recursive: true, force: true })
   builds.push({ ...shared, entryPoints: unitTests, outdir: 'out/unit', outbase: 'test' })
+}
+
+if (e2e) {
+  builds.push({ ...shared, entryPoints: ['test/e2e/smoke.test.ts'], outdir: 'out/e2e' })
+  builds.push({ ...shared, entryPoints: ['test/e2e/screenshots.ts'], outdir: 'out/screenshots' })
 }
 
 if (watch) {

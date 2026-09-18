@@ -1,0 +1,24 @@
+# Everything is excluded, then what the extension loads at run time is let back
+# in (DECISIONS D23). A new run-time directory must be added here;
+# `npm run test:e2e` fails when the packaged extension misses a file.
+**
+
+!package.json
+!README.md
+!CHANGELOG.md
+!LICENSE
+!AGENTS.md
+!language-configuration.json
+
+# The two bundles; their source maps stay out.
+!dist/extension.js
+!dist/lily-check.js
+
+# Webview assets and icons, grammar, snippets, IntelliSense data (D21).
+!media/**
+!syntaxes/lilypond.tmLanguage.json
+!snippets/lilypond.json
+!data/completions.json
+
+# README screenshots: relative links are not rewritten, so they must ship.
+!docs/images/*.png

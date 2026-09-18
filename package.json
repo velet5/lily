@@ -2,7 +2,7 @@
   "name": "lily",
   "displayName": "Lily — LilyPond",
   "description": "LilyPond editing with a side-by-side SVG preview, diagnostics and IntelliSense.",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "lily-dev",
   "private": true,
   "license": "MIT",
@@ -345,14 +345,19 @@
     "build": "node esbuild.mjs",
     "watch": "node esbuild.mjs --watch",
     "package": "node esbuild.mjs --production",
+    "vscode:prepublish": "npm run package",
+    "vsix": "vsce package --no-dependencies --no-rewrite-relative-links --allow-missing-repository",
     "check-types": "tsc --noEmit",
+    "lint": "oxlint --deny-warnings",
     "gen:completions": "node scripts/gen-completions.mjs",
     "lily-check": "node dist/lily-check.js",
     "test:grammar": "vscode-tmgrammar-snap \"test/grammar/*.ly\"",
     "test:grammar:update": "vscode-tmgrammar-snap --updateSnapshot \"test/grammar/*.ly\"",
     "test:unit": "node esbuild.mjs --unit && node --test \"out/unit/**/*.test.js\"",
-    "pretest": "npm run check-types && node esbuild.mjs --tests && npm run test:grammar && npm run test:unit",
-    "test": "vscode-test"
+    "pretest": "npm run check-types && npm run lint && node esbuild.mjs --tests && npm run test:grammar && npm run test:unit",
+    "test": "vscode-test --label host",
+    "test:e2e": "npm run vsix && node scripts/unpack-vsix.mjs && node esbuild.mjs --e2e && vscode-test --label e2e",
+    "screenshots": "npm run vsix && node scripts/unpack-vsix.mjs && node esbuild.mjs --e2e && vscode-test --label screenshots"
   },
   "devDependencies": {
     "@types/mocha": "^10.0.10",
@@ -360,7 +365,9 @@
     "@types/vscode": "~1.100.0",
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.1.0",
+    "@vscode/vsce": "^4.0.0",
     "esbuild": "^0.28.2",
+    "oxlint": "^1.83.0",
     "typescript": "^7.0.2",
     "vscode-tmgrammar-test": "^0.1.3"
   }

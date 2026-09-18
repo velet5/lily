@@ -182,6 +182,10 @@ tools/lily-check/       headless checker for agents, bundled to dist/lily-check.
   mcp.ts                minimal MCP server on stdio, one tool: lilypond_compile
   main.ts               entry
 AGENTS.md               the compile-and-fix loop for Codex, then repository notes
+test/                   *.test.ts: extension-host tests; */*.test.ts: node:test (D13, D15)
+  e2e/                  release pass on the unpacked VSIX, its sample score, README screenshots (D23)
+.vscodeignore           allow-list of what ships in the VSIX (D23)
+.github/workflows/      ci.yml: types, lint, grammar, unit, host tests, release pass, VSIX artifact
 ```
 
 Rule: nothing under `src/compile/` or `tools/`, nor `src/diagnostics/parse.ts`, may import `vscode`. That is what lets the
@@ -321,7 +325,11 @@ npm run check-types   # tsc --noEmit over src/ and test/
 npm run test:grammar  # grammar snapshots only (no extension host)
 npm run test:unit     # pure-module tests under test/*/ with node --test (~5 s)
 npm run gen:completions  # rewrite data/completions.json from the installed lilypond
-npm test              # type-check, build, grammar, unit, extension-host tests
+npm run lint          # oxlint, warnings are errors (D23)
+npm test              # type-check, lint, build, grammar, unit, extension-host tests
+npm run vsix          # lily-<version>.vsix (production build first)
+npm run test:e2e      # package, unpack, run the sample score through the packaged extension
+npm run screenshots   # retake docs/images/*.png from the packaged extension
 ```
 
 `npm test` downloads a VS Code build into `.vscode-test/` on first run. F5
@@ -340,6 +348,7 @@ Where each piece of upcoming work should look first:
 | Toolbar, commands, menus, export (done) | D5, D20 |
 | IntelliSense data, completion, hover (done) | D8 (the verified Scheme recipe), D21 |
 | CLI / MCP for agents (done) | §3.1 `CompileResult`, D11, D22, `AGENTS.md` |
+| Packaging, CI, README, release pass (done) | D23; what is left before publishing is listed there |
 
 Appendix A is reproducible: each row is a one-line `lilypond` invocation on a
 two- or three-line input, and should be re-run when the minimum supported

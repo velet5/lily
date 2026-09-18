@@ -1,0 +1,14 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  // oxlint's default set (the `correctness` category), run with --deny-warnings.
+  // typescript-eslint does not support TypeScript 7 (DECISIONS D23).
+  "rules": {
+    // The flagged spreads copy a collection that the loop body shrinks
+    // (element.children, element.attributes, the panel map); without the copy
+    // every other entry would be skipped.
+    "unicorn/no-useless-spread": "off",
+    // gen-completions.mjs protects code blocks with U+0000–U+0002 sentinels.
+    "no-control-regex": "off"
+  },
+  "ignorePatterns": ["dist", "out", ".vscode-test", "data"]
+}

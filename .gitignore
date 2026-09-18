@@ -5,3 +5,4 @@ out/
 *.vsix
 .worktrees/
 .DS_Store
+test/e2e/workspace/sample.ly

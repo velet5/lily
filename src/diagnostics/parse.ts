@@ -93,7 +93,7 @@ export function parseStderr(stderr: string, options: ParseOptions): LyDiagnostic
 
   // `fatal error: failed files: "…"` closes every failed run. Next to the errors
   // that caused it, it is noise; alone, it is the only sign of the failure.
-  const isSummary = (d: LyDiagnostic) => d.column === undefined && /^failed files: /.test(d.message)
+  const isSummary = (d: LyDiagnostic) => d.column === undefined && d.message.startsWith('failed files: ')
   const hasCause = diagnostics.some((d) => d.severity === 'error' && !isSummary(d))
   return hasCause ? diagnostics.filter((d) => !isSummary(d)) : diagnostics
 }

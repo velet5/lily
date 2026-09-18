@@ -908,6 +908,76 @@ into the compile and stderr modules.
 
 ---
 
+## D23 — Release conventions
+
+**Status:** accepted · **Refines:** D12, D13, D15, D21, D22
+
+- **The VSIX is an allow-list.** `.vscodeignore` excludes everything and lets
+  back in what is loaded at run time: the two bundles (no source maps),
+  `media/`, the grammar, the snippets, `data/completions.json`,
+  `language-configuration.json`, README, CHANGELOG, LICENSE, `AGENTS.md` (it
+  documents the shipped `dist/lily-check.js`) and `docs/images/*.png`. 20 files,
+  about 1 MB, of which the three screenshots are 0.9 MB. A new run-time
+  directory must be added there; forgetting it fails the release pass below,
+  not the other suites, which run on the working tree.
+- **Packaging.** `npm run vsix` is `vsce package --no-dependencies
+  --no-rewrite-relative-links --allow-missing-repository`; `vscode:prepublish`
+  runs the production build first. There are no run-time dependencies to pack
+  (D12). There is no `repository` yet, so README links cannot be rewritten to a
+  remote: images ship inside the VSIX, and the README links only to files that
+  ship (`AGENTS.md`) or to https. `publisher` is still the placeholder
+  `lily-dev` (D12) and `private: true` stays, against an accidental
+  `npm publish`. **Nothing was published.** Before publishing: a real publisher,
+  a `repository`, a 128 px `icon`, and then the images can leave the VSIX.
+- **Release pass** (`npm run test:e2e`, `test/e2e/smoke.test.ts`). Packages the
+  VSIX, unpacks it into `.vscode-test/vsix/` (`scripts/unpack-vsix.mjs`) and
+  starts the host with `extensionDevelopmentPath` on the unpacked copy, so every
+  assertion is about the files a user installs: the file list, then
+  `test/e2e/workspace/score.ly` (two staves, lyrics, two pages, MIDI) through
+  preview, completion and hover, a saved mistake and its fix, PDF and MIDI
+  export, and the shipped `lily-check`. It does **not** skip without lilypond.
+  `test/e2e/` is the one subdirectory of `test/` that is not a `node:test` suite
+  (D13, D15); `esbuild.mjs --unit` leaves it out and `--e2e` builds it.
+  `.vscode-test.mjs` now holds three labelled configurations, and `npm test`
+  runs only `host`.
+- **Screenshots are taken, not drawn.** `npm run screenshots` runs
+  `test/e2e/screenshots.ts` in the same packaged host, started with
+  `--remote-debugging-port`, and captures the workbench window over the DevTools
+  protocol (`Emulation.setDeviceMetricsOverride` 1440×860 at 2×, then
+  `Page.captureScreenshot`; the webview is part of the capture). It needs no
+  screen-recording permission and uses the host's default theme. Retake them
+  when the toolbar, the status bar item or the sample score changes. The file is
+  not named `*.test.ts`, so no test run picks it up.
+- **Lint is oxlint**, default rule set, `--deny-warnings`, part of `pretest`.
+  typescript-eslint 8 requires `typescript <6.1` and this project is on 7 (D12),
+  so ESLint with type-aware rules is not available; oxlint has no TypeScript
+  dependency. Two rules are off, with the reasons in `.oxlintrc.json`:
+  `unicorn/no-useless-spread` flags the three places where a live collection is
+  copied because the loop shrinks it — following the advice would skip every
+  other element — and `no-control-regex` flags the sentinels of
+  `gen-completions.mjs`. No formatter is enforced.
+- **CI** (`.github/workflows/ci.yml`, Ubuntu, Node 22): types, lint, grammar
+  snapshots, unit tests, extension-host tests and the release pass under
+  `xvfb-run`, then the VSIX as an artifact. It installs the official LilyPond
+  2.26.0 binary (cached) rather than the distribution's 2.24, because 2.26 is
+  what every `[verified]` in this file refers to, and it fails before the tests
+  if `lilypond --version` does not run: the compile tests skip themselves
+  without the binary (D15) and would otherwise pass while covering nothing.
+- **Verified** on macOS with lilypond 2.26.0 and VS Code 1.138: `npm test`
+  (lint clean, grammar snapshots, 192 unit and 40 host tests), `npm run
+  test:e2e` (6 tests), `npm run screenshots`, and that the release pass fails
+  when `data/completions.json` is taken out of the VSIX. **Not verified:** the
+  workflow itself — the repository has no remote, so it has never run; the
+  LilyPond download URL was checked to resolve, but not the official binary on
+  the Ubuntu runner, nor the tests against 2.24. Installing the VSIX into a
+  regular VS Code was not done either, since that changes the user's editor;
+  the unpacked copy in a development host is the nearest thing.
+- **Version** 0.1.0, the first packaged one; `CHANGELOG.md` starts there. The
+  README names the install directory `lily-dev.lily-<version>`, and the release
+  pass checks that it matches `package.json`.
+
+---
+
 ## Out of scope
 
 MIDI keyboard input, MIDI playback, and `python-ly` formatting. Revisit only

@@ -11,7 +11,7 @@ Never hand back a `.ly` file you have not compiled. `lily-check` runs the same
 compile and the same error parser as the editor and reports the result as JSON.
 
 ```sh
-npm run build                                     # once; writes dist/lily-check.js
+npm run build                                     # once, in a checkout; the installed extension has dist/ already
 node dist/lily-check.js compile score.ly --json
 ```
 
@@ -115,11 +115,15 @@ npm run check-types     # tsc, no emit
 npm run build           # esbuild → dist/extension.js, dist/lily-check.js
 npm run test:unit       # node --test; tests in subdirectories of test/
 npm run test:grammar    # TextMate grammar snapshots
+npm run lint            # oxlint; warnings fail
 npm test                # all of the above, then the extension-host tests
+npm run test:e2e        # packages the VSIX and runs a sample score through it
 ```
 
 - Nothing under `src/compile/`, `src/intellisense/` (except `provider.ts`),
   `src/diagnostics/parse.ts` or `tools/` may import `vscode`.
+- A file or directory that is needed at run time must be let into the VSIX in
+  `.vscodeignore`; only `npm run test:e2e` notices when it is not.
 - `data/completions.json` is generated (`npm run gen:completions`); do not edit it.
 - Tests that need lilypond skip themselves when it is not installed; a run with
   skipped tests has not verified a change to compiling or parsing.
