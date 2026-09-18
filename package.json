@@ -343,6 +343,7 @@
     "watch": "node esbuild.mjs --watch",
     "package": "node esbuild.mjs --production",
     "check-types": "tsc --noEmit",
+    "gen:completions": "node scripts/gen-completions.mjs",
     "test:grammar": "vscode-tmgrammar-snap \"test/grammar/*.ly\"",
     "test:grammar:update": "vscode-tmgrammar-snap --updateSnapshot \"test/grammar/*.ly\"",
     "test:unit": "node esbuild.mjs --unit && node --test \"out/unit/**/*.test.js\"",

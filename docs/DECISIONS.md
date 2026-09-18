@@ -167,7 +167,7 @@ numbers from the right so Windows drive colons survive.
 
 **Decision.** A script asks the installed `lilypond` (via Scheme) for music
 functions, contexts, grobs, properties and their docstrings, and writes
-`data/lilypond-data.json`, which is committed and shipped. Completion is
+`data/completions.json`, which is committed and shipped. Completion is
 context-aware (after `\`, after `\new`/`\context`, inside `\override` /
 `\set`), and hover shows the docstring.
 
@@ -764,6 +764,72 @@ into the compile and stderr modules.
 - **Not done here.** No save dialog or export directory setting (`targetDir`
   exists in the service for step 11's CLI). D10's root resolution for a compile
   started in an `.ily` is still open.
+
+---
+
+## D21 — IntelliSense conventions
+
+**Status:** accepted · **Refines:** D8, D13, D14 · **Addresses:** G7
+
+- **Files.** `scripts/gen-completions.mjs` writes `data/completions.json`
+  (D8 called it `lilypond-data.json`); `src/intellisense/data.ts` declares its
+  shape and indexes it, `completion.ts` and `hover.ts` decide what to show, and
+  `provider.ts` is the only file that imports `vscode`. `extension.ts` calls
+  `registerIntelliSense(context.extensionPath)`. None of it needs the binary
+  (D9). The data is read on the first completion or hover, not at activation.
+- **Generating.** `npm run gen:completions` (binary: first argument, else
+  `$LILYPOND`, else `lilypond` on `PATH`). LilyPond runs a Scheme block that
+  dumps raw facts as JSON into a temp directory; the script turns Texinfo into
+  Markdown, builds signatures and sorts. The file has one entry per line, sorted
+  by name, so a regeneration diffs by entry. `test/intellisense/data.test.ts`
+  fails when a category vanishes or a Texinfo construct is left unconverted —
+  run it after regenerating with a new LilyPond version. From 2.26.0: 196 music
+  functions, 332 predefined commands, 47 keywords, 182 markup commands, 43
+  contexts, 167 grobs, 334 grob and 236 context properties; ≈ 430 kB.
+- **What the binary cannot tell.** The lexer's reserved words (`\new`,
+  `\score`, `\override`, …) are not Scheme values; the script lists them by
+  hand with a one-line description each. Anything the binary does report under
+  the same name wins. Parameter names are not available either (Guile reports
+  `a b c`), so a signature shows types — `\relative [pitch] (music)`, brackets
+  for optional — and the docstring names the parameters.
+- **Commands.** One list, four kinds: `function` (with signature and return
+  kind), `music` (predefined identifiers such as `\stemUp`, `\staccato`, `\f`,
+  context modifications, durations; with their expansion from
+  `music->lily-string` when it is short), `keyword`, `markup`. A name that is
+  also a markup command (`\tiny`, `\override`, `\score`) keeps one entry with a
+  `markup` sub-entry. User properties only: internal grob properties are
+  dropped, and a grob's properties are the union over its interfaces, the ones
+  its description sets (`defaults`) sorted first.
+- **Where completion answers** (`completionsAt(index, textBefore)`; the
+  provider passes the last 60 lines, so a construct may be split over lines):
+  after `\` every command, the whole `\word` replaced (D13); after `\new`,
+  `\context`, `\change` the contexts; after `\context {` a `\Context`; after
+  `\override`, `\revert`, `\overrideProperty`, `\tweak`, `\hide`, `\omit` first
+  grobs and contexts, after `Context.` grobs, after `Grob.` its properties
+  (`\tweak` also takes a bare property); after `\set`, `\unset` context
+  properties and contexts. Nothing in comments and strings, below
+  `Grob.property`, or after the second backslash of `\\`.
+- **Trigger characters** are `\`, `.` and space, so that `\new ` and
+  `\override NoteHead.` open the list unasked. Everywhere else the provider
+  returns `undefined` for them, and nothing pops up between notes (tested in
+  the host).
+- **Snippets win (D14).** Commands that a snippet prefix spells exactly
+  (`\score`, `\relative`, …) are read from `snippets/lilypond.json` at load
+  time and not offered again; hover still documents them.
+- **`\markup` is a guess.** `inMarkup()` looks for an open brace, or a run of
+  commands, after the last `\markup`. It only reorders the list (markup
+  commands first inside, last outside) and picks which meaning of a shared
+  name to show; it never hides anything.
+- **Hover.** `\command` anywhere outside comments and strings. A bare word only
+  in a property path — next to a dot, right after one of the commands above, or
+  (properties) before `=` — because `Rest`, `Staff`, `color` and `text` are
+  also lyrics.
+- **Not done here.** No completion of Scheme (`#'symbol`, `ly:` functions), of
+  `\include` paths, of `\clef`/`\bar`/`\language` arguments, of engraver names
+  after `\consists`, of user-defined variables, nor signature help. No setting
+  switches IntelliSense off; `editor.quickSuggestions` and
+  `editor.hover.enabled` can be set per language. Step 12's `.vscodeignore`
+  must keep `data/` and `snippets/`.
 
 ---
 

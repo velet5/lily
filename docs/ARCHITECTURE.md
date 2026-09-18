@@ -166,16 +166,18 @@ src/
     panel.ts            PreviewManager / PreviewPanel, html + CSP, message protocol (types-only vscode)
     autoPreview.ts      AutoPreview: saves → debounced compiles of the previewed roots (no vscode)
     pointAndClick.ts    textedit link parser and index, CHAR ↔ character (no vscode)
-  language/
-    completion.ts       context-aware completion
-    hover.ts
+  intellisense/
+    data.ts             shape, index and loader of data/completions.json (no vscode)
+    completion.ts       what to offer after `\`, `\new`, `\override`, `\set` (no vscode)
+    hover.ts            hover lookup and the Markdown both providers show (no vscode)
+    provider.ts         the two VS Code providers
   cli.ts                headless entry (step 11)
   mcp.ts                minimal MCP server (step 11)
 media/                  preview.js + preview.css for the webview (no framework, no build)
 syntaxes/               lilypond.tmLanguage.json (authored here)
 snippets/
-data/                   generated lilypond-data.json
-scripts/                data extraction from the installed lilypond
+data/                   completions.json, generated and committed (D21)
+scripts/                gen-completions.mjs: data extraction from the installed lilypond
 ```
 
 Rule: nothing under `src/compile/`, nor `src/diagnostics/parse.ts`, may import `vscode`. That is what lets the
@@ -293,7 +295,9 @@ selection and active-editor listeners feed `previews.followCursor()`. All
 commands are registered in `src/commands.ts`; menus, keybindings, the webview
 toolbar and PDF/MIDI export are described in D20. An export is a run of its own
 (`CompileService.export()`), reported by the reporter but never shown in the
-preview. **Every compile must go through `compileRoot(rootFile)` in
+preview. Completion and hover (D21) come from `data/completions.json`, written
+by `npm run gen:completions`; `src/intellisense/` needs neither the binary nor
+the compile service. **Every compile must go through `compileRoot(rootFile)` in
 `extension.ts`**, whatever triggers it: it tells `AutoPreview` that the root is
 being compiled, runs the service inside the reporter and hands the run to the
 root's preview:
@@ -312,6 +316,7 @@ npm run build         # esbuild → dist/extension.js   (watch: npm run watch)
 npm run check-types   # tsc --noEmit over src/ and test/
 npm run test:grammar  # grammar snapshots only (no extension host)
 npm run test:unit     # pure-module tests under test/*/ with node --test (~5 s)
+npm run gen:completions  # rewrite data/completions.json from the installed lilypond
 npm test              # type-check, build, grammar, unit, extension-host tests
 ```
 
@@ -329,7 +334,7 @@ Where each piece of upcoming work should look first:
 | Preview panel, refresh on save (done) | §3.4, §3.6, D1, D4, D10, D17, D18 |
 | Score ↔ source sync (done) | §3.5 (SVG link row), D7, D19 |
 | Toolbar, commands, menus, export (done) | D5, D20 |
-| IntelliSense data | D8 (includes the verified Scheme recipe) |
+| IntelliSense data, completion, hover (done) | D8 (the verified Scheme recipe), D21 |
 | CLI / MCP for agents | §3.1 `CompileResult`, D11 |
 
 Appendix A is reproducible: each row is a one-line `lilypond` invocation on a

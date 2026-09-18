@@ -5,6 +5,7 @@ import { includeDirsFromArgs, rootsIncluding } from './compile/rootFile'
 import { registerCommands, runToolbarCommand, setPreviewOpen } from './commands'
 import { getAutoPreviewSettings, getCompileSettings, getPreviewSettings } from './config'
 import { CompileReporter } from './diagnostics/publish'
+import { registerIntelliSense } from './intellisense/provider'
 import { AutoPreview } from './preview/autoPreview'
 import { PREVIEW_VIEW_TYPE, PreviewManager, type PreviewPanel } from './preview/panel'
 import { charToCharacter, type SourceLocation } from './preview/pointAndClick'
@@ -129,6 +130,7 @@ export function activate(context: vscode.ExtensionContext): LilyApi {
     previews,
     autoPreview,
     registerCommands({ compiler, reporter, previews, compileRoot, followCursor }),
+    registerIntelliSense(context.extensionPath),
     vscode.workspace.onDidSaveTextDocument((document) => {
       if (document.uri.scheme === 'file') void autoPreview.documentSaved(document.uri.fsPath)
     }),
