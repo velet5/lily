@@ -1,7 +1,10 @@
+import * as path from 'node:path'
 import * as vscode from 'vscode'
 import { CompileService, type CompileResult } from './compile/compiler'
-import { getCompileSettings, getPreviewSettings } from './config'
+import { includeDirsFromArgs, rootsIncluding } from './compile/rootFile'
+import { getAutoPreviewSettings, getCompileSettings, getPreviewSettings } from './config'
 import { CompileReporter } from './diagnostics/publish'
+import { AutoPreview } from './preview/autoPreview'
 import { PREVIEW_VIEW_TYPE, PreviewManager } from './preview/panel'
 
 // Activation and command/listener wiring only (ARCHITECTURE §3.2). It must never
@@ -10,6 +13,7 @@ import { PREVIEW_VIEW_TYPE, PreviewManager } from './preview/panel'
 /** What `activate` returns; the extension-host tests reach the previews through it. */
 export interface LilyApi {
   previews: PreviewManager
+  autoPreview: AutoPreview
 }
 
 /** One per extension host (D3). */
@@ -52,20 +56,40 @@ export function activate(context: vscode.ExtensionContext): LilyApi {
     return document
   }
 
-  /** Resolves with undefined when the save was refused or lilypond could not run. */
-  const compileDocument = async (
-    document: vscode.TextDocument,
-  ): Promise<CompileResult | undefined> => {
-    if (document.isDirty && !(await document.save())) return undefined
-
-    const rootFile = document.uri.fsPath
+  /** Compiles what is on disk. Resolves with undefined when lilypond could not run. */
+  const compileRoot = async (rootFile: string): Promise<CompileResult | undefined> => {
+    // This run covers every save so far; a refresh still waiting would repeat it (D18).
+    autoPreview.compileStarted(rootFile)
     const run = reporter.run(rootFile, () =>
-      compiler.compile({ rootFile, ...getCompileSettings(document.uri) }),
+      compiler.compile({ rootFile, ...getCompileSettings(vscode.Uri.file(rootFile)) }),
     )
     // Every compile of a previewed root refreshes its preview, whatever started it (D3).
     await previews.get(rootFile)?.follow(run)
     return run
   }
+
+  /** Resolves with undefined when the save was refused or lilypond could not run. */
+  const compileDocument = async (
+    document: vscode.TextDocument,
+  ): Promise<CompileResult | undefined> => {
+    if (document.isDirty && !(await document.save())) return undefined
+    return compileRoot(document.uri.fsPath)
+  }
+
+  // Saving a previewed root, or a file one includes, refreshes that preview (D10, D18).
+  const autoPreview = new AutoPreview({
+    settings: getAutoPreviewSettings,
+    previewedRoots: () => previews.roots(),
+    rootsIncluding: (file, roots) =>
+      rootsIncluding(file, roots, (rootFile) => ({
+        includeDirs: includeDirsFromArgs(
+          getCompileSettings(vscode.Uri.file(rootFile)).extraArgs,
+          path.dirname(rootFile),
+        ),
+      })),
+    // The saved file is on disk already; other dirty editors are left alone.
+    compile: compileRoot,
+  })
 
   const compile = async (uri?: vscode.Uri): Promise<CompileResult | undefined> => {
     const document = await compilable(uri)
@@ -83,16 +107,20 @@ export function activate(context: vscode.ExtensionContext): LilyApi {
   context.subscriptions.push(
     reporter,
     previews,
+    autoPreview,
     vscode.commands.registerCommand('lily.compile', compile),
     vscode.commands.registerCommand('lily.showOutput', () => reporter.showOutput()),
     vscode.commands.registerCommand('lily.preview.openToSide', openPreview),
+    vscode.workspace.onDidSaveTextDocument((document) => {
+      if (document.uri.scheme === 'file') void autoPreview.documentSaved(document.uri.fsPath)
+    }),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration('lily.preview')) {
         previews.setColors(getPreviewSettings().colors)
       }
     }),
   )
-  return { previews }
+  return { previews, autoPreview }
 }
 
 /** Kills running compiles and deletes their temp directories; VS Code awaits this. */

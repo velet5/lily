@@ -530,6 +530,67 @@ into the compile and stderr modules.
 
 ---
 
+## D18 — Refresh-on-save conventions
+
+**Status:** accepted · **Refines:** D3, D4, D9, D10
+
+- **Files.** `src/preview/autoPreview.ts` (`AutoPreview`; no `vscode` import,
+  the host is an interface, so the timing runs under `node --test` on the mock
+  clock) and `src/compile/rootFile.ts` (`parseIncludes`, `includeClosure`,
+  `rootsIncluding`, `includeDirsFromArgs`; no `vscode`, D3). `extension.ts`
+  owns the single `onDidSaveTextDocument` listener.
+- **A save refreshes open previews, nothing else.** Without a preview a save
+  costs nothing: no compile, no include scan. Diagnostics of a file that is not
+  previewed update through `LilyPond: Compile`. This narrows ARCHITECTURE §3.6,
+  which had every save of a `lilypond` document compile.
+- **Root resolution walks down from the previewed roots**, not up from the
+  saved file. For each open preview the `\include` closure of its root is read
+  from disk on every save (no cache, D9); the roots whose closure holds the
+  saved file are refreshed — all of them when two previews share an `.ily`. This
+  is D10's "a root with an open preview" rule and needs no workspace scan. The
+  saved file's language does not matter, only its path. D10's other rules
+  (explicit setting, unique including file, ask once) apply when an `.ily`
+  *without* a previewed root is compiled or previewed; that is still not
+  implemented: `lily.compile` and `lily.preview.openToSide` treat the active
+  file as the root.
+- **Include lookup** mirrors lilypond 2.26 **[verified]**: the including file's
+  directory, then the root's directory, then `-I dir` / `-Idir` /
+  `--include dir` / `--include=dir` from `lily.compile.extraArgs`. Every
+  existing candidate counts as an edge, since a false edge costs one recompile
+  and a missing one a stale preview. Paths are compared after `realpath`
+  (symlinks, `/var` → `/private/var`, case-insensitive volumes). Names that
+  resolve nowhere (`english.ly`) are ignored. The scanner skips `%` and
+  `%{ %}` comments and strings; a file name computed in Scheme is not seen.
+- **Debounce.** Trailing edge, one timer per root, `lily.preview.refreshDelay`
+  (default 300 ms, 0–5000). Save All of a root and three includes is one
+  compile. When the timer fires the setting and the preview are checked again.
+- **Stale runs.** The service already kills the root's in-flight run when the
+  refresh starts (D3); the stale run is not killed earlier, at save time, so
+  the panel's busy state does not flicker during the delay.
+- **One compile per save, whoever saves.** `compileRoot()` in `extension.ts`
+  calls `autoPreview.compileStarted(root)` first: it drops the root's waiting
+  refresh, and a save whose roots are still being resolved skips a root whose
+  compile started after it (logical clock). That is what keeps
+  `LilyPond: Compile` on a dirty previewed file — which saves, then compiles —
+  from being superseded by a refresh of its own save. The extension-host test
+  for it fails without the rule, which also confirms that VS Code delivers
+  `onDidSaveTextDocument` before `document.save()` resolves.
+- **The refresh compiles what is on disk** and saves nothing: when an include
+  is saved while the root has unsaved edits, the root's editor is left alone.
+- **Settings.** `lily.preview.refreshOnSave` (default `true`) and
+  `lily.preview.refreshDelay`, both `window` scope, read on every save.
+  `activate()` now returns `{ previews, autoPreview }`.
+- **Found on the way, not fixed here.** lilypond changes into the `-o`
+  directory before it reads the input **[verified]**, so a *relative* `-I lib`
+  in `lily.compile.extraArgs` is searched under our temp directory and never
+  matches; absolute directories work. The fix belongs in
+  `src/compile/compiler.ts` (resolve relative `-I` arguments against the root's
+  directory before spawning). Also: a bare top-level `\music` directly after
+  the `\include` that defines it fails with `unknown command`, because the
+  lexer reads it before the include is processed; `{ \music }` works.
+
+---
+
 ## Out of scope
 
 MIDI keyboard input, MIDI playback, and `python-ly` formatting. Revisit only

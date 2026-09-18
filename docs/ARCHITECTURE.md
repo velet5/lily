@@ -164,6 +164,7 @@ src/
     publish.ts          CompileReporter: Problems, output channel, status bar item
   preview/
     panel.ts            PreviewManager / PreviewPanel, html + CSP, message protocol (types-only vscode)
+    autoPreview.ts      AutoPreview: saves → debounced compiles of the previewed roots (no vscode)
     sync.ts             textedit link index, cursor ↔ element mapping
   language/
     completion.ts       context-aware completion
@@ -265,8 +266,9 @@ Consequences:
 
 ### 3.6 What triggers a compile
 
-Save of a `lilypond` document (debounced), the explicit recompile command, and
-opening the preview. Never a keystroke. A full compile of a trivial score costs
+Save of a file that an open preview compiles — its root or anything the root
+`\include`s — debounced and switchable (D18), the explicit recompile command,
+and opening the preview. Never a keystroke. A full compile of a trivial score costs
 ~0.4 s here and real scores take seconds; running that per edit is what made
 the original feel heavy, and with `backend=null` gone there is no cheap
 syntax-only mode to fall back on.
@@ -281,14 +283,19 @@ and snippets (D14), and has the compile service (D15): `src/compile/` plus
 (disposed in `deactivate()`) and the one `CompileReporter`, and registers two
 commands: `lily.compile` (active editor or a `Uri` argument; saves a dirty
 document first; resolves with the `CompileResult`, or `undefined` when nothing
-ran) and `lily.showOutput`. There are no menus, keybindings or save listeners
-yet. **Every compile must go through the reporter**, whatever triggers it:
+ran) and `lily.showOutput`. `lily.preview.openToSide` opens the preview (D17),
+and the one save listener refreshes open previews (D18). There are no menus or
+keybindings yet. **Every compile must go through `compileRoot(rootFile)` in
+`extension.ts`**, whatever triggers it: it tells `AutoPreview` that the root is
+being compiled, runs the service inside the reporter and hands the run to the
+root's preview:
 
 ```ts
-const result = await reporter.run(rootFile, () =>
-  service.compile({ rootFile, ...getCompileSettings(uri) }),
+autoPreview.compileStarted(rootFile)
+const run = reporter.run(rootFile, () =>
+  compiler.compile({ rootFile, ...getCompileSettings(vscode.Uri.file(rootFile)) }),
 )
-if (result && !result.cancelled) { /* render result.pages */ }
+await previews.get(rootFile)?.follow(run)
 ```
 
 ```
@@ -311,7 +318,7 @@ Where each piece of upcoming work should look first:
 | Grammar and snippets (done) | D2 — **do not copy** from the CC BY-NC grammar; D14 for scopes, modes, snapshot workflow |
 | Compile service (done) | §3.3, D3, D5, D15; keep `src/compile/**` free of `vscode` |
 | Diagnostics (done) | §3.5 (stderr rows), D6, D16 |
-| Preview panel, refresh on save | §3.4, §3.6, D1, D4, D10, D17 |
+| Preview panel, refresh on save (done) | §3.4, §3.6, D1, D4, D10, D17, D18 |
 | Score ↔ source sync | §3.5 (SVG link row), D7 |
 | IntelliSense data | D8 (includes the verified Scheme recipe) |
 | CLI / MCP for agents | §3.1 `CompileResult`, D11 |

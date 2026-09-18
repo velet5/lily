@@ -95,6 +95,20 @@
           "default": "theme",
           "scope": "window",
           "description": "Colours of the score preview."
+        },
+        "lily.preview.refreshOnSave": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "markdownDescription": "Recompile and refresh an open preview when its file, or a file it reaches through `\\include`, is saved. When off, use **LilyPond: Compile**."
+        },
+        "lily.preview.refreshDelay": {
+          "type": "number",
+          "default": 300,
+          "minimum": 0,
+          "maximum": 5000,
+          "scope": "window",
+          "markdownDescription": "Milliseconds to wait after a save before recompiling for `#lily.preview.refreshOnSave#`. Saves that follow within the delay, such as **Save All**, lead to one compile."
         }
       }
     }

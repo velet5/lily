@@ -1,6 +1,6 @@
 import * as assert from 'node:assert'
 import * as vscode from 'vscode'
-import { getCompileSettings, getPreviewSettings } from '../src/config'
+import { getAutoPreviewSettings, getCompileSettings, getPreviewSettings } from '../src/config'
 
 suite('compile settings', () => {
   const config = () => vscode.workspace.getConfiguration('lily')
@@ -11,6 +11,8 @@ suite('compile settings', () => {
     await config().update('lilypond.path', undefined, target)
     await config().update('compile.extraArgs', undefined, target)
     await config().update('preview.colors', undefined, target)
+    await config().update('preview.refreshOnSave', undefined, target)
+    await config().update('preview.refreshDelay', undefined, target)
   })
 
   test('defaults search PATH and add no arguments', () => {
@@ -30,5 +32,14 @@ suite('compile settings', () => {
     assert.deepStrictEqual(getPreviewSettings(), { colors: 'theme' })
     await config().update('preview.colors', 'paper', target)
     assert.deepStrictEqual(getPreviewSettings(), { colors: 'paper' })
+  })
+
+  test('the preview refreshes on save unless told otherwise', async () => {
+    assert.deepStrictEqual(getAutoPreviewSettings(), { enabled: true, delayMs: 300 })
+    await config().update('preview.refreshOnSave', false, target)
+    await config().update('preview.refreshDelay', 60000, target)
+    assert.deepStrictEqual(getAutoPreviewSettings(), { enabled: false, delayMs: 5000 })
+    await config().update('preview.refreshDelay', -1, target)
+    assert.strictEqual(getAutoPreviewSettings().delayMs, 0)
   })
 })

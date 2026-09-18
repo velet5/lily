@@ -1,4 +1,5 @@
 import * as vscode from 'vscode'
+import type { AutoPreviewSettings } from './preview/autoPreview'
 import type { PreviewColors } from './preview/panel'
 
 // Typed access to the `lily.*` settings contributed in package.json. Values are
@@ -32,4 +33,20 @@ export interface PreviewSettings {
 export function getPreviewSettings(): PreviewSettings {
   const colors = vscode.workspace.getConfiguration('lily').get<unknown>('preview.colors')
   return { colors: colors === 'paper' ? 'paper' : 'theme' }
+}
+
+/** Upper bound of `lily.preview.refreshDelay`; a longer wait reads as "broken". */
+const MAX_REFRESH_DELAY_MS = 5000
+
+/** `lily.preview.refreshOnSave` and `lily.preview.refreshDelay`. */
+export function getAutoPreviewSettings(): AutoPreviewSettings {
+  const config = vscode.workspace.getConfiguration('lily')
+  const delay = config.get<unknown>('preview.refreshDelay')
+  return {
+    enabled: config.get<unknown>('preview.refreshOnSave') !== false,
+    delayMs:
+      typeof delay === 'number' && Number.isFinite(delay)
+        ? Math.min(Math.max(delay, 0), MAX_REFRESH_DELAY_MS)
+        : 300,
+  }
 }

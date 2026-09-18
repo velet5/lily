@@ -284,6 +284,11 @@ export class PreviewManager {
     return this.panels.get(panelKey(rootFile))
   }
 
+  /** Root files of the open previews. */
+  roots(): string[] {
+    return [...this.panels.values()].map((preview) => preview.rootFile)
+  }
+
   setColors(colors: PreviewColors): void {
     for (const preview of this.panels.values()) preview.setColors(colors)
   }
