@@ -834,6 +834,80 @@ into the compile and stderr modules.
 
 ---
 
+## D22 — Headless checker conventions
+
+**Status:** accepted · **Refines:** D5, D11, D15, D16 · **Addresses:** G12
+
+- **Files.** `tools/lily-check/` (ARCHITECTURE §3.2 first put it in `src/`):
+  `check.ts` turns one compile into a `CheckReport`, `cli.ts` parses arguments and
+  prints, `mcp.ts` serves, `main.ts` is the three-line entry, kept apart so that
+  tests can import the CLI without running it. One bundle,
+  `dist/lily-check.js`, with `compile` and `mcp` as subcommands; `bin` in
+  package.json names it. No `vscode` import anywhere under `tools/`.
+- **One report for both surfaces.** `CheckReport` is `CompileResult` without the
+  raw streams plus `parseStderr`'s diagnostics (the same one-line call the editor
+  makes, D16), `errorCount` and `warningCount`. `ok` is exit code 0. When
+  lilypond never ran, `error.code` is `file-not-found`, `lilypond-not-found` or
+  `failed`, and the report keeps its shape with empty lists. `check()` never
+  rejects. Raw `stderr` is included only for a failed run with no parsed error
+  (a crash, a Guile backtrace), where it is all there is.
+- **`source` and `token`.** Each diagnostic with a column also carries its source
+  line and the token `diagnosticSpan` finds there. `line` and `column` stay as
+  lilypond prints them (D11), but the column counts tab stops and code points, so
+  an agent indexing the line with it lands in the wrong place [verified on
+  `broken.ly`: column 24 behind a tab]. Column-less messages get neither: a bare
+  message sits at line 1 of the root, which it says nothing about.
+- **Pages outlive the process, in one place.** Supersedes the note in D15 that a
+  headless caller simply does not `dispose()`: an agent compiles dozens of times,
+  and each run would leave a directory. Pages and MIDI are copied to
+  `<tmp>/lily-check/<base>-<sha1 of the root path, 8 hex>/`, which is emptied
+  first, and the run's own directory is released. `--out-dir` / `outDir` names
+  another place; that one is only written into, never emptied, since the caller
+  may have named a directory with other things in it. Nothing goes next to the
+  source (D5).
+- **CLI.** `lily-check compile <file> [--json] [--out-dir d] [-I d]… [--lilypond
+  p] [-- lilypond args]`. `-I` is resolved against the caller's directory,
+  because lilypond runs in the score's (D15). `$LILYPOND_PATH` stands in for
+  `lily.lilypond.path`. With `--json`, stdout is exactly one JSON document,
+  also when lilypond never ran; usage errors go to stderr. Exit codes: 0
+  compiled, 1 lilypond reported errors, 2 lilypond did not run or bad usage.
+  Without `--json` the diagnostics are printed the way lilypond prints them,
+  paths relative to the working directory, then a verdict line and the pages.
+- **MCP server.** Hand-written JSON-RPC over newline-delimited stdio:
+  `initialize`, `ping`, `tools/list`, `tools/call`, `notifications/cancelled`.
+  The SDK was rejected: it would be the project's only runtime dependency, for
+  five methods. A known protocol version is echoed, otherwise the newest of
+  2025-11-25, 2025-06-18, 2025-03-26, 2024-11-05 is offered. One tool,
+  `lilypond_compile` (`file`, `extraArgs?`, `outDir?`), whose result is the
+  report as text and as `structuredContent`. `isError` is set only when lilypond
+  never ran or the arguments are wrong: compile errors are the tool's product,
+  not its failure. An unknown tool is a protocol error (−32602), as the
+  specification asks. Calls run concurrently so that `ping` and cancellation get
+  through; a cancelled call kills its compile and, per the specification, gets
+  no response, while a call superseded by a newer one for the same file (D15)
+  gets a `cancelled: true` report. At end of input, calls still running are
+  answered before the server stops, so requests can be piped in.
+- **AGENTS.md.** The score loop comes first and stands alone, so it can be copied
+  into a score repository: compile the root, fix the first error, recompile.
+  It documents `codex mcp add`; the syntax was read in the Codex sources (0.155
+  is installed here) but the server was **not** registered or driven from a
+  Codex session, since that means changing the user's `~/.codex/config.toml`.
+  A project-scoped `.codex/config.toml` was tried and dropped: `codex mcp list`
+  does not show project servers, so it could not be checked.
+- **Verified** with lilypond 2.26.0: both fixtures through the built bundle
+  (exit 0 and 1), a score in a directory with a space using `-I`, a missing file,
+  a wrong `--lilypond`, the MCP handshake and a tool call piped into
+  `lily-check mcp`, and a cancelled half-minute compile that stops within a
+  second. Windows was not tried.
+- **Not done here.** No PDF/MIDI export from the CLI (`CompileService.export`
+  and its `targetDir` are ready for it), no PNG for agents that can look at
+  images, no reading of `lily.*` from `.vscode/settings.json` (pass `-I` and
+  `--lilypond`), no lookup tool over `data/completions.json`. Step 12's
+  `.vscodeignore` must keep `dist/lily-check.js` if the checker is to ship inside
+  the extension; its source map need not.
+
+---
+
 ## Out of scope
 
 MIDI keyboard input, MIDI playback, and `python-ly` formatting. Revisit only

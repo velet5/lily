@@ -1,4 +1,5 @@
-// Bundles the extension into dist/extension.js (DECISIONS D12).
+// Bundles the extension into dist/extension.js (DECISIONS D12) and the headless
+// checker into dist/lily-check.js (D22).
 //
 //   node esbuild.mjs                one-off development build
 //   node esbuild.mjs --watch        rebuild on change
@@ -29,7 +30,15 @@ const shared = {
 /** @type {import('esbuild').BuildOptions[]} */
 const builds = unit
   ? []
-  : [{ ...shared, entryPoints: ['src/extension.ts'], outfile: 'dist/extension.js' }]
+  : [
+      { ...shared, entryPoints: ['src/extension.ts'], outfile: 'dist/extension.js' },
+      {
+        ...shared,
+        entryPoints: ['tools/lily-check/main.ts'],
+        outfile: 'dist/lily-check.js',
+        banner: { js: '#!/usr/bin/env node' },
+      },
+    ]
 
 if (tests) {
   // Only top-level test/*.test.ts files run inside the extension host.

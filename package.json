@@ -19,6 +19,9 @@
     "score"
   ],
   "main": "./dist/extension.js",
+  "bin": {
+    "lily-check": "./dist/lily-check.js"
+  },
   "contributes": {
     "languages": [
       {
@@ -344,6 +347,7 @@
     "package": "node esbuild.mjs --production",
     "check-types": "tsc --noEmit",
     "gen:completions": "node scripts/gen-completions.mjs",
+    "lily-check": "node dist/lily-check.js",
     "test:grammar": "vscode-tmgrammar-snap \"test/grammar/*.ly\"",
     "test:grammar:update": "vscode-tmgrammar-snap --updateSnapshot \"test/grammar/*.ly\"",
     "test:unit": "node esbuild.mjs --unit && node --test \"out/unit/**/*.test.js\"",

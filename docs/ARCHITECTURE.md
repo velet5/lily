@@ -171,17 +171,21 @@ src/
     completion.ts       what to offer after `\`, `\new`, `\override`, `\set` (no vscode)
     hover.ts            hover lookup and the Markdown both providers show (no vscode)
     provider.ts         the two VS Code providers
-  cli.ts                headless entry (step 11)
-  mcp.ts                minimal MCP server (step 11)
 media/                  preview.js + preview.css for the webview (no framework, no build)
 syntaxes/               lilypond.tmLanguage.json (authored here)
 snippets/
 data/                   completions.json, generated and committed (D21)
 scripts/                gen-completions.mjs: data extraction from the installed lilypond
+tools/lily-check/       headless checker for agents, bundled to dist/lily-check.js (D22, no vscode)
+  check.ts              one compile → CheckReport: diagnostics with source and token, page paths
+  cli.ts                `lily-check compile <file> --json`, exit codes, text report
+  mcp.ts                minimal MCP server on stdio, one tool: lilypond_compile
+  main.ts               entry
+AGENTS.md               the compile-and-fix loop for Codex, then repository notes
 ```
 
-Rule: nothing under `src/compile/`, nor `src/diagnostics/parse.ts`, may import `vscode`. That is what lets the
-CLI and MCP server (step 11) reuse the exact code path the editor uses, and
+Rule: nothing under `src/compile/` or `tools/`, nor `src/diagnostics/parse.ts`, may import `vscode`. That is what lets the
+CLI and MCP server reuse the exact code path the editor uses, and
 lets it be unit-tested without an extension host.
 
 ### 3.3 Compile invocation
@@ -335,7 +339,7 @@ Where each piece of upcoming work should look first:
 | Score ↔ source sync (done) | §3.5 (SVG link row), D7, D19 |
 | Toolbar, commands, menus, export (done) | D5, D20 |
 | IntelliSense data, completion, hover (done) | D8 (the verified Scheme recipe), D21 |
-| CLI / MCP for agents | §3.1 `CompileResult`, D11 |
+| CLI / MCP for agents (done) | §3.1 `CompileResult`, D11, D22, `AGENTS.md` |
 
 Appendix A is reproducible: each row is a one-line `lilypond` invocation on a
 two- or three-line input, and should be re-run when the minimum supported
