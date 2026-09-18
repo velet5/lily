@@ -33,7 +33,9 @@ tested against LilyPond 2.22.
 
 - `extension.ts` — `activate()` checks the binary with `command-exists`; **if
   it is missing it shows an error and returns**, so no command is registered.
-  Otherwise it registers 14 commands, reads settings once, and wires listeners.
+  Otherwise it registers 14 commands and wires listeners. The two feature
+  gates (`compileOnSave`, `intellisense.enabled`) are read once here, so
+  toggling them needs a window reload; other settings are re-read per call.
 - `lilypond.ts` — the *compile* path. `compile()` spawns
   `lilypond --loglevel=WARNING <extra args> <file>` with `cwd` set to the
   file's directory, so PDF/MIDI land **next to the source**. One module-level
@@ -95,7 +97,7 @@ changed.
 | G7 | "IntelliSense" is a flat snippet list frozen at v2.22: no context (`\new` vs `\override`), no hover, 1415 entries including `!` and `%`. | Scraped once from HTML docs. | Data generated from the *installed* LilyPond; context-aware providers. (D8) |
 | G8 | Five extensions to install; the grammar and the core are **CC BY-NC**, which blocks reuse. | Historical split. | One extension, independently authored grammar, permissive license. (D2) |
 | G9 | No editor-title buttons, menus or keybindings; the UI is status-bar text and the command palette. Forward sync is palette-only. | — | Editor-title actions, webview toolbar, cursor-driven highlight. (D4, D7) |
-| G10 | Missing binary ⇒ `activate()` returns early, so every command fails with "command not found". Settings are read once ("Reload required"). | — | Always register commands; resolve binary lazily; react to `onDidChangeConfiguration`. (D9) |
+| G10 | Missing binary ⇒ `activate()` returns early, so every command fails with "command not found". The on-save and lint toggles are read once at activation ("Reload required"). | — | Always register commands; resolve binary lazily; react to `onDidChangeConfiguration`. (D9) |
 | G11 | Root file must be configured by hand per workspace. | — | Infer the root from `\include` relationships, setting as override. (D10) |
 | G12 | No way to drive it headlessly; an agent cannot compile and read errors. | Logic is tied to `vscode` APIs and module-level state. | Compile core has no `vscode` import; CLI + MCP wrap it. (D11) |
 
@@ -242,6 +244,28 @@ opening the preview. Never a keystroke. A full compile of a trivial score costs
 ~0.4 s here and real scores take seconds; running that per edit is what made
 the original feel heavy, and with `backend=null` gone there is no cheap
 syntax-only mode to fall back on.
+
+## 4. Handoff to implementation
+
+Repository state after this brief: git is initialised on `main` and contains
+only `docs/`. There is no `package.json`, `.gitignore` or source yet.
+
+Where each piece of upcoming work should look first:
+
+| Work | Read |
+| --- | --- |
+| Extension skeleton, language id, bundling | §3.2, D2, D9, D12 (name/prefix still *proposed*) |
+| Grammar and snippets | D2 — **do not copy** from the CC BY-NC grammar |
+| Compile service | §3.3, D3, D5; keep `src/compile/**` free of `vscode` |
+| Diagnostics | §3.5 (stderr rows), D6 |
+| Preview panel, refresh on save | §3.4, §3.6, D1, D4, D10 |
+| Score ↔ source sync | §3.5 (SVG link row), D7 |
+| IntelliSense data | D8 (includes the verified Scheme recipe) |
+| CLI / MCP for agents | §3.1 `CompileResult`, D11 |
+
+Appendix A is reproducible: each row is a one-line `lilypond` invocation on a
+two- or three-line input, and should be re-run when the minimum supported
+LilyPond version changes.
 
 ## Appendix A: verified LilyPond behaviour
 
