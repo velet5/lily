@@ -752,6 +752,10 @@ into the compile and stderr modules.
   `test/preview/panel.test.ts` the protocol, `target()` and the pager
   arithmetic. The toolbar's look was checked once in headless Chrome at 600 px
   and 340 px in both themes; the harness was not kept.
+- **Verified against the VS Code 1.138 bundle.** `activeWebviewPanelId` holds
+  the viewType as the extension gave it (`lily.preview`), not the prefixed one
+  a tab's `TabInputWebview.viewType` shows; and neither the workbench nor a
+  built-in extension binds `Ctrl/Cmd+K B`.
 - **Not verified.** That a preview's title bar really passes a
   `webview-panel:` URI was read in the VS Code sources, not observed; without an
   argument the active preview is used anyway. Menus and keybindings cannot be
