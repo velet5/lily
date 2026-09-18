@@ -33,6 +33,19 @@
         ],
         "configuration": "./language-configuration.json"
       }
+    ],
+    "grammars": [
+      {
+        "language": "lilypond",
+        "scopeName": "source.lilypond",
+        "path": "./syntaxes/lilypond.tmLanguage.json"
+      }
+    ],
+    "snippets": [
+      {
+        "language": "lilypond",
+        "path": "./snippets/lilypond.json"
+      }
     ]
   },
   "scripts": {
@@ -40,7 +53,9 @@
     "watch": "node esbuild.mjs --watch",
     "package": "node esbuild.mjs --production",
     "check-types": "tsc --noEmit",
-    "pretest": "npm run check-types && node esbuild.mjs --tests",
+    "test:grammar": "vscode-tmgrammar-snap \"test/grammar/*.ly\"",
+    "test:grammar:update": "vscode-tmgrammar-snap --updateSnapshot \"test/grammar/*.ly\"",
+    "pretest": "npm run check-types && node esbuild.mjs --tests && npm run test:grammar",
     "test": "vscode-test"
   },
   "devDependencies": {
@@ -50,6 +65,7 @@
     "@vscode/test-cli": "^0.0.15",
     "@vscode/test-electron": "^3.1.0",
     "esbuild": "^0.28.2",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "vscode-tmgrammar-test": "^0.1.3"
   }
 }

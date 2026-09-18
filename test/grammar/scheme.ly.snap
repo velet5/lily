@@ -1,0 +1,384 @@
+>% Grammar snapshot input: embedded Scheme. Must stay compilable.
+#^ source.lilypond comment.line.percentage.lilypond punctuation.definition.comment.lilypond
+# ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ source.lilypond comment.line.percentage.lilypond
+>\version "2.24.0"
+#^^^^^^^^ source.lilypond keyword.control.directive.lilypond
+#        ^ source.lilypond
+#         ^ source.lilypond string.quoted.double.lilypond punctuation.definition.string.begin.lilypond
+#          ^^^^^^ source.lilypond string.quoted.double.lilypond
+#                ^ source.lilypond string.quoted.double.lilypond punctuation.definition.string.end.lilypond
+>
+>#(set-global-staff-size 18)
+#^ source.lilypond meta.embedded.scheme.lilypond punctuation.definition.scheme.lilypond
+# ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.begin.scheme
+#  ^^^^^^^^^^^^^^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme entity.name.function.scheme
+#                       ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#                        ^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme constant.numeric.scheme
+#                          ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.end.scheme
+>#(define my-number -1.5)
+#^ source.lilypond meta.embedded.scheme.lilypond punctuation.definition.scheme.lilypond
+# ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.begin.scheme
+#  ^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme keyword.control.scheme
+#        ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#         ^^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme variable.other.scheme
+#                  ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#                   ^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme constant.numeric.scheme
+#                       ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.end.scheme
+>#(define (double x) ; a Scheme comment, not a LilyPond one
+#^ source.lilypond meta.embedded.scheme.lilypond punctuation.definition.scheme.lilypond
+# ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.begin.scheme
+#  ^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme keyword.control.scheme
+#        ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#         ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme punctuation.section.parens.begin.scheme
+#          ^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme entity.name.function.scheme
+#                ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme
+#                 ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme variable.other.scheme
+#                  ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme punctuation.section.parens.end.scheme
+#                   ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme comment.line.semicolon.scheme
+>   #! Guile block comment with (unbalanced "stuff
+#^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#   ^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme comment.block.scheme
+#     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme comment.block.scheme
+>   !#
+#^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme comment.block.scheme
+#   ^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme comment.block.scheme
+>   (* 2 x))
+#^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#   ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme punctuation.section.parens.begin.scheme
+#    ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme entity.name.function.scheme
+#     ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme
+#      ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme constant.numeric.scheme
+#       ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme
+#        ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme variable.other.scheme
+#         ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme punctuation.section.parens.end.scheme
+#          ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.end.scheme
+>
+>#(define-public settings
+#^ source.lilypond meta.embedded.scheme.lilypond punctuation.definition.scheme.lilypond
+# ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.begin.scheme
+#  ^^^^^^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme keyword.control.scheme
+#               ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#                ^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme variable.other.scheme
+>   `((name . "quoted \"data\"") (size . ,(double 7)) (flag . #t) (hex . #x1F)))
+#^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#   ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme keyword.operator.quote.scheme
+#    ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme punctuation.section.parens.begin.scheme
+#     ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme punctuation.section.parens.begin.scheme
+#      ^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme variable.other.scheme
+#          ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme
+#           ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme punctuation.separator.pair.scheme
+#            ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme
+#             ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme string.quoted.double.scheme punctuation.definition.string.begin.scheme
+#              ^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme string.quoted.double.scheme
+#                     ^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme string.quoted.double.scheme constant.character.escape.scheme
+#                       ^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme string.quoted.double.scheme
+#                           ^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme string.quoted.double.scheme constant.character.escape.scheme
+#                             ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme string.quoted.double.scheme punctuation.definition.string.end.scheme
+#                              ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme punctuation.section.parens.end.scheme
+#                               ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme
+#                                ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme punctuation.section.parens.begin.scheme
+#                                 ^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme variable.other.scheme
+#                                     ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme
+#                                      ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme punctuation.separator.pair.scheme
+#                                       ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme
+#                                        ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme meta.list.scheme keyword.operator.unquote.scheme
+#                                         ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme meta.list.scheme punctuation.section.parens.begin.scheme
+#                                          ^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme meta.list.scheme entity.name.function.scheme
+#                                                ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme meta.list.scheme
+#                                                 ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme meta.list.scheme constant.numeric.scheme
+#                                                  ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme meta.list.scheme punctuation.section.parens.end.scheme
+#                                                   ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme punctuation.section.parens.end.scheme
+#                                                    ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme
+#                                                     ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme punctuation.section.parens.begin.scheme
+#                                                      ^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme variable.other.scheme
+#                                                          ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme
+#                                                           ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme punctuation.separator.pair.scheme
+#                                                            ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme
+#                                                             ^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme constant.language.boolean.scheme
+#                                                               ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme punctuation.section.parens.end.scheme
+#                                                                ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme
+#                                                                 ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme punctuation.section.parens.begin.scheme
+#                                                                  ^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme variable.other.scheme
+#                                                                     ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme
+#                                                                      ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme punctuation.separator.pair.scheme
+#                                                                       ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme
+#                                                                        ^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme constant.numeric.scheme
+#                                                                            ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme meta.list.quoted.scheme punctuation.section.parens.end.scheme
+#                                                                             ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.quoted.scheme punctuation.section.parens.end.scheme
+#                                                                              ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.end.scheme
+>
+>accent =
+#^^^^^^ source.lilypond entity.name.function.definition.lilypond
+#      ^ source.lilypond
+#       ^ source.lilypond keyword.operator.assignment.lilypond
+>#(define-music-function (music) (ly:music?)
+#^ source.lilypond meta.embedded.scheme.lilypond punctuation.definition.scheme.lilypond
+# ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.begin.scheme
+#  ^^^^^^^^^^^^^^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme keyword.control.scheme
+#                       ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#                        ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme punctuation.section.parens.begin.scheme
+#                         ^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme entity.name.function.scheme
+#                              ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme punctuation.section.parens.end.scheme
+#                               ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#                                ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme punctuation.section.parens.begin.scheme
+#                                 ^^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme support.function.lilypond.scheme
+#                                          ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme punctuation.section.parens.end.scheme
+>   "Docstring with a ) paren."
+#^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#   ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme string.quoted.double.scheme punctuation.definition.string.begin.scheme
+#    ^^^^^^^^^^^^^^^^^^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme string.quoted.double.scheme
+#                             ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme string.quoted.double.scheme punctuation.definition.string.end.scheme
+>   (let* ((ch #\a)
+#^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#   ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme punctuation.section.parens.begin.scheme
+#    ^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme keyword.control.scheme
+#        ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme
+#         ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme punctuation.section.parens.begin.scheme
+#          ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.list.scheme punctuation.section.parens.begin.scheme
+#           ^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.list.scheme entity.name.function.scheme
+#             ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.list.scheme
+#              ^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.list.scheme constant.character.scheme
+#                 ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.list.scheme punctuation.section.parens.end.scheme
+>          (kw #:key))
+#^^^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme
+#          ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.list.scheme punctuation.section.parens.begin.scheme
+#           ^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.list.scheme entity.name.function.scheme
+#             ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.list.scheme
+#              ^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.list.scheme constant.other.keyword.scheme
+#                   ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.list.scheme punctuation.section.parens.end.scheme
+#                    ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme punctuation.section.parens.end.scheme
+>     (if (ly:music? music)
+#^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme
+#     ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme punctuation.section.parens.begin.scheme
+#      ^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme keyword.control.scheme
+#        ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme
+#         ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.list.scheme punctuation.section.parens.begin.scheme
+#          ^^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.list.scheme support.function.lilypond.scheme
+#                   ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.list.scheme
+#                    ^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.list.scheme variable.other.scheme
+#                         ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.list.scheme punctuation.section.parens.end.scheme
+>         #{ \override NoteHead.color = #red $music -> \revert NoteHead.color #}
+#^^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme
+#         ^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme punctuation.section.embedded.begin.lilypond
+#           ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme
+#            ^^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme keyword.other.property.lilypond
+#                     ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme
+#                      ^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme support.class.lilypond
+#                              ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme punctuation.accessor.lilypond
+#                               ^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme support.variable.property.lilypond
+#                                    ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme
+#                                     ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme keyword.operator.assignment.lilypond
+#                                      ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme
+#                                       ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme meta.embedded.scheme.lilypond punctuation.definition.scheme.lilypond
+#                                        ^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme meta.embedded.scheme.lilypond variable.other.scheme
+#                                           ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme
+#                                            ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme meta.embedded.scheme.lilypond punctuation.definition.scheme.lilypond
+#                                             ^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme meta.embedded.scheme.lilypond variable.other.scheme
+#                                                  ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme
+#                                                   ^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme keyword.operator.articulation.lilypond
+#                                                     ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme
+#                                                      ^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme keyword.other.property.lilypond
+#                                                             ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme
+#                                                              ^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme support.class.lilypond
+#                                                                      ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme punctuation.accessor.lilypond
+#                                                                       ^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme support.variable.property.lilypond
+#                                                                            ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme
+#                                                                             ^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme meta.embedded.lilypond.scheme punctuation.section.embedded.end.lilypond
+>         music)))
+#^^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme
+#         ^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme variable.other.scheme
+#              ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme meta.list.scheme punctuation.section.parens.end.scheme
+#               ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme punctuation.section.parens.end.scheme
+#                ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.end.scheme
+>
+>\paper {
+#^^^^^^ source.lilypond keyword.control.block.lilypond
+#      ^ source.lilypond
+#       ^ source.lilypond punctuation.section.braces.begin.lilypond
+>  #(set-paper-size "a4")
+#^^ source.lilypond
+#  ^ source.lilypond meta.embedded.scheme.lilypond punctuation.definition.scheme.lilypond
+#   ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.begin.scheme
+#    ^^^^^^^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme entity.name.function.scheme
+#                  ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#                   ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme string.quoted.double.scheme punctuation.definition.string.begin.scheme
+#                    ^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme string.quoted.double.scheme
+#                      ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme string.quoted.double.scheme punctuation.definition.string.end.scheme
+#                       ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.end.scheme
+>  top-margin = #(* 2 5)
+#^^ source.lilypond
+#  ^^^^^^^^^^ source.lilypond entity.name.function.definition.lilypond
+#            ^ source.lilypond
+#             ^ source.lilypond keyword.operator.assignment.lilypond
+#              ^ source.lilypond
+#               ^ source.lilypond meta.embedded.scheme.lilypond punctuation.definition.scheme.lilypond
+#                ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.begin.scheme
+#                 ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme entity.name.function.scheme
+#                  ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#                   ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme constant.numeric.scheme
+#                    ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#                     ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme constant.numeric.scheme
+#                      ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.end.scheme
+>}
+#^ source.lilypond punctuation.section.braces.end.lilypond
+>
+>\score {
+#^^^^^^ source.lilypond keyword.control.block.lilypond
+#      ^ source.lilypond
+#       ^ source.lilypond punctuation.section.braces.begin.lilypond
+>  \new Staff {
+#^^ source.lilypond
+#  ^^^^ source.lilypond keyword.other.context.lilypond
+#      ^ source.lilypond
+#       ^^^^^ source.lilypond support.class.lilypond
+#            ^ source.lilypond
+#             ^ source.lilypond punctuation.section.braces.begin.lilypond
+>    \set Staff.instrumentName = #"Oboe"
+#^^^^ source.lilypond
+#    ^^^^ source.lilypond keyword.other.property.lilypond
+#        ^ source.lilypond
+#         ^^^^^ source.lilypond support.class.lilypond
+#              ^ source.lilypond punctuation.accessor.lilypond
+#               ^^^^^^^^^^^^^^ source.lilypond support.variable.property.lilypond
+#                             ^ source.lilypond
+#                              ^ source.lilypond keyword.operator.assignment.lilypond
+#                               ^ source.lilypond
+#                                ^ source.lilypond meta.embedded.scheme.lilypond punctuation.definition.scheme.lilypond
+#                                 ^ source.lilypond meta.embedded.scheme.lilypond string.quoted.double.scheme punctuation.definition.string.begin.scheme
+#                                  ^^^^ source.lilypond meta.embedded.scheme.lilypond string.quoted.double.scheme
+#                                      ^ source.lilypond meta.embedded.scheme.lilypond string.quoted.double.scheme punctuation.definition.string.end.scheme
+>    \override Staff.TimeSignature.stencil = ##f
+#^^^^ source.lilypond
+#    ^^^^^^^^^ source.lilypond keyword.other.property.lilypond
+#             ^ source.lilypond
+#              ^^^^^ source.lilypond support.class.lilypond
+#                   ^ source.lilypond punctuation.accessor.lilypond
+#                    ^^^^^^^^^^^^^ source.lilypond support.class.lilypond
+#                                 ^ source.lilypond punctuation.accessor.lilypond
+#                                  ^^^^^^^ source.lilypond support.variable.property.lilypond
+#                                         ^ source.lilypond
+#                                          ^ source.lilypond keyword.operator.assignment.lilypond
+#                                           ^ source.lilypond
+#                                            ^ source.lilypond meta.embedded.scheme.lilypond punctuation.definition.scheme.lilypond
+#                                             ^^ source.lilypond meta.embedded.scheme.lilypond constant.language.boolean.scheme
+>    \override Score.BarNumber.break-visibility = #'#(#f #t #t)
+#^^^^ source.lilypond
+#    ^^^^^^^^^ source.lilypond keyword.other.property.lilypond
+#             ^ source.lilypond
+#              ^^^^^ source.lilypond support.class.lilypond
+#                   ^ source.lilypond punctuation.accessor.lilypond
+#                    ^^^^^^^^^ source.lilypond support.class.lilypond
+#                             ^ source.lilypond punctuation.accessor.lilypond
+#                              ^^^^^^^^^^^^^^^^ source.lilypond support.variable.property.lilypond
+#                                              ^ source.lilypond
+#                                               ^ source.lilypond keyword.operator.assignment.lilypond
+#                                                ^ source.lilypond
+#                                                 ^ source.lilypond meta.embedded.scheme.lilypond punctuation.definition.scheme.lilypond
+#                                                  ^ source.lilypond meta.embedded.scheme.lilypond keyword.operator.quote.scheme
+#                                                   ^ source.lilypond meta.embedded.scheme.lilypond punctuation.definition.vector.scheme
+#                                                    ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.begin.scheme
+#                                                     ^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme constant.language.boolean.scheme
+#                                                       ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#                                                        ^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme constant.language.boolean.scheme
+#                                                          ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#                                                           ^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme constant.language.boolean.scheme
+#                                                             ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.end.scheme
+>    \override TextScript.extra-offset = #'(1 . -2.5)
+#^^^^ source.lilypond
+#    ^^^^^^^^^ source.lilypond keyword.other.property.lilypond
+#             ^ source.lilypond
+#              ^^^^^^^^^^ source.lilypond support.class.lilypond
+#                        ^ source.lilypond punctuation.accessor.lilypond
+#                         ^^^^^^^^^^^^ source.lilypond support.variable.property.lilypond
+#                                     ^ source.lilypond
+#                                      ^ source.lilypond keyword.operator.assignment.lilypond
+#                                       ^ source.lilypond
+#                                        ^ source.lilypond meta.embedded.scheme.lilypond punctuation.definition.scheme.lilypond
+#                                         ^ source.lilypond meta.embedded.scheme.lilypond meta.list.quoted.scheme keyword.operator.quote.scheme
+#                                          ^ source.lilypond meta.embedded.scheme.lilypond meta.list.quoted.scheme punctuation.section.parens.begin.scheme
+#                                           ^ source.lilypond meta.embedded.scheme.lilypond meta.list.quoted.scheme constant.numeric.scheme
+#                                            ^ source.lilypond meta.embedded.scheme.lilypond meta.list.quoted.scheme
+#                                             ^ source.lilypond meta.embedded.scheme.lilypond meta.list.quoted.scheme punctuation.separator.pair.scheme
+#                                              ^ source.lilypond meta.embedded.scheme.lilypond meta.list.quoted.scheme
+#                                               ^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.quoted.scheme constant.numeric.scheme
+#                                                   ^ source.lilypond meta.embedded.scheme.lilypond meta.list.quoted.scheme punctuation.section.parens.end.scheme
+>    \once \override NoteHead.color = #(rgb-color 1 0 0)
+#^^^^ source.lilypond
+#    ^^^^^ source.lilypond keyword.other.property.lilypond
+#         ^ source.lilypond
+#          ^^^^^^^^^ source.lilypond keyword.other.property.lilypond
+#                   ^ source.lilypond
+#                    ^^^^^^^^ source.lilypond support.class.lilypond
+#                            ^ source.lilypond punctuation.accessor.lilypond
+#                             ^^^^^ source.lilypond support.variable.property.lilypond
+#                                  ^ source.lilypond
+#                                   ^ source.lilypond keyword.operator.assignment.lilypond
+#                                    ^ source.lilypond
+#                                     ^ source.lilypond meta.embedded.scheme.lilypond punctuation.definition.scheme.lilypond
+#                                      ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.begin.scheme
+#                                       ^^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme entity.name.function.scheme
+#                                                ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#                                                 ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme constant.numeric.scheme
+#                                                  ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#                                                   ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme constant.numeric.scheme
+#                                                    ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#                                                     ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme constant.numeric.scheme
+#                                                      ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.end.scheme
+>    \tweak font-size #-2 c'4 \accent d'4 $(make-music 'SkipEvent 'duration (ly:make-duration 2)) c'4
+#^^^^ source.lilypond
+#    ^^^^^^ source.lilypond keyword.other.property.lilypond
+#          ^^^^^^^^^^^ source.lilypond
+#                     ^ source.lilypond meta.embedded.scheme.lilypond punctuation.definition.scheme.lilypond
+#                      ^^ source.lilypond meta.embedded.scheme.lilypond constant.numeric.scheme
+#                        ^ source.lilypond
+#                         ^ source.lilypond variable.other.pitch.lilypond
+#                          ^ source.lilypond keyword.operator.octave.lilypond
+#                           ^ source.lilypond constant.numeric.duration.lilypond
+#                            ^ source.lilypond
+#                             ^^^^^^^ source.lilypond support.function.command.lilypond
+#                                    ^ source.lilypond
+#                                     ^ source.lilypond variable.other.pitch.lilypond
+#                                      ^ source.lilypond keyword.operator.octave.lilypond
+#                                       ^ source.lilypond constant.numeric.duration.lilypond
+#                                        ^ source.lilypond
+#                                         ^ source.lilypond meta.embedded.scheme.lilypond punctuation.definition.scheme.lilypond
+#                                          ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.begin.scheme
+#                                           ^^^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme entity.name.function.scheme
+#                                                     ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#                                                      ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme keyword.operator.quote.scheme
+#                                                       ^^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme variable.other.scheme
+#                                                                ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#                                                                 ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme keyword.operator.quote.scheme
+#                                                                  ^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme variable.other.scheme
+#                                                                          ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#                                                                           ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme punctuation.section.parens.begin.scheme
+#                                                                            ^^^^^^^^^^^^^^^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme support.function.lilypond.scheme
+#                                                                                            ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme
+#                                                                                             ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme constant.numeric.scheme
+#                                                                                              ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme meta.list.scheme punctuation.section.parens.end.scheme
+#                                                                                               ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.end.scheme
+#                                                                                                ^ source.lilypond
+#                                                                                                 ^ source.lilypond variable.other.pitch.lilypond
+#                                                                                                  ^ source.lilypond keyword.operator.octave.lilypond
+#                                                                                                   ^ source.lilypond constant.numeric.duration.lilypond
+>    c'4 #(if #f #f)
+#^^^^ source.lilypond
+#    ^ source.lilypond variable.other.pitch.lilypond
+#     ^ source.lilypond keyword.operator.octave.lilypond
+#      ^ source.lilypond constant.numeric.duration.lilypond
+#       ^ source.lilypond
+#        ^ source.lilypond meta.embedded.scheme.lilypond punctuation.definition.scheme.lilypond
+#         ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.begin.scheme
+#          ^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme keyword.control.scheme
+#            ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#             ^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme constant.language.boolean.scheme
+#               ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme
+#                ^^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme constant.language.boolean.scheme
+#                  ^ source.lilypond meta.embedded.scheme.lilypond meta.list.scheme punctuation.section.parens.end.scheme
+>  }
+#^^ source.lilypond
+#  ^ source.lilypond punctuation.section.braces.end.lilypond
+>}
+#^ source.lilypond punctuation.section.braces.end.lilypond
+>

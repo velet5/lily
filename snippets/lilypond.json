@@ -1,0 +1,153 @@
+{
+  "Version statement": {
+    "prefix": "\\version",
+    "body": "\\version \"${1:2.24.0}\"",
+    "description": "LilyPond version this file was written for"
+  },
+  "Include file": {
+    "prefix": "\\include",
+    "body": "\\include \"${1:file.ily}\"",
+    "description": "Include another LilyPond file"
+  },
+  "Note name language": {
+    "prefix": "\\language",
+    "body": "\\language \"${1|nederlands,english,deutsch,italiano,français,español|}\"",
+    "description": "Select the language of note names"
+  },
+  "Header block": {
+    "prefix": "\\header",
+    "body": ["\\header {", "  title = \"${1:Title}\"", "  composer = \"${2:Composer}\"", "  tagline = ##f", "}"],
+    "description": "Title, composer and other header fields"
+  },
+  "Paper block": {
+    "prefix": "\\paper",
+    "body": ["\\paper {", "  #(set-paper-size \"${1|a4,letter,a5,a3|}\")", "  indent = ${2:0}\\mm", "  $0", "}"],
+    "description": "Page size and margins"
+  },
+  "Score block": {
+    "prefix": "\\score",
+    "body": ["\\score {", "  \\new Staff { $0 }", "  \\layout { }", "  \\midi { }", "}"],
+    "description": "Score with layout and MIDI output"
+  },
+  "Layout block": {
+    "prefix": "\\layout",
+    "body": ["\\layout {", "  \\context {", "    \\\\${1:Score}", "    $0", "  }", "}"],
+    "description": "Layout block with a context modification"
+  },
+  "Relative music": {
+    "prefix": "\\relative",
+    "body": ["\\relative ${1:c'} {", "  $0", "}"],
+    "description": "Music in relative octave entry"
+  },
+  "Music variable": {
+    "prefix": "var",
+    "body": ["${1:melody} = \\relative ${2:c'} {", "  \\clef ${3|treble,bass,alto,tenor|}", "  \\key ${4:c} \\\\${5|major,minor|}", "  \\time ${6:4/4}", "  $0", "}"],
+    "description": "Variable holding relative music with clef, key and time"
+  },
+  "New staff": {
+    "prefix": "\\new Staff",
+    "body": ["\\new Staff \\with {", "  instrumentName = \"${1:Instrument}\"", "} {", "  $0", "}"],
+    "description": "Staff with an instrument name"
+  },
+  "New voice": {
+    "prefix": "\\new Voice",
+    "body": "\\new Voice = \"${1:name}\" { $0 }",
+    "description": "Named voice, for \\lyricsto"
+  },
+  "Piano staff": {
+    "prefix": "\\new PianoStaff",
+    "body": ["\\new PianoStaff <<", "  \\new Staff = \"right\" { \\clef treble ${1:\\\\right} }", "  \\new Staff = \"left\" { \\clef bass ${2:\\\\left} }", ">>"],
+    "description": "Two-staff piano system"
+  },
+  "Two voices": {
+    "prefix": "voices",
+    "body": ["<<", "  { \\voiceOne $1 }", "  \\new Voice { \\voiceTwo $2 }", ">> \\oneVoice"],
+    "description": "Two simultaneous voices on one staff"
+  },
+  "Lyrics for a voice": {
+    "prefix": "\\new Lyrics",
+    "body": ["\\new Lyrics \\lyricsto \"${1:voice}\" {", "  $0", "}"],
+    "description": "Lyrics aligned to a named voice"
+  },
+  "Lyric mode variable": {
+    "prefix": "\\lyricmode",
+    "body": ["\\lyricmode {", "  $0", "}"],
+    "description": "Lyrics entry"
+  },
+  "Chord mode": {
+    "prefix": "\\chordmode",
+    "body": ["\\chordmode {", "  $0", "}"],
+    "description": "Chord entry (c:m7, g:sus4)"
+  },
+  "Repeat with volta": {
+    "prefix": "\\repeat volta",
+    "body": ["\\repeat volta ${1:2} {", "  $2", "}", "\\alternative {", "  { $3 }", "  { $4 }", "}"],
+    "description": "Repeat with first and second endings"
+  },
+  "Repeat unfold": {
+    "prefix": "\\repeat unfold",
+    "body": "\\repeat unfold ${1:2} { $0 }",
+    "description": "Write the music out the given number of times"
+  },
+  "Tuplet": {
+    "prefix": "\\tuplet",
+    "body": "\\tuplet ${1:3/2} { $0 }",
+    "description": "Tuplet, triplet by default"
+  },
+  "Grace notes": {
+    "prefix": "\\grace",
+    "body": "\\\\${1|grace,acciaccatura,appoggiatura|} { $0 }",
+    "description": "Grace note group"
+  },
+  "Tempo": {
+    "prefix": "\\tempo",
+    "body": "\\tempo \"${1:Allegro}\" ${2:4} = ${3:120}",
+    "description": "Tempo text with a metronome mark"
+  },
+  "Markup": {
+    "prefix": "\\markup",
+    "body": "\\markup { $0 }",
+    "description": "Formatted text"
+  },
+  "Override property": {
+    "prefix": "\\override",
+    "body": "\\override ${1:Staff.}${2:NoteHead}.${3:color} = #${4:red}",
+    "description": "Override a layout object property"
+  },
+  "Set context property": {
+    "prefix": "\\set",
+    "body": "\\set ${1:Staff}.${2:instrumentName} = ${3:\"Name\"}",
+    "description": "Set a context property"
+  },
+  "Music function": {
+    "prefix": "define-music-function",
+    "body": ["${1:name} =", "#(define-music-function (${2:music}) (${3:ly:music?})", "   #{", "     $0 \\$${2:music}", "   #})"],
+    "description": "Scheme music function returning LilyPond music"
+  },
+  "Single-staff file": {
+    "prefix": "lily",
+    "body": [
+      "\\version \"${1:2.24.0}\"",
+      "",
+      "\\header {",
+      "  title = \"${2:Title}\"",
+      "  composer = \"${3:Composer}\"",
+      "  tagline = ##f",
+      "}",
+      "",
+      "melody = \\relative c' {",
+      "  \\clef treble",
+      "  \\key ${4:c} \\major",
+      "  \\time ${5:4/4}",
+      "  $0",
+      "}",
+      "",
+      "\\score {",
+      "  \\new Staff \\melody",
+      "  \\layout { }",
+      "  \\midi { }",
+      "}"
+    ],
+    "description": "Complete single-staff file: version, header, melody and score"
+  }
+}

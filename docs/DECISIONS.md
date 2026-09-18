@@ -55,8 +55,8 @@ the installed binary (D8), not lifted from the other grammar.
 extensions contribute the same language id and scope name. VS Code tolerates
 this, but which grammar wins is not something we control (unverified), so the
 README should recommend uninstalling the other one rather than guarding in
-code. Embedded Scheme should delegate to `source.scheme` when available and
-fall back to a small built-in rule set.
+code. Embedded Scheme was first planned to delegate to `source.scheme`; D14
+replaces that with built-in rules.
 
 ---
 
@@ -280,6 +280,55 @@ into the compile and stderr modules.
   auto-closed, because slurs and beams close several notes later. `wordPattern`
   includes the leading backslash, so `\relative` is one word — completion in
   step 10 should replace that whole range.
+
+---
+
+## D14 — Grammar and snippet conventions
+
+**Status:** accepted · **Refines:** D2
+
+- **Provenance.** `syntaxes/lilypond.tmLanguage.json` is written by hand from
+  the LilyPond Notation Reference and checked against LilyPond 2.26; nothing
+  comes from the CC BY-NC grammar. Scope name `source.lilypond`.
+- **Few names, one generic rule.** Only closed, structural sets are listed by
+  name: file directives, block keywords, `\repeat` and its types, context and
+  property keywords, input modes, dynamics, Scheme special forms. Every other
+  `\command` — built-in or user-defined, the grammar cannot tell — is
+  `support.function.command.lilypond`. Telling them apart is the job of the
+  generated data in step 10 (D8), not of longer lists here.
+- **Modes are the only nested rules.** `{ }`, `<< >>`, `< >`, slurs and beams
+  are flat tokens, so an unbalanced bracket never bleeds into the rest of the
+  file. Three constructs do nest, because words inside them must not be read
+  as pitches: lyric blocks (`\lyricmode`, `\lyrics`, `\lyricsto`,
+  `\addlyrics`), `\markup`/`\markuplist`, and Scheme. `\chordmode`,
+  `\drummode` and `\figuremode` have no mode of their own: chord modifiers
+  (`c:m7`) are matched everywhere, drum and figure names stay unscoped.
+- **Scheme is built in.** `#` or `$` introduces exactly one datum; lists nest,
+  quoted lists are data (no call head), unquote returns to code, and
+  `#{ … #}` re-enters the LilyPond rules. We do **not** include
+  `source.scheme` (this replaces the D2 note): VS Code ships no Scheme
+  grammar, so snapshots could not cover that path, a foreign grammar may
+  tokenise `(` without nesting and break datum-end detection, and none of them
+  knows `#{ #}`. No `embeddedLanguages` mapping either, for the same reason.
+- **Known limits.** A binding or parameter list head (`((x 1))`, `(music)`) is
+  scoped as a call. Verified with the binary: `#! … !#` is a comment only
+  inside an s-expression, not at the top level of a `.ly` file.
+- **Snippets.** A snippet that inserts a command uses the command itself as
+  its prefix, backslash included (`\score`, `\new Staff`). `wordPattern`
+  (D13) makes `\sco` one word, so accepting replaces the typed backslash
+  instead of doubling it; a bare `score` prefix would not. Snippets without a
+  leading command use plain words (`lily`, `var`, `voices`). In bodies a
+  literal backslash before `$` is written `\\\\$` in JSON. Step 10's completion
+  provider should not re-offer what these snippets already cover.
+- **Tests.** `npm run test:grammar` (`vscode-tmgrammar-snap`) compares
+  `test/grammar/*.ly` against the `.snap` beside each file; it runs in
+  `pretest`, without an extension host. The inputs must stay compilable
+  (`lilypond test/grammar/basic.ly` is clean) so they document real syntax.
+  After an intended grammar change run `npm run test:grammar:update` and
+  review the `.snap` diff like code. `test/snippets.test.ts` expands every
+  snippet in the extension host. `.vscode-test.mjs` lists `smoke.test.js`
+  first, because its lazy-activation assertion fails once any other test has
+  opened a LilyPond document.
 
 ---
 

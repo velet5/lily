@@ -1,0 +1,387 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "LilyPond",
+  "scopeName": "source.lilypond",
+  "patterns": [{ "include": "#music" }],
+  "repository": {
+    "music": {
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#string" },
+        { "include": "#scheme-lilypond" },
+        { "include": "#scheme" },
+        { "include": "#lyric-mode" },
+        { "include": "#markup" },
+        { "include": "#assignment" },
+        { "include": "#commands" },
+        { "include": "#rest" },
+        { "include": "#note" },
+        { "include": "#chord-modifier" },
+        { "include": "#duration-multiplier" },
+        { "include": "#property-path" },
+        { "include": "#number" },
+        { "include": "#articulation" },
+        { "include": "#punctuation" }
+      ]
+    },
+
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.block.lilypond",
+          "begin": "%\\{",
+          "end": "%\\}",
+          "beginCaptures": { "0": { "name": "punctuation.definition.comment.begin.lilypond" } },
+          "endCaptures": { "0": { "name": "punctuation.definition.comment.end.lilypond" } }
+        },
+        {
+          "name": "comment.line.percentage.lilypond",
+          "begin": "%",
+          "end": "$",
+          "beginCaptures": { "0": { "name": "punctuation.definition.comment.lilypond" } }
+        }
+      ]
+    },
+
+    "string": {
+      "name": "string.quoted.double.lilypond",
+      "begin": "\"",
+      "end": "\"",
+      "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.lilypond" } },
+      "endCaptures": { "0": { "name": "punctuation.definition.string.end.lilypond" } },
+      "patterns": [{ "name": "constant.character.escape.lilypond", "match": "\\\\." }]
+    },
+
+    "assignment": {
+      "comment": "`name =` at the start of a line. `c=''` is an octave check, not an assignment.",
+      "match": "^\\s*([A-Za-z]+(?:[-_][A-Za-z]+)*)\\s*(=)(?![',])",
+      "captures": {
+        "1": { "name": "entity.name.function.definition.lilypond" },
+        "2": { "name": "keyword.operator.assignment.lilypond" }
+      }
+    },
+
+    "commands": {
+      "comment": "Only closed, structural sets are listed by name; every other \\command shares one generic scope (DECISIONS D2, D14).",
+      "patterns": [
+        {
+          "name": "keyword.control.directive.lilypond",
+          "match": "\\\\(?:version|include|language|maininput)(?![A-Za-z]|[-_][A-Za-z])"
+        },
+        {
+          "name": "keyword.control.block.lilypond",
+          "match": "\\\\(?:book|bookpart|score|header|paper|layout|midi|with)(?![A-Za-z]|[-_][A-Za-z])"
+        },
+        {
+          "match": "(\\\\repeat)\\s+(volta|unfold|percent|tremolo|segno)(?![A-Za-z])",
+          "captures": {
+            "1": { "name": "keyword.control.repeat.lilypond" },
+            "2": { "name": "constant.language.repeat-type.lilypond" }
+          }
+        },
+        {
+          "name": "keyword.control.repeat.lilypond",
+          "match": "\\\\(?:repeat|alternative)(?![A-Za-z]|[-_][A-Za-z])"
+        },
+        {
+          "name": "keyword.other.context.lilypond",
+          "match": "\\\\(?:new|context|change|consists|remove|accepts|denies|alias|name|type|description|defaultchild)(?![A-Za-z]|[-_][A-Za-z])"
+        },
+        {
+          "name": "keyword.other.property.lilypond",
+          "match": "\\\\(?:override|revert|set|unset|tweak|once|temporary|undo|omit|hide)(?![A-Za-z]|[-_][A-Za-z])"
+        },
+        {
+          "name": "keyword.other.mode.lilypond",
+          "match": "\\\\(?:notemode|chordmode|chords|drummode|drums|figuremode|figures|sequential|simultaneous)(?![A-Za-z]|[-_][A-Za-z])"
+        },
+        {
+          "name": "keyword.other.dynamic.lilypond",
+          "match": "\\\\(?:p{1,5}|f{1,5}|mp|mf|fp|sf|sff|sp|spp|sfz|rfz|fz|n|cresc|decresc|dim|cr|decr|endcr|enddecr)(?![A-Za-z]|[-_][A-Za-z])"
+        },
+        { "name": "keyword.other.dynamic.lilypond", "match": "\\\\[<>!]" },
+        { "name": "keyword.operator.phrasing-slur.begin.lilypond", "match": "\\\\\\(" },
+        { "name": "keyword.operator.phrasing-slur.end.lilypond", "match": "\\\\\\)" },
+        { "name": "punctuation.separator.voice.lilypond", "match": "\\\\\\\\" },
+        { "name": "constant.numeric.string-number.lilypond", "match": "\\\\\\d+" },
+        {
+          "name": "support.function.command.lilypond",
+          "match": "\\\\[A-Za-z]+(?:[-_][A-Za-z]+)*"
+        }
+      ]
+    },
+
+    "rest": {
+      "comment": "r rest, s spacer, R multi-measure rest, q chord repetition.",
+      "match": "(?<![A-Za-z\\\\_-])([rsRq])(?![A-Za-z])((?:\\d+|\\\\(?:breve|longa|maxima)(?![A-Za-z]))\\.*)?",
+      "captures": {
+        "1": { "name": "constant.language.rest.lilypond" },
+        "2": { "name": "constant.numeric.duration.lilypond" }
+      }
+    },
+
+    "note": {
+      "comment": "Pitch names of the input languages documented in the Notation Reference (Dutch default, English, German, solfège families), then octave marks, forced or cautionary accidental, duration.",
+      "match": "(?<![A-Za-z\\\\_-])((?:[a-h](?:isis|eses|isih|eseh|is|es|ih|eh|ses|sas|ss|s|ff|f|x|tqs|tqf|qs|qf|-sharpsharp|-flatflat|-sharp|-flat|-natural)?|(?:do|r[eé]|mi|fa|sol|la|si)(?:dd|bb|d|b|ss|s|x|sd|sb|dsd|bsb)?))(?![A-Za-z])('+|,+)?([!?])?((?:\\d+|\\\\(?:breve|longa|maxima)(?![A-Za-z]))\\.*)?",
+      "captures": {
+        "1": { "name": "variable.other.pitch.lilypond" },
+        "2": { "name": "keyword.operator.octave.lilypond" },
+        "3": { "name": "keyword.operator.accidental.lilypond" },
+        "4": { "name": "constant.numeric.duration.lilypond" }
+      }
+    },
+
+    "chord-modifier": {
+      "comment": "c:m7, c:maj7.9, c:sus4 in chord mode; also the c4:32 tremolo shorthand.",
+      "name": "storage.modifier.chord.lilypond",
+      "match": ":(?:maj|min|dim|aug|sus|m|\\d+|[.+^-](?=\\d))*"
+    },
+
+    "duration-multiplier": {
+      "name": "constant.numeric.duration.lilypond",
+      "match": "\\*\\d+(?:/\\d+)?"
+    },
+
+    "property-path": {
+      "comment": "Context, grob and engraver names are capitalised; R1 (a rest) is handled earlier.",
+      "patterns": [
+        { "name": "support.class.lilypond", "match": "(?<![A-Za-z\\\\_-])[A-Z][A-Za-z]+(?:_[A-Za-z]+)*" },
+        {
+          "match": "(?<=[A-Za-z])(\\.)([a-z][A-Za-z]*(?:-[A-Za-z]+)*)",
+          "captures": {
+            "1": { "name": "punctuation.accessor.lilypond" },
+            "2": { "name": "support.variable.property.lilypond" }
+          }
+        },
+        { "name": "punctuation.accessor.lilypond", "match": "(?<=[A-Za-z])\\.(?=[A-Z])" }
+      ]
+    },
+
+    "number": {
+      "name": "constant.numeric.lilypond",
+      "comment": "Plain numbers, fractions (3/4) and free-standing durations (\\tempo 4. = 96).",
+      "match": "\\d+(?:/\\d+|\\.\\d+|\\.+)?"
+    },
+
+    "articulation": {
+      "patterns": [
+        {
+          "comment": "Fingering: c-1 (attached, so `= -1` stays a number).",
+          "match": "(?<=\\S)([-_^])(\\d+)",
+          "captures": {
+            "1": { "name": "keyword.operator.direction.lilypond" },
+            "2": { "name": "constant.numeric.fingering.lilypond" }
+          }
+        },
+        {
+          "comment": "Lyric hyphen and extender, also valid between syllables outside a lyric block.",
+          "name": "keyword.operator.lyric.lilypond",
+          "match": "(?<=\\s)(?:--|__)(?=\\s)"
+        },
+        { "name": "keyword.operator.articulation.lilypond", "match": "[-_^][.>^+!_-]" },
+        { "name": "keyword.operator.direction.lilypond", "match": "[-_^](?=[\\\\\"#(\\[~])" }
+      ]
+    },
+
+    "punctuation": {
+      "patterns": [
+        { "name": "punctuation.section.simultaneous.begin.lilypond", "match": "<<" },
+        { "name": "punctuation.section.simultaneous.end.lilypond", "match": ">>" },
+        { "name": "punctuation.definition.chord.begin.lilypond", "match": "<" },
+        {
+          "match": "(>)((?:\\d+|\\\\(?:breve|longa|maxima)(?![A-Za-z]))\\.*)?",
+          "captures": {
+            "1": { "name": "punctuation.definition.chord.end.lilypond" },
+            "2": { "name": "constant.numeric.duration.lilypond" }
+          }
+        },
+        { "name": "punctuation.section.braces.begin.lilypond", "match": "\\{" },
+        { "name": "punctuation.section.braces.end.lilypond", "match": "\\}" },
+        { "name": "keyword.operator.slur.begin.lilypond", "match": "\\(" },
+        { "name": "keyword.operator.slur.end.lilypond", "match": "\\)" },
+        { "name": "keyword.operator.beam.begin.lilypond", "match": "\\[" },
+        { "name": "keyword.operator.beam.end.lilypond", "match": "\\]" },
+        { "name": "keyword.operator.tie.lilypond", "match": "~" },
+        { "name": "punctuation.separator.bar-check.lilypond", "match": "\\|" },
+        { "name": "keyword.operator.assignment.lilypond", "match": "=" }
+      ]
+    },
+
+    "lyric-mode": {
+      "comment": "From the keyword to the end of its { } block, so syllables such as `a` or `do` are not read as pitches. Without a block (\\lyricmode \\words) the rule ends at the next command.",
+      "name": "meta.lyric-mode.lilypond",
+      "begin": "\\\\(?:lyricmode|lyrics|lyricsto|addlyrics)(?![A-Za-z]|[-_][A-Za-z])",
+      "end": "(?<=\\})|(?=[\\\\<#}])",
+      "beginCaptures": { "0": { "name": "keyword.other.mode.lilypond" } },
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#string" },
+        { "include": "#lyric-block" }
+      ]
+    },
+    "lyric-block": {
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": { "0": { "name": "punctuation.section.braces.begin.lilypond" } },
+      "endCaptures": { "0": { "name": "punctuation.section.braces.end.lilypond" } },
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#string" },
+        { "include": "#scheme" },
+        { "include": "#markup" },
+        { "include": "#lyric-block" },
+        { "name": "keyword.operator.lyric.lilypond", "match": "(?<=\\s)(?:--|__|_)(?=\\s)" },
+        { "name": "punctuation.separator.bar-check.lilypond", "match": "\\|" },
+        { "name": "keyword.operator.assignment.lilypond", "match": "(?<=\\s)=(?=\\s)" },
+        { "include": "#commands" },
+        { "name": "constant.numeric.duration.lilypond", "match": "(?<=\\S)\\d+\\.*(?=\\s)" }
+      ]
+    },
+
+    "markup": {
+      "comment": "\\markup takes one argument: a { } block, a string or a single word, possibly after markup commands and their Scheme arguments. Words inside are text, never pitches.",
+      "name": "meta.markup.lilypond",
+      "begin": "\\\\markup(?:list)?(?![A-Za-z]|[-_][A-Za-z])",
+      "end": "(?<=\\})|(\"(?:[^\"\\\\]|\\\\.)*\")|[^\\s\\\\#\"{}%]+",
+      "beginCaptures": { "0": { "name": "keyword.other.markup.lilypond" } },
+      "endCaptures": { "1": { "name": "string.quoted.double.lilypond" } },
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#scheme" },
+        { "include": "#markup-command" },
+        { "include": "#markup-block" }
+      ]
+    },
+    "markup-block": {
+      "begin": "\\{",
+      "end": "\\}",
+      "beginCaptures": { "0": { "name": "punctuation.section.braces.begin.lilypond" } },
+      "endCaptures": { "0": { "name": "punctuation.section.braces.end.lilypond" } },
+      "patterns": [
+        { "include": "#comments" },
+        { "include": "#string" },
+        { "include": "#scheme" },
+        { "include": "#markup-command" },
+        { "include": "#markup-block" }
+      ]
+    },
+    "markup-command": {
+      "name": "support.function.markup.lilypond",
+      "match": "\\\\[A-Za-z]+(?:[-_][A-Za-z]+)*"
+    },
+
+    "scheme": {
+      "comment": "# or $ introduces exactly one Scheme datum. The end fires as soon as the previous character is no longer a sigil or quote prefix, i.e. right after the datum.",
+      "name": "meta.embedded.scheme.lilypond",
+      "begin": "(?:#|\\$@?)(?![{}])",
+      "end": "(?<=[^#$@'`,])|(?=\\s)",
+      "beginCaptures": { "0": { "name": "punctuation.definition.scheme.lilypond" } },
+      "patterns": [{ "include": "#scheme-datum" }]
+    },
+    "scheme-datum": {
+      "patterns": [
+        { "include": "#scheme-lilypond" },
+        { "include": "#scheme-quoted-list" },
+        { "include": "#scheme-list" },
+        { "include": "#scheme-atom" }
+      ]
+    },
+    "scheme-lilypond": {
+      "comment": "#{ ... #} switches back to LilyPond inside Scheme.",
+      "name": "meta.embedded.lilypond.scheme",
+      "begin": "#\\{",
+      "end": "#\\}",
+      "beginCaptures": { "0": { "name": "punctuation.section.embedded.begin.lilypond" } },
+      "endCaptures": { "0": { "name": "punctuation.section.embedded.end.lilypond" } },
+      "patterns": [{ "include": "#music" }]
+    },
+    "scheme-list": {
+      "name": "meta.list.scheme",
+      "begin": "\\(",
+      "end": "\\)",
+      "beginCaptures": { "0": { "name": "punctuation.section.parens.begin.scheme" } },
+      "endCaptures": { "0": { "name": "punctuation.section.parens.end.scheme" } },
+      "patterns": [{ "include": "#scheme-list-body" }]
+    },
+    "scheme-quoted-list": {
+      "comment": "Quoted data: the head of the list is not a function call. Unquote returns to code.",
+      "name": "meta.list.quoted.scheme",
+      "begin": "(['`])(\\()",
+      "end": "\\)",
+      "beginCaptures": {
+        "1": { "name": "keyword.operator.quote.scheme" },
+        "2": { "name": "punctuation.section.parens.begin.scheme" }
+      },
+      "endCaptures": { "0": { "name": "punctuation.section.parens.end.scheme" } },
+      "patterns": [{ "include": "#scheme-data" }]
+    },
+    "scheme-data": {
+      "patterns": [
+        {
+          "name": "meta.list.scheme",
+          "begin": "(,@?)(\\()",
+          "end": "\\)",
+          "beginCaptures": {
+            "1": { "name": "keyword.operator.unquote.scheme" },
+            "2": { "name": "punctuation.section.parens.begin.scheme" }
+          },
+          "endCaptures": { "0": { "name": "punctuation.section.parens.end.scheme" } },
+          "patterns": [{ "include": "#scheme-list-body" }]
+        },
+        {
+          "name": "meta.list.quoted.scheme",
+          "begin": "\\(",
+          "end": "\\)",
+          "beginCaptures": { "0": { "name": "punctuation.section.parens.begin.scheme" } },
+          "endCaptures": { "0": { "name": "punctuation.section.parens.end.scheme" } },
+          "patterns": [{ "include": "#scheme-data" }]
+        },
+        { "include": "#scheme-lilypond" },
+        { "include": "#scheme-atom" }
+      ]
+    },
+    "scheme-list-body": {
+      "comment": "TextMate cannot tell a call from a binding or parameter list, so the head of ((ch 1)) or (music) is scoped as a call too.",
+      "patterns": [
+        {
+          "comment": "Special forms of R5RS/Guile plus LilyPond's define-* macros.",
+          "name": "keyword.control.scheme",
+          "match": "(?<=\\()(?:define(?:-public|-syntax|-macro|-music-function|-void-function|-scheme-function|-event-function|-markup-command|-markup-list-command|\\*)?|lambda\\*?|let(?:\\*|rec|-values|\\*-values)?|if|cond|case|when|unless|begin|do|and|or|set!|quote|quasiquote|unquote|else|use-modules)(?=[\\s()]|$)"
+        },
+        { "name": "support.function.lilypond.scheme", "match": "(?<=\\()ly:[^\\s()\";]+" },
+        {
+          "name": "entity.name.function.scheme",
+          "match": "(?<=\\()[^\\s()\"';#`,][^\\s()\";]*"
+        },
+        { "include": "#scheme-datum" }
+      ]
+    },
+    "scheme-atom": {
+      "patterns": [
+        { "name": "comment.line.semicolon.scheme", "match": ";.*$" },
+        { "name": "comment.block.scheme", "begin": "#!", "end": "!#" },
+        {
+          "name": "string.quoted.double.scheme",
+          "begin": "\"",
+          "end": "\"",
+          "beginCaptures": { "0": { "name": "punctuation.definition.string.begin.scheme" } },
+          "endCaptures": { "0": { "name": "punctuation.definition.string.end.scheme" } },
+          "patterns": [{ "name": "constant.character.escape.scheme", "match": "\\\\." }]
+        },
+        { "name": "constant.language.boolean.scheme", "match": "#(?:true|false|t|f)(?=[\\s()]|$)" },
+        { "name": "punctuation.definition.vector.scheme", "match": "#(?=\\()" },
+        { "name": "constant.character.scheme", "match": "#\\\\(?:[A-Za-z]+|.)" },
+        { "name": "constant.other.keyword.scheme", "match": "#:[^\\s()\";]+" },
+        {
+          "name": "constant.numeric.scheme",
+          "match": "(?<![^\\s()'`,#$@])[-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:/\\d+)?(?=[\\s()]|$)"
+        },
+        { "name": "constant.numeric.scheme", "match": "#[xXbBoO][0-9A-Fa-f]+(?=[\\s()]|$)" },
+        { "name": "keyword.operator.quote.scheme", "match": "['`]|,@?" },
+        { "name": "punctuation.separator.pair.scheme", "match": "(?<=\\s)\\.(?=\\s)" },
+        { "name": "support.function.lilypond.scheme", "match": "ly:[^\\s()\";]+" },
+        { "name": "variable.other.scheme", "match": "[^\\s()\"';#`,][^\\s()\";]*" }
+      ]
+    }
+  }
+}

@@ -247,16 +247,18 @@ syntax-only mode to fall back on.
 
 ## 4. Handoff to implementation
 
-Repository state: the extension skeleton exists (D13). `src/extension.ts` has
-an empty `activate()`; `package.json` contributes only the `lilypond` language
-(`.ly`, `.ily`) and `language-configuration.json`. No grammar, commands or
-settings yet.
+Repository state: the extension skeleton exists (D13) and ships its own
+grammar and snippets (D14). `src/extension.ts` still has an empty
+`activate()`; `package.json` contributes the `lilypond` language (`.ly`,
+`.ily`), `language-configuration.json`, `syntaxes/lilypond.tmLanguage.json`
+and `snippets/lilypond.json`. No commands or settings yet.
 
 ```
 npm install
 npm run build         # esbuild → dist/extension.js   (watch: npm run watch)
 npm run check-types   # tsc --noEmit over src/ and test/
-npm test              # type-check, build, then the extension-host smoke test
+npm run test:grammar  # grammar snapshots only (no extension host)
+npm test              # type-check, build, grammar snapshots, extension-host tests
 ```
 
 `npm test` downloads a VS Code build into `.vscode-test/` on first run. F5
@@ -267,7 +269,7 @@ Where each piece of upcoming work should look first:
 | Work | Read |
 | --- | --- |
 | Extension skeleton, language id, bundling (done) | §3.2, D2, D9, D12, D13 (name/publisher still *proposed*) |
-| Grammar and snippets | D2 — **do not copy** from the CC BY-NC grammar |
+| Grammar and snippets (done) | D2 — **do not copy** from the CC BY-NC grammar; D14 for scopes, modes, snapshot workflow |
 | Compile service | §3.3, D3, D5; keep `src/compile/**` free of `vscode` |
 | Diagnostics | §3.5 (stderr rows), D6 |
 | Preview panel, refresh on save | §3.4, §3.6, D1, D4, D10 |
