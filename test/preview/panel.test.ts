@@ -2,16 +2,18 @@ import * as assert from 'node:assert'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { after, before, describe, test } from 'node:test'
+import { after, before, describe, mock, test } from 'node:test'
 import type * as vscode from 'vscode'
 import type { CompileResult } from '../../src/compile/compiler'
 import {
+  CURSOR_DELAY_MS,
   PreviewManager,
   PreviewPanel,
   previewHtml,
   type HostMessage,
   type WebviewMessage,
 } from '../../src/preview/panel'
+import type { SourceLocation } from '../../src/preview/pointAndClick'
 
 // Runs without an extension host (DECISIONS D13): the panel only uses `vscode`
 // types, so a fake WebviewPanel is enough.
@@ -140,12 +142,14 @@ describe('PreviewPanel', () => {
   const create = (colors: 'theme' | 'paper' = 'theme') => {
     const fake = new FakePanel()
     let closed = 0
+    const clicked: SourceLocation[] = []
     const preview = new PreviewPanel('/scores/song.ly', fake.asPanel, {
       assets,
       colors,
       onDidDispose: () => closed++,
+      onDidClickSource: (location) => clicked.push(location),
     })
-    return { fake, preview, closed: () => closed }
+    return { fake, preview, clicked, closed: () => closed }
   }
 
   test('scripts are enabled and only media/ can be loaded', () => {
@@ -286,6 +290,73 @@ describe('PreviewPanel', () => {
     ])
   })
 
+  describe('point-and-click', () => {
+    const song = '/scores/song.ly'
+    const href = (char: number) => `textedit://${song}:2:${char}:${char + 1}`
+    let linked: string
+
+    before(async () => {
+      linked = path.join(dir, 'linked.svg')
+      await fs.writeFile(linked, `<svg><a xlink:href="${href(2)}"/><a xlink:href="${href(6)}"/></svg>`)
+    })
+
+    const rendered = async () => {
+      const created = create()
+      await created.preview.follow(Promise.resolve(result({ pages: [linked] })))
+      created.fake.take()
+      return created
+    }
+
+    test('a clicked textedit link is parsed on the host and reported as a location', async () => {
+      const { fake, clicked } = await rendered()
+      fake.fromWebview({ type: 'reveal', href: href(6) })
+      fake.fromWebview({ type: 'reveal', href: 'https://lilypond.org' })
+      fake.fromWebview({ type: 'reveal', href: 'textedit://song.ly:1:2:3' })
+      fake.fromWebview({ type: 'reveal', href: 7 as unknown as string })
+      assert.deepStrictEqual(clicked, [{ file: path.normalize(song), line: 2, char: 6 }])
+    })
+
+    test('the cursor marks its link and scrolls to it; off the score it clears once', async () => {
+      const { fake, preview } = await rendered()
+      preview.showCursor({ file: song, line: 2, char: 7 })
+      assert.deepStrictEqual(fake.take(), [{ type: 'highlight', hrefs: [href(6)], reveal: true }])
+      fake.fromWebview({ type: 'highlighted', elements: 1 })
+      assert.strictEqual(preview.highlighted, 1)
+
+      preview.showCursor({ file: song, line: 9, char: 0 })
+      preview.showCursor({ file: '/scores/other.ly', line: 2, char: 7 })
+      preview.showCursor(undefined)
+      assert.deepStrictEqual(fake.take(), [{ type: 'highlight', hrefs: [], reveal: true }])
+    })
+
+    test('a refresh and a reloaded webview mark the cursor again, without scrolling', async () => {
+      const { fake, preview } = await rendered()
+      preview.showCursor({ file: song, line: 2, char: 2 })
+      fake.take()
+
+      await preview.follow(Promise.resolve(result({ pages: [linked] })))
+      const again = { type: 'highlight', hrefs: [href(2)], reveal: false }
+      assert.deepStrictEqual(fake.take().slice(1, 3), [
+        { type: 'render', revision: 2, pages: [await fs.readFile(linked, 'utf8')] },
+        again,
+      ])
+
+      fake.fromWebview({ type: 'ready' })
+      assert.deepStrictEqual(fake.take().at(-1), again)
+    })
+
+    test('a cursor placed before the first render is marked by that render', async () => {
+      const { fake, preview } = create()
+      preview.showCursor({ file: song, line: 2, char: 2 })
+      assert.deepStrictEqual(fake.take(), [])
+      await preview.follow(Promise.resolve(result({ pages: [linked] })))
+      assert.deepStrictEqual(
+        fake.take().filter((message) => message.type === 'highlight'),
+        [{ type: 'highlight', hrefs: [href(2)], reveal: false }],
+      )
+    })
+  })
+
   test('closing the tab disposes once and later results are dropped', async () => {
     const { fake, preview, closed } = create()
     fake.dispose()
@@ -301,6 +372,7 @@ describe('PreviewManager', () => {
     const fakes: FakePanel[] = []
     const titles: string[] = []
     const closed: string[] = []
+    const revealed: Array<[SourceLocation, string]> = []
     const manager = new PreviewManager({
       assets,
       colors: () => 'theme',
@@ -310,8 +382,9 @@ describe('PreviewManager', () => {
         return fakes.at(-1)!.asPanel
       },
       onDidClose: (rootFile) => closed.push(rootFile),
+      revealSource: (location, preview) => revealed.push([location, preview.rootFile]),
     })
-    return { manager, fakes, titles, closed }
+    return { manager, fakes, titles, closed, revealed }
   }
   const song = path.resolve('/scores/song.ly')
 
@@ -336,6 +409,67 @@ describe('PreviewManager', () => {
     assert.strictEqual(manager.get(song), undefined)
     assert.deepStrictEqual(closed, [song])
     assert.strictEqual(manager.open(song).created, true)
+  })
+
+  describe('point-and-click', () => {
+    let dir: string
+    let page: string
+    const at = (file: string, char: number) => `textedit://${file}:1:${char}:${char + 1}`
+
+    before(async () => {
+      dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lily-manager-test-')))
+      page = path.join(dir, 'song.svg')
+      // `{ 𝄞𝄞 c d }`: the c is CHAR 5 and character 7.
+      await fs.writeFile(page, `<svg><a xlink:href="${at(song, 5)}"/><a xlink:href="${at(song, 7)}"/></svg>`)
+    })
+
+    after(() => fs.rm(dir, { recursive: true, force: true }))
+
+    const open = async () => {
+      const created = create()
+      const { preview } = created.manager.open(song)
+      created.manager.open(path.resolve('/scores/other.ly'))
+      await preview.follow(Promise.resolve(result({ pages: [page] })))
+      for (const fake of created.fakes) fake.take()
+      return created
+    }
+    const cursor = (character: number) => ({ file: song, line: 0, character, lineText: '{ 𝄞𝄞 c d }' })
+
+    test('a click is handed to the host with the preview it happened in', async () => {
+      const { fakes, revealed } = await open()
+      fakes[0].fromWebview({ type: 'reveal', href: at(song, 7) })
+      assert.deepStrictEqual(revealed, [[{ file: song, line: 1, char: 7 }, song]])
+    })
+
+    test('the editor cursor is converted to a line and CHAR for the previews that know the file', async () => {
+      const { manager, fakes } = await open()
+      await manager.showCursor(cursor(8))
+      assert.deepStrictEqual(fakes[0].take(), [{ type: 'highlight', hrefs: [at(song, 5)], reveal: true }])
+      assert.deepStrictEqual(fakes[1].take(), [])
+
+      await manager.showCursor(undefined)
+      assert.deepStrictEqual(fakes[0].take(), [{ type: 'highlight', hrefs: [], reveal: true }])
+    })
+
+    test('a moving cursor is followed once it rests', async (t) => {
+      t.mock.timers.enable({ apis: ['setTimeout'] })
+      const { manager, fakes } = await open()
+      const shown = mock.method(manager, 'showCursor')
+      manager.followCursor(cursor(7))
+      t.mock.timers.tick(CURSOR_DELAY_MS - 1)
+      manager.followCursor(cursor(9))
+      t.mock.timers.tick(CURSOR_DELAY_MS - 1)
+      assert.strictEqual(shown.mock.callCount(), 0)
+      t.mock.timers.tick(1)
+      assert.strictEqual(shown.mock.callCount(), 1)
+      await shown.mock.calls[0].result
+      assert.deepStrictEqual(fakes[0].take(), [{ type: 'highlight', hrefs: [at(song, 7)], reveal: true }])
+
+      manager.followCursor(cursor(7))
+      manager.dispose()
+      t.mock.timers.tick(CURSOR_DELAY_MS)
+      assert.strictEqual(shown.mock.callCount(), 1, 'nothing fires after dispose')
+    })
   })
 
   test('dispose closes every panel', () => {
@@ -367,6 +501,8 @@ describe('media/preview.js', () => {
     resolveAnchor(anchor: Anchor | null, pages: Rect[]): number
     allowedElement(name: string): boolean
     allowedAttribute(element: string, name: string, value: string): boolean
+    isSourceLink(href: string): boolean
+    scrollToShow(start: number, size: number, viewport: number): number
   }
 
   /** Pages of `height` stacked with the 16px padding and gap of preview.css. */
@@ -433,5 +569,19 @@ describe('media/preview.js', () => {
     assert.ok(!allowed('use', 'href', 'https://evil.test/sprite.svg#x'))
     assert.ok(!allowed('image', 'href', 'https://evil.test/pixel.png'))
     assert.ok(!allowed('image', 'href', 'data:image/svg+xml;base64,PHN2Zz4='))
+  })
+
+  test('only textedit links ask the host for a place in the source', () => {
+    assert.ok(script.isSourceLink('textedit:///scores/song.ly:1:2:3'))
+    assert.ok(!script.isSourceLink('https://lilypond.org/textedit:'))
+    assert.ok(!script.isSourceLink(''))
+  })
+
+  test('an element in view is left alone; one outside is centred', () => {
+    assert.strictEqual(script.scrollToShow(300, 10, 600), 0)
+    assert.strictEqual(script.scrollToShow(900, 10, 600), 605)
+    assert.strictEqual(script.scrollToShow(-105, 10, 600), -400)
+    // Cut off by the edge counts as outside.
+    assert.strictEqual(script.scrollToShow(595, 10, 600), 300)
   })
 })

@@ -96,6 +96,12 @@
           "scope": "window",
           "description": "Colours of the score preview."
         },
+        "lily.preview.followCursor": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "markdownDescription": "Highlight in an open preview the note the cursor is on, and scroll to it. Clicking a note in the preview always goes to its place in the source."
+        },
         "lily.preview.refreshOnSave": {
           "type": "boolean",
           "default": true,

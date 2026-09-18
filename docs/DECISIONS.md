@@ -591,6 +591,81 @@ into the compile and stderr modules.
 
 ---
 
+## D19 — Point-and-click conventions
+
+**Status:** accepted · **Refines:** D7, D17
+
+- **Files.** `src/preview/pointAndClick.ts` (`parseTextEdit`, `LinkIndex`,
+  `canonicalFile`, `charToCharacter` / `characterToChar`; no `vscode` import —
+  ARCHITECTURE §3.2 first called it `sync.ts`). The protocol is in `panel.ts`,
+  the DOM side in `media/preview.js`, the editor side in `extension.ts`.
+- **Elements are addressed by their href.** D7 planned an index of element ids;
+  the webview sanitises and rebuilds the DOM, so ids would have to be invented
+  on both sides and kept in step. Instead `LinkIndex.build(pages)` reads the
+  `textedit:` hrefs from the SVG text when a result arrives (file → line →
+  links by `CHAR`), a lookup answers with hrefs, and the webview keeps a
+  `href → <a> elements` map per render. A music variable used twice is one
+  href and both places are marked.
+- **Score → code.** A click on a `textedit:` link posts
+  `{ type: 'reveal', href }`. The panel parses it (`parseTextEdit`: numbers from
+  the right, percent-decoded, absolute paths only) and the manager hands the
+  location to `PreviewHost.revealSource`. `extension.ts` opens the file — root
+  or `.ily` — in the column that already has a tab for it, else a visible
+  editor column other than the preview's, else column One; the cursor lands on
+  the token and the editor takes the focus, since the click means "edit this".
+  `CHAR` is converted against the line text of the *buffer*. A link can name
+  any local path (a `.ly` file can write its own with `\with-url`); opening a
+  text document on the user's click is all it can do with that.
+- **Code → score.** `onDidChangeTextEditorSelection` and
+  `onDidChangeActiveTextEditor` feed `PreviewManager.followCursor()`, which
+  waits `CURSOR_DELAY_MS` (100 ms) and calls `showCursor()`: the cursor becomes
+  `{ canonical file, 1-based line, CHAR }` and every panel looks it up. The
+  match is the nearest link at or before the cursor on its line (D7), and —
+  added here — the line's first link when the cursor is left of it, so *Home*
+  still shows where the line is. A line without links clears the mark. Only
+  `lilypond` documents on disk count; the preview taking the focus (no active
+  editor) changes nothing. The panel posts
+  `{ type: 'highlight', hrefs, reveal }` and the webview answers
+  `{ type: 'highlighted', elements }` (`PreviewPanel.highlighted`, used by the
+  tests).
+- **`reveal` scrolls only when needed**, centring the first marked element if
+  it is not fully inside the viewport (24 px margin). After a refresh or a
+  webview reload the panel marks its remembered cursor again with
+  `reveal: false`, so the restored scroll position (D17) wins. A cursor placed
+  before the first render is marked by that render, also without scrolling.
+- **Same file, different spelling.** LilyPond prints paths as given; the editor
+  may reach the file through a symlink. Index keys and cursors both go through
+  `canonicalFile()` (`realpath`, falling back to the resolved path; lower-cased
+  on Windows, where VS Code lower-cases the drive letter).
+- **Positions are those of the last compile.** Editing without saving shifts
+  the text under the links; both directions then land near, not on, the token
+  until the next save refreshes the preview (D18). Not compensated.
+- **Look.** `preview.js` adds the class `source` to `textedit:` links (pointer
+  cursor, link colour on hover) and `current` to the marked ones: link colour
+  through `color` (the backend paints with `currentColor`, D1) plus a 2 px
+  non-scaling stroke on paths, so a notehead is findable at fit-width. Paper
+  mode uses a fixed blue. Hit testing is left at the default:
+  `pointer-events: bounding-box` makes hollow noteheads easier to hit but lets a
+  slur's box swallow the notes under it.
+- **Setting.** `lily.preview.followCursor` (default `true`, `window` scope, read
+  on every event). Switching it off clears the mark; switching it on marks the
+  current cursor. Clicking a note works regardless. `activate()` now returns
+  `{ previews, autoPreview, revealSource }`.
+- **Tests.** `test/preview/pointAndClick.test.ts` (verbatim 2.26 hrefs, and a
+  real compile with a tab, an astral character, a space and a non-ASCII letter
+  in the paths, mapping every token to its link and back), protocol and
+  debounce tests in `test/preview/panel.test.ts`, and the extension-host suite
+  `test/pointAndClick.test.ts`, where the real webview marks notes of an
+  include. A real DOM click cannot be produced there; it was checked by loading
+  `preview.js` and `preview.css` in headless Chrome under the same CSP (click →
+  `reveal` with the href, `\with-url` links still prevented, mark visible in
+  both colour modes). The harness was not kept.
+- **Not verified.** Windows link spelling (`textedit:///C:/…` is handled from
+  documentation). Grobs other than noteheads, scripts and text were not
+  surveyed: whatever carries a `textedit:` link is clickable and markable.
+
+---
+
 ## Out of scope
 
 MIDI keyboard input, MIDI playback, and `python-ly` formatting. Revisit only

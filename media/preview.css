@@ -58,6 +58,33 @@ body[data-colors='paper'] .page {
   cursor: default;
 }
 
+/* Point-and-click (DECISIONS D19): preview.js gives textedit: links `source`, and
+   `current` to what the editor's cursor points at. LilyPond paints with
+   currentColor, so `color` recolours the glyph; the stroke makes a notehead
+   findable at fit-width. */
+.page {
+  --lily-link: var(--vscode-editorLink-activeForeground, #3794ff);
+}
+
+body[data-colors='paper'] .page {
+  --lily-link: #0b5fd0;
+}
+
+.page a.source {
+  cursor: pointer;
+}
+
+.page a.source:hover,
+.page a.current {
+  color: var(--lily-link);
+}
+
+.page a.current path {
+  stroke: currentColor;
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+}
+
 .page-error {
   box-sizing: border-box;
   padding: 24px;

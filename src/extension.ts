@@ -5,7 +5,8 @@ import { includeDirsFromArgs, rootsIncluding } from './compile/rootFile'
 import { getAutoPreviewSettings, getCompileSettings, getPreviewSettings } from './config'
 import { CompileReporter } from './diagnostics/publish'
 import { AutoPreview } from './preview/autoPreview'
-import { PREVIEW_VIEW_TYPE, PreviewManager } from './preview/panel'
+import { PREVIEW_VIEW_TYPE, PreviewManager, type PreviewPanel } from './preview/panel'
+import { charToCharacter, type SourceLocation } from './preview/pointAndClick'
 
 // Activation and command/listener wiring only (ARCHITECTURE §3.2). It must never
 // depend on the lilypond binary being present (DECISIONS D9).
@@ -14,6 +15,8 @@ import { PREVIEW_VIEW_TYPE, PreviewManager } from './preview/panel'
 export interface LilyApi {
   previews: PreviewManager
   autoPreview: AutoPreview
+  /** What a click on a note does: shows `location` in an editor outside `preview`'s column. */
+  revealSource(location: SourceLocation, preview?: PreviewPanel): Promise<void>
 }
 
 /** One per extension host (D3). */
@@ -37,7 +40,50 @@ export function activate(context: vscode.ExtensionContext): LilyApi {
         preserveFocus: true,
       }),
     onDidClose: (rootFile) => void compiler.release(rootFile),
+    revealSource: (location, preview) => void revealSource(location, preview),
   })
+
+  /** Score → code (D7, D19): the cursor goes to `location`, in the pane that has the code. */
+  const revealSource = async (location: SourceLocation, preview?: PreviewPanel): Promise<void> => {
+    const uri = vscode.Uri.file(location.file)
+    let document: vscode.TextDocument
+    try {
+      document = await vscode.workspace.openTextDocument(uri)
+    } catch {
+      void vscode.window.showWarningMessage(`Cannot open ${location.file}.`)
+      return
+    }
+    // The file was compiled from disk; an edited buffer may have fewer lines.
+    const line = Math.min(location.line, document.lineCount) - 1
+    const position = new vscode.Position(
+      line,
+      charToCharacter(document.lineAt(line).text, location.char),
+    )
+    await vscode.window.showTextDocument(document, {
+      viewColumn: columnShowing(uri) ?? codeColumn(preview),
+      selection: new vscode.Range(position, position),
+    })
+  }
+
+  /** The cursor's place in a LilyPond file on disk, which is all a score can link to. */
+  const cursorOf = (editor: vscode.TextEditor | undefined) => {
+    if (editor?.document.languageId !== 'lilypond' || editor.document.uri.scheme !== 'file') {
+      return undefined
+    }
+    const { line, character } = editor.selection.active
+    return {
+      file: editor.document.uri.fsPath,
+      line,
+      character,
+      lineText: editor.document.lineAt(line).text,
+    }
+  }
+
+  /** Code → score (D7, D19). Other editors, and the preview taking the focus, change nothing. */
+  const followCursor = (editor: vscode.TextEditor | undefined): void => {
+    const cursor = cursorOf(editor)
+    if (cursor && getPreviewSettings().followCursor) previews.followCursor(cursor)
+  }
 
   /** The document a command is about, or undefined once the user has been told why not. */
   const compilable = async (uri?: vscode.Uri): Promise<vscode.TextDocument | undefined> => {
@@ -100,6 +146,8 @@ export function activate(context: vscode.ExtensionContext): LilyApi {
     const document = await compilable(uri)
     if (!document) return
     const { preview, created } = previews.open(document.uri.fsPath)
+    // A new panel learns where the cursor is now, not at the next keypress.
+    followCursor(vscode.window.activeTextEditor)
     // Revealing a preview that already shows the score costs no compile.
     if (created || !preview.hasPages) await compileDocument(document)
   }
@@ -114,13 +162,41 @@ export function activate(context: vscode.ExtensionContext): LilyApi {
     vscode.workspace.onDidSaveTextDocument((document) => {
       if (document.uri.scheme === 'file') void autoPreview.documentSaved(document.uri.fsPath)
     }),
+    vscode.window.onDidChangeTextEditorSelection((event) => followCursor(event.textEditor)),
+    vscode.window.onDidChangeActiveTextEditor(followCursor),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration('lily.preview')) {
         previews.setColors(getPreviewSettings().colors)
       }
+      if (event.affectsConfiguration('lily.preview.followCursor')) {
+        // Switched off: the mark goes; switched on: it appears without a keypress.
+        previews.followCursor(
+          getPreviewSettings().followCursor ? cursorOf(vscode.window.activeTextEditor) : undefined,
+        )
+      }
     }),
   )
-  return { previews, autoPreview }
+  return { previews, autoPreview, revealSource }
+}
+
+/** The column in which `uri` already has a tab, visible or not. */
+function columnShowing(uri: vscode.Uri): vscode.ViewColumn | undefined {
+  const wanted = uri.toString()
+  return vscode.window.tabGroups.all.find((group) =>
+    group.tabs.some(
+      (tab) => tab.input instanceof vscode.TabInputText && tab.input.uri.toString() === wanted,
+    ),
+  )?.viewColumn
+}
+
+/** Where a file opened from `preview` goes: beside the score, never on top of it. */
+function codeColumn(preview: PreviewPanel | undefined): vscode.ViewColumn {
+  const occupied = preview?.viewColumn
+  const editor = vscode.window.visibleTextEditors.find(
+    (candidate) => candidate.viewColumn !== undefined && candidate.viewColumn !== occupied,
+  )
+  if (editor?.viewColumn) return editor.viewColumn
+  return occupied === vscode.ViewColumn.One ? vscode.ViewColumn.Beside : vscode.ViewColumn.One
 }
 
 /** Kills running compiles and deletes their temp directories; VS Code awaits this. */

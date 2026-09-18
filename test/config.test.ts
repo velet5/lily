@@ -11,6 +11,7 @@ suite('compile settings', () => {
     await config().update('lilypond.path', undefined, target)
     await config().update('compile.extraArgs', undefined, target)
     await config().update('preview.colors', undefined, target)
+    await config().update('preview.followCursor', undefined, target)
     await config().update('preview.refreshOnSave', undefined, target)
     await config().update('preview.refreshDelay', undefined, target)
   })
@@ -28,10 +29,11 @@ suite('compile settings', () => {
     })
   })
 
-  test('the preview follows the theme unless paper is asked for', async () => {
-    assert.deepStrictEqual(getPreviewSettings(), { colors: 'theme' })
+  test('the preview follows the theme and the cursor unless told otherwise', async () => {
+    assert.deepStrictEqual(getPreviewSettings(), { colors: 'theme', followCursor: true })
     await config().update('preview.colors', 'paper', target)
-    assert.deepStrictEqual(getPreviewSettings(), { colors: 'paper' })
+    await config().update('preview.followCursor', false, target)
+    assert.deepStrictEqual(getPreviewSettings(), { colors: 'paper', followCursor: false })
   })
 
   test('the preview refreshes on save unless told otherwise', async () => {

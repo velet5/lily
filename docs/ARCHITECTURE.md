@@ -165,7 +165,7 @@ src/
   preview/
     panel.ts            PreviewManager / PreviewPanel, html + CSP, message protocol (types-only vscode)
     autoPreview.ts      AutoPreview: saves → debounced compiles of the previewed roots (no vscode)
-    sync.ts             textedit link index, cursor ↔ element mapping
+    pointAndClick.ts    textedit link parser and index, CHAR ↔ character (no vscode)
   language/
     completion.ts       context-aware completion
     hover.ts
@@ -234,7 +234,10 @@ Facts the implementation must respect, all **[verified]**:
   and `style="color:inherit;"` on every link **[verified, 2.26]**. The CSP
   discards both, so `media/preview.css` restates them; details in D17.
 - Point-and-click links are `<a xlink:href="textedit://…">`. The webview
-  intercepts clicks, `preventDefault`s, and posts the href to the host.
+  intercepts clicks, `preventDefault`s, and posts the href to the host, which
+  parses it and moves the cursor there. The other way, the host looks the
+  cursor up in an index built from the SVG text and posts the hrefs to mark
+  (D19).
 
 ### 3.5 Location formats
 
@@ -284,8 +287,10 @@ and snippets (D14), and has the compile service (D15): `src/compile/` plus
 commands: `lily.compile` (active editor or a `Uri` argument; saves a dirty
 document first; resolves with the `CompileResult`, or `undefined` when nothing
 ran) and `lily.showOutput`. `lily.preview.openToSide` opens the preview (D17),
-and the one save listener refreshes open previews (D18). There are no menus or
-keybindings yet. **Every compile must go through `compileRoot(rootFile)` in
+and the one save listener refreshes open previews (D18). Score and source are
+linked both ways (D19): a click on a note ends in `revealSource()`, and the
+selection and active-editor listeners feed `previews.followCursor()`. There are
+no menus or keybindings yet. **Every compile must go through `compileRoot(rootFile)` in
 `extension.ts`**, whatever triggers it: it tells `AutoPreview` that the root is
 being compiled, runs the service inside the reporter and hands the run to the
 root's preview:
@@ -319,7 +324,7 @@ Where each piece of upcoming work should look first:
 | Compile service (done) | §3.3, D3, D5, D15; keep `src/compile/**` free of `vscode` |
 | Diagnostics (done) | §3.5 (stderr rows), D6, D16 |
 | Preview panel, refresh on save (done) | §3.4, §3.6, D1, D4, D10, D17, D18 |
-| Score ↔ source sync | §3.5 (SVG link row), D7 |
+| Score ↔ source sync (done) | §3.5 (SVG link row), D7, D19 |
 | IntelliSense data | D8 (includes the verified Scheme recipe) |
 | CLI / MCP for agents | §3.1 `CompileResult`, D11 |
 

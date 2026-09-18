@@ -3,6 +3,13 @@ import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import type * as vscode from 'vscode'
 import type { CompileResult } from '../compile/compiler'
+import {
+  LinkIndex,
+  canonicalFile,
+  characterToChar,
+  parseTextEdit,
+  type SourceLocation,
+} from './pointAndClick'
 
 // The side-by-side preview (DECISIONS D4, D17). Only *types* come from `vscode`:
 // the caller creates the WebviewPanel, so the lifecycle and the message protocol
@@ -19,13 +26,29 @@ export type HostMessage =
   | { type: 'status'; busy: boolean; note?: string }
   | { type: 'colors'; colors: PreviewColors }
   | { type: 'zoom'; action: ZoomAction }
+  /** The links to mark as the cursor's; `reveal` scrolls the first one into view. */
+  | { type: 'highlight'; hrefs: string[]; reveal: boolean }
 
 /** Webview → host. */
 export type WebviewMessage =
   | { type: 'ready' }
   | { type: 'rendered'; revision: number; pages: number }
+  /** A `textedit:` link was clicked. */
+  | { type: 'reveal'; href: string }
+  /** Answers every `highlight` with the number of elements now marked. */
+  | { type: 'highlighted'; elements: number }
 
 export type ZoomAction = 'in' | 'out' | 'fit'
+
+/** Where the editor's cursor is, in the editor's own terms. */
+export interface EditorCursor {
+  file: string
+  /** 0-based. */
+  line: number
+  /** 0-based, UTF-16. */
+  character: number
+  lineText: string
+}
 
 export interface PreviewAssets {
   /** The only directory the webview may load from. */
@@ -91,6 +114,8 @@ export interface PreviewPanelOptions {
   assets: PreviewAssets
   colors: PreviewColors
   onDidDispose?: () => void
+  /** A `textedit:` link of the score was clicked (D19). */
+  onDidClickSource?: (location: SourceLocation) => void
 }
 
 /** One preview of one root file. Holds the SVG text, not the paths (D15). */
@@ -107,6 +132,12 @@ export class PreviewPanel {
   private latestUpdate = 0
   private disposed = false
   private colors: PreviewColors
+  /** Where the pages on screen came from, and the cursor shown in them (D19). */
+  private links = LinkIndex.empty
+  private cursor: SourceLocation | undefined
+  /** Whether the webview was last told to mark something, and what it then marked. */
+  private marking = false
+  private marked = 0
   private readonly subscriptions: vscode.Disposable[]
 
   constructor(
@@ -132,6 +163,16 @@ export class PreviewPanel {
 
   get hasPages(): boolean {
     return this.pages !== undefined
+  }
+
+  /** How many elements the webview has marked as the cursor's. */
+  get highlighted(): number {
+    return this.marked
+  }
+
+  /** Undefined while the panel is hidden behind another tab of its group. */
+  get viewColumn(): vscode.ViewColumn | undefined {
+    return this.panel.viewColumn
   }
 
   /** Brings the panel forward in its own column; the editor keeps the focus. */
@@ -174,6 +215,20 @@ export class PreviewPanel {
     this.post({ type: 'zoom', action })
   }
 
+  /**
+   * Marks what the cursor points at, or nothing. `cursor.file` is canonical
+   * (canonicalFile). `reveal` also scrolls the element into view; a refresh
+   * re-marks without it, so it never fights the restored scroll position.
+   */
+  showCursor(cursor: SourceLocation | undefined, reveal = true): void {
+    this.cursor = cursor
+    const hrefs = cursor ? this.links.lookup(cursor.file, cursor.line, cursor.char) : []
+    // Moving through a file this score does not use is not worth a message each.
+    if (hrefs.length === 0 && !this.marking) return
+    this.marking = hrefs.length > 0
+    this.post({ type: 'highlight', hrefs, reveal })
+  }
+
   dispose(): void {
     if (this.disposed) return
     this.disposed = true
@@ -198,12 +253,18 @@ export class PreviewPanel {
     } catch {
       return
     }
+    const links = await LinkIndex.build(pages)
     if (update !== this.latestUpdate || this.disposed) return
 
     if (pages.length > 0) {
       this.pages = pages
+      this.links = links
       this.revision++
       this.post({ type: 'render', revision: this.revision, pages })
+      // The new page nodes carry no mark, and the links may have moved.
+      this.marking = false
+      this.marked = 0
+      this.showCursor(this.cursor, false)
       this.note = result.ok ? undefined : 'Compiled with errors. See the Problems panel.'
     } else if (!result.ok) {
       // Keep the previous render (ARCHITECTURE §3.3).
@@ -222,12 +283,24 @@ export class PreviewPanel {
         this.post({ type: 'colors', colors: this.colors })
         if (this.pages) this.post({ type: 'render', revision: this.revision, pages: this.pages })
         this.postStatus()
+        this.marking = false
+        this.marked = 0
+        this.showCursor(this.cursor, false)
         break
       case 'rendered':
         this.rendered = { revision: message.revision, pages: message.pages }
         if (message.revision === this.revision) {
           for (const resolve of this.waiters.splice(0)) resolve(message.pages)
         }
+        break
+      case 'reveal': {
+        // The href comes from the score, so it is parsed here, not trusted.
+        const location = typeof message.href === 'string' && parseTextEdit(message.href)
+        if (location) this.options.onDidClickSource?.(location)
+        break
+      }
+      case 'highlighted':
+        this.marked = Number(message.elements) || 0
         break
     }
   }
@@ -248,11 +321,18 @@ export interface PreviewHost {
   /** Creates the panel beside the editor without taking the focus. */
   createPanel(title: string): vscode.WebviewPanel
   onDidClose?(rootFile: string): void
+  /** Shows `location` in an editor; `preview` is where the click happened. */
+  revealSource?(location: SourceLocation, preview: PreviewPanel): void
 }
+
+/** How long the cursor has to rest before the previews follow it. */
+export const CURSOR_DELAY_MS = 100
 
 /** One panel per root file (D4). */
 export class PreviewManager {
   private readonly panels = new Map<string, PreviewPanel>()
+  private cursorTimer: NodeJS.Timeout | undefined
+  private cursorRequests = 0
 
   constructor(private readonly host: PreviewHost) {}
 
@@ -274,6 +354,7 @@ export class PreviewManager {
           this.panels.delete(key)
           this.host.onDidClose?.(preview.rootFile)
         },
+        onDidClickSource: (location) => this.host.revealSource?.(location, preview),
       },
     )
     this.panels.set(key, preview)
@@ -293,7 +374,28 @@ export class PreviewManager {
     for (const preview of this.panels.values()) preview.setColors(colors)
   }
 
+  /** showCursor() once the cursor rests: holding an arrow key is one lookup. */
+  followCursor(cursor: EditorCursor | undefined): void {
+    clearTimeout(this.cursorTimer)
+    this.cursorTimer = setTimeout(() => void this.showCursor(cursor), CURSOR_DELAY_MS)
+  }
+
+  /** Marks the element under `cursor` in every preview that has one; undefined clears. */
+  async showCursor(cursor: EditorCursor | undefined): Promise<void> {
+    clearTimeout(this.cursorTimer)
+    const request = ++this.cursorRequests
+    const location = cursor && {
+      file: await canonicalFile(cursor.file),
+      line: cursor.line + 1,
+      char: characterToChar(cursor.lineText, cursor.character),
+    }
+    // A later cursor must not be overtaken by this one's realpath.
+    if (request !== this.cursorRequests) return
+    for (const preview of this.panels.values()) preview.showCursor(location)
+  }
+
   dispose(): void {
+    clearTimeout(this.cursorTimer)
     for (const preview of [...this.panels.values()]) preview.dispose()
   }
 }

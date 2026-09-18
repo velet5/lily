@@ -28,11 +28,16 @@ export function getCompileSettings(scope?: vscode.ConfigurationScope): CompileSe
 export interface PreviewSettings {
   /** `lily.preview.colors`. */
   colors: PreviewColors
+  /** `lily.preview.followCursor`: highlight in the score what the cursor is on. */
+  followCursor: boolean
 }
 
 export function getPreviewSettings(): PreviewSettings {
-  const colors = vscode.workspace.getConfiguration('lily').get<unknown>('preview.colors')
-  return { colors: colors === 'paper' ? 'paper' : 'theme' }
+  const config = vscode.workspace.getConfiguration('lily')
+  return {
+    colors: config.get<unknown>('preview.colors') === 'paper' ? 'paper' : 'theme',
+    followCursor: config.get<unknown>('preview.followCursor') !== false,
+  }
 }
 
 /** Upper bound of `lily.preview.refreshDelay`; a longer wait reads as "broken". */

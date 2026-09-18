@@ -82,9 +82,28 @@
     return target.startsWith('#')
   }
 
+  // ---- point-and-click ---------------------------------------------------------
+
+  /** A link back into the source (DECISIONS D19); the host parses it. */
+  function isSourceLink(href) {
+    return /^textedit:/i.test(href.trim())
+  }
+
+  const REVEAL_MARGIN = 24
+
+  /**
+   * How far to scroll along one axis so that `[start, start + size)`, in viewport
+   * coordinates, ends up centred; 0 when it can be seen as it is.
+   */
+  function scrollToShow(start, size, viewport) {
+    if (start >= REVEAL_MARGIN && start + size <= viewport - REVEAL_MARGIN) return 0
+    return Math.round(start + size / 2 - viewport / 2)
+  }
+
   const pure = {
     MIN_ZOOM, MAX_ZOOM, clampZoom, stepZoom, zoomLabel,
     captureAnchor, resolveAnchor, allowedElement, allowedAttribute,
+    isSourceLink, scrollToShow,
   }
 
   if (typeof acquireVsCodeApi !== 'function') {
@@ -108,6 +127,9 @@
   state.zoom = clampZoom(state.zoom)
   let revision = 0
   let status = { busy: false, note: undefined }
+  /** href → the `<a>` elements of the pages on screen that carry it. */
+  let sourceLinks = new Map()
+  let current = []
 
   function pageRects() {
     return Array.from(pagesEl.children, (page) => {
@@ -203,11 +225,44 @@
     return page
   }
 
+  /** `href` or `xlink:href`, whichever the page uses. */
+  function linkHref(link) {
+    return link.href?.baseVal ?? ''
+  }
+
+  function indexLinks() {
+    sourceLinks = new Map()
+    current = []
+    for (const link of pagesEl.querySelectorAll('a')) {
+      const href = linkHref(link)
+      if (!isSourceLink(href)) continue
+      link.classList.add('source')
+      if (sourceLinks.has(href)) sourceLinks.get(href).push(link)
+      else sourceLinks.set(href, [link])
+    }
+  }
+
+  /** Marks the elements the editor's cursor points at; the host re-sends after a render. */
+  function highlight(message) {
+    for (const link of current) link.classList.remove('current')
+    current = message.hrefs.flatMap((href) => sourceLinks.get(href) ?? [])
+    for (const link of current) link.classList.add('current')
+    if (message.reveal && current.length > 0) {
+      const rect = current[0].getBoundingClientRect()
+      const { clientWidth, clientHeight } = document.documentElement
+      const dx = scrollToShow(rect.left, rect.width, clientWidth)
+      const dy = scrollToShow(rect.top, rect.height, clientHeight)
+      if (dx !== 0 || dy !== 0) window.scrollBy(dx, dy)
+    }
+    vscode.postMessage({ type: 'highlighted', elements: current.length })
+  }
+
   function render(message) {
     if (message.revision !== revision) {
       // Nothing on screen yet: this is a reload, so go back to the saved place.
       const position = pagesEl.children.length > 0 ? capture(0) : state
       pagesEl.replaceChildren(...message.pages.map(toPage))
+      indexLinks()
       revision = message.revision
       layout()
       restore(position, 0)
@@ -239,6 +294,9 @@
         break
       case 'zoom':
         setZoom(data.action === 'fit' ? 1 : stepZoom(state.zoom, data.action === 'in' ? 1 : -1))
+        break
+      case 'highlight':
+        highlight(data)
         break
     }
   })
@@ -281,9 +339,13 @@
 
   // Links must not navigate the webview. VS Code's own click handler still hands
   // http(s) and mailto links (\with-url) to its opener and ignores every other
-  // scheme, so a textedit: link does nothing until step 8 makes it a reveal request.
+  // scheme; a textedit: link asks the host to show that place in the source (D19).
   pagesEl.addEventListener('click', (event) => {
-    if (event.target instanceof Element && event.target.closest('a')) event.preventDefault()
+    const link = event.target instanceof Element ? event.target.closest('a') : null
+    if (!link) return
+    event.preventDefault()
+    const href = linkHref(link)
+    if (isSourceLink(href)) vscode.postMessage({ type: 'reveal', href })
   })
 
   layout()
