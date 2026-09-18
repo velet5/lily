@@ -150,6 +150,32 @@ describe('parseStderr', () => {
     ])
   })
 
+  test('a location inside a string parsed by Scheme goes to the root, with its origin', () => {
+    const stderr = [
+      "<included string>:1:6: error: unknown command: `\\nope'",
+      '{ c4 ',
+      '     \\nope }',
+      "<string>:1:1: error: unknown command: `\\nada'",
+      '',
+      '\\nada',
+      `fatal error: failed files: "${root}"`,
+    ].join('\n')
+    assert.deepEqual(parse(stderr), [
+      {
+        file: root,
+        line: 1,
+        severity: 'error',
+        message: "unknown command: `\\nope'\n(in <included string>, line 1, column 6)",
+      },
+      {
+        file: root,
+        line: 1,
+        severity: 'error',
+        message: "unknown command: `\\nada'\n(in <string>, line 1, column 1)",
+      },
+    ])
+  })
+
   test('"failed files" is kept when it is the only sign of the failure', () => {
     const stderr = [`${root}:2:3: warning: something odd`, '{ ', '  c }', `fatal error: failed files: "${root}"`].join('\n')
     assert.deepEqual(

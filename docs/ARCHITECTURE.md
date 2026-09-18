@@ -345,6 +345,7 @@ Probes run with `GNU LilyPond 2.26.0 (running Guile 3.0)`:
 | Error at column 1; at end of input | first context line empty; second context line only spaces |
 | `#(display (car 5))` | `2:2` (the `(`, not the `#`), and `In procedure car: …` **after** the context lines |
 | `\include "missing.ily"` | `(search path: …)` **between** the message and the context lines |
+| `#(ly:parser-include-string "{ c4 \\nope }")`; `ly:parse-string-expression` | located as `<included string>:1:6:` and `<string>:1:1:`, with the usual two context lines |
 | Root compiled through a symlinked directory, or `/tmp` vs `/private/tmp` | paths are printed as given, never `realpath`ed; includes are `<cwd as given>/<name>` |
 | Trivial score wall time | ≈ 0.43 s |
 | Scheme introspection from a `.ly` file | 167 grobs, 43 contexts, 199 music functions with docstrings and signatures (recipe in DECISIONS D8) |

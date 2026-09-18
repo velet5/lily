@@ -65,15 +65,20 @@ export function parseStderr(stderr: string, options: ParseOptions): LyDiagnostic
     const block: string[] = []
     while (index < lines.length && !parseHeader(lines[index])) block.push(lines[index++])
 
-    const message = [header.message, ...continuation(block, header.column)]
+    // Text parsed by Scheme is located in `<included string>` or `<string>`,
+    // which is no file: the message goes to the root and names where it was.
+    const inString = header.file !== undefined && /^<.*>$/.test(header.file)
+    const origin = `(in ${header.file}, line ${header.line}, column ${header.column})`
+    const message = [header.message, ...continuation(block, header.column), inString ? origin : '']
       .map((line) => line.trim())
       // "continuing, cross fingers" follows every programming error.
       .filter((line) => line !== '' && line !== 'continuing, cross fingers')
       .join('\n')
+    const located = header.file !== undefined && !inString
     const diagnostic: LyDiagnostic = {
-      file: header.file === undefined ? rootFile : path.resolve(cwd, header.file),
-      line: Math.max(1, header.line ?? 1),
-      ...(header.column === undefined ? {} : { column: Math.max(1, header.column) }),
+      file: located ? path.resolve(cwd, header.file!) : rootFile,
+      line: located ? Math.max(1, header.line ?? 1) : 1,
+      ...(located && header.column !== undefined ? { column: Math.max(1, header.column) } : {}),
       severity: header.keyword === 'error' || header.keyword === 'fatal error' ? 'error' : 'warning',
       // A programming error is a lilypond bug the run survived; say so.
       message: header.keyword === 'programming error' ? `programming error: ${message}` : message,

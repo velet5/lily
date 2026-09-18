@@ -419,6 +419,12 @@ into the compile and stderr modules.
   dropped. `programming error` is a warning whose message keeps that prefix.
   Lines before the first header (Guile notes, backtraces) are only in the
   output channel.
+- **Locations that are not files.** Text parsed by Scheme
+  (`ly:parser-include-string`, `ly:parse-string-expression`) is reported as
+  `<included string>:1:6: error: …` or `<string>:…`. Such a message goes to
+  line 1 of the root file, without a column, and ends with
+  `(in <included string>, line 1, column 6)`; it must not become a diagnostic
+  on a file that does not exist.
 - **`fatal error: failed files: …`** ends every failed run. It is dropped when
   another error explains the failure and kept when it is the only one, so a
   failure is never silent (D6) and never duplicated at line 1.
