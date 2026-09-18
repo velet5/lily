@@ -247,14 +247,26 @@ syntax-only mode to fall back on.
 
 ## 4. Handoff to implementation
 
-Repository state after this brief: git is initialised on `main` and contains
-only `docs/`. There is no `package.json`, `.gitignore` or source yet.
+Repository state: the extension skeleton exists (D13). `src/extension.ts` has
+an empty `activate()`; `package.json` contributes only the `lilypond` language
+(`.ly`, `.ily`) and `language-configuration.json`. No grammar, commands or
+settings yet.
+
+```
+npm install
+npm run build         # esbuild → dist/extension.js   (watch: npm run watch)
+npm run check-types   # tsc --noEmit over src/ and test/
+npm test              # type-check, build, then the extension-host smoke test
+```
+
+`npm test` downloads a VS Code build into `.vscode-test/` on first run. F5
+("Run Extension") opens `test/fixtures` in a development host.
 
 Where each piece of upcoming work should look first:
 
 | Work | Read |
 | --- | --- |
-| Extension skeleton, language id, bundling | §3.2, D2, D9, D12 (name/prefix still *proposed*) |
+| Extension skeleton, language id, bundling (done) | §3.2, D2, D9, D12, D13 (name/publisher still *proposed*) |
 | Grammar and snippets | D2 — **do not copy** from the CC BY-NC grammar |
 | Compile service | §3.3, D3, D5; keep `src/compile/**` free of `vscode` |
 | Diagnostics | §3.5 (stderr rows), D6 |

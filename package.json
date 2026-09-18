@@ -1,0 +1,55 @@
+{
+  "name": "lily",
+  "displayName": "Lily — LilyPond",
+  "description": "LilyPond editing with a side-by-side SVG preview, diagnostics and IntelliSense.",
+  "version": "0.0.1",
+  "publisher": "lily-dev",
+  "private": true,
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "keywords": [
+    "lilypond",
+    "music",
+    "notation",
+    "score"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "languages": [
+      {
+        "id": "lilypond",
+        "aliases": [
+          "LilyPond",
+          "lilypond"
+        ],
+        "extensions": [
+          ".ly",
+          ".ily"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ]
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "package": "node esbuild.mjs --production",
+    "check-types": "tsc --noEmit",
+    "pretest": "npm run check-types && node esbuild.mjs --tests",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^22.0.0",
+    "@types/vscode": "~1.100.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.1.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}

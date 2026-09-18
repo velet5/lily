@@ -257,6 +257,32 @@ into the compile and stderr modules.
 
 ---
 
+## D13 — Skeleton conventions
+
+**Status:** accepted (tooling, language configuration) / proposed (identity)
+
+- **Identity.** The D12 working name is kept: package `lily`, prefix `lily.`.
+  `publisher` is the placeholder `lily-dev`; nothing hard-codes it (the smoke
+  test derives the extension id from `package.json`). Both still have to be
+  settled before step 9.
+- **Engine floor.** `engines.vscode` is `^1.100.0` with `@types/vscode` pinned
+  to `~1.100.0`; raise the two together. Activation relies on the implicit
+  `onLanguage:lilypond` event, so there is no `activationEvents` entry.
+- **Two test tiers.** Extension-host tests are the top-level `test/*.test.ts`
+  files, bundled to `out/test/` by `esbuild.mjs --tests` and run by
+  `@vscode/test-cli` (`npm test`, mocha `tdd` UI, workspace `test/fixtures`).
+  Pure-module tests (D12) must live elsewhere — beside the source or under
+  `test/unit/` — and their runner must not pick up `test/*.test.ts`.
+- **Type checking is separate from bundling.** `tsc --noEmit` checks `src` and
+  `test`; esbuild emits. TypeScript 7, `module: preserve`.
+- **Language configuration.** `<`/`>` are not brackets (unpaired in `\<`,
+  `\>`, `->`); `<<`/`>>` and `#{`/`#}` are. `(` and `[` are matched but not
+  auto-closed, because slurs and beams close several notes later. `wordPattern`
+  includes the leading backslash, so `\relative` is one word — completion in
+  step 10 should replace that whole range.
+
+---
+
 ## Out of scope
 
 MIDI keyboard input, MIDI playback, and `python-ly` formatting. Revisit only

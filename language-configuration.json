@@ -1,0 +1,37 @@
+{
+  "comments": {
+    "lineComment": "%",
+    "blockComment": ["%{", "%}"]
+  },
+  // `<`/`>` are left out on purpose: besides chords they appear unpaired in
+  // `\<`, `\>` and `->`, which would show up as mismatched brackets.
+  "brackets": [
+    ["{", "}"],
+    ["<<", ">>"],
+    ["#{", "#}"],
+    ["[", "]"],
+    ["(", ")"]
+  ],
+  // `(` and `[` are not auto-closed: a slur or beam ends several notes later,
+  // so `c4(` turning into `c4()` is always wrong in music.
+  "autoClosingPairs": [
+    { "open": "{", "close": "}" },
+    { "open": "<<", "close": ">>", "notIn": ["string", "comment"] },
+    { "open": "#{", "close": "#}", "notIn": ["string", "comment"] },
+    { "open": "%{", "close": "%}", "notIn": ["string"] },
+    { "open": "\"", "close": "\"", "notIn": ["string", "comment"] }
+  ],
+  "surroundingPairs": [
+    ["{", "}"],
+    ["[", "]"],
+    ["(", ")"],
+    ["<", ">"],
+    ["\"", "\""]
+  ],
+  // `\command`, hyphenated identifiers (`ly:music-function?` splits at `:`), numbers.
+  "wordPattern": "\\\\?[A-Za-z\\u00C0-\\uFFFF]+(?:[-_][A-Za-z\\u00C0-\\uFFFF]+)*|-?\\d+(?:\\.\\d+)?",
+  "indentationRules": {
+    "increaseIndentPattern": "^[^%]*(\\{|<<)\\s*(%.*)?$",
+    "decreaseIndentPattern": "^\\s*(\\}|>>|#\\})"
+  }
+}
