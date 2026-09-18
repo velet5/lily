@@ -457,6 +457,76 @@ into the compile and stderr modules.
 
 ---
 
+## D17 — Preview panel conventions
+
+**Status:** accepted · **Refines:** D1, D4, D5, D13
+
+- **Files.** `src/preview/panel.ts` (`previewHtml`, `PreviewPanel`,
+  `PreviewManager`, the `HostMessage` / `WebviewMessage` types),
+  `media/preview.js`, `media/preview.css`. The command is
+  `lily.preview.openToSide`, palette only until step 9.
+- **Types-only `vscode`.** `panel.ts` never calls into `vscode`: `extension.ts`
+  hands the manager a `createPanel(title)` closure (`ViewColumn.Beside`,
+  `preserveFocus`) and the asset URIs. The whole lifecycle therefore runs under
+  `node --test` against a fake `WebviewPanel` (`test/preview/panel.test.ts`);
+  `test/preview.test.ts` covers the real webview in the extension host.
+- **One pipeline.** `extension.ts` passes *every* compile of a previewed root to
+  `preview.follow(run)`, whatever started it, so step 7 only has to trigger
+  compiles. Opening a preview compiles; revealing one that already shows pages
+  does not. The panel reads the SVG text as soon as the result arrives and keeps
+  the text, never the paths (D15). Closing it calls `compiler.release(root)`.
+- **What is shown.** Pages, when a run wrote any, also a failed one (plus a
+  note). A failed run without pages keeps the previous render and says so;
+  cancelled runs change nothing; "busy" counts followed runs, so it lasts until
+  the successor ends. Notes are composed on the host and sent as
+  `{ type: 'status', busy, note }`.
+- **CSP.** `default-src 'none'; img-src data:; style-src <cspSource>;
+  script-src 'nonce-…'`, `localResourceRoots` = `media/` only. No inline style
+  either: the webview sets sizes through the CSSOM (`style.setProperty`), which
+  a CSP does not restrict.
+- **Untrusted SVG.** A `.ly` file can put arbitrary markup into its output. The
+  webview parses each page with `DOMParser`, keeps only an allow-list of drawing
+  elements, drops `on*` and `style` attributes, and keeps an `href` only when it
+  is `textedit:`/`http(s):`/`mailto:` on `<a>`, a bitmap `data:` URI on
+  `<image>`, or a same-document `#id` elsewhere. `width`/`height` are removed so
+  CSS sizes the page from its `viewBox`. Before parsing, inline styles are cut
+  from the text, only because Chromium otherwise logs one CSP violation per
+  notehead.
+- **Zoom is relative to fit-width.** `1` means "page width = pane width" and is
+  labelled *Fit*; range 0.25–4; a resized pane keeps the proportion. Controls:
+  the floating −/Fit/+ group, `+` `-` `0`, Ctrl/Cmd+wheel (also a trackpad
+  pinch, anchored at the pointer), and the host message
+  `{ type: 'zoom', action: 'in' | 'out' | 'fit' }` behind `PreviewPanel.zoom()`
+  for step 9's commands.
+- **Scroll anchor.** A position is `{ page, offset }` — page index plus a
+  fraction of that page's height — together with the horizontal centre as a
+  fraction of the scroll width. It is captured before and restored after every
+  refresh, zoom and resize, and saved with `vscode.setState` on scroll. VS Code
+  destroys a hidden webview; on reload the script posts `ready`, the host
+  re-sends colours, pages and status, and the saved anchor and zoom are applied.
+  A score that got shorter lands at the end of its last page.
+- **`rendered` handshake.** After each render the webview posts
+  `{ type: 'rendered', revision, pages }`; `PreviewPanel.whenRendered()`
+  resolves once the latest revision is drawn. The tests rely on it, and step 8
+  can use it to know when the link index is current.
+- **Links are inert for now.** The webview `preventDefault`s every click on an
+  `<a>`; step 8 turns `textedit:` links into reveal requests and may open
+  `http(s):` links (from `\with-url`) externally.
+- **Colours.** `lily.preview.colors`: `theme` (default; `currentColor` on the
+  editor background, D1) or `paper` (black on white pages). Applied live.
+- **`activate()` returns `{ previews }`** (`LilyApi`), so extension-host tests
+  can reach a panel.
+- **Not done here.** No `WebviewPanelSerializer`: previews are not restored
+  after a window reload (it would need a compile at startup). No panel icon.
+- **Verified** by loading the real script and stylesheet in headless Chrome
+  under the same policy: a hostile SVG (script, `onload`, `foreignObject`,
+  `javascript:` link, SMIL) left nothing behind, a refresh kept `scrollY`
+  exactly, a zoom kept the point at mid-viewport, the left edge of a zoomed
+  page stayed reachable, and a reload returned to the saved place and zoom. The
+  harness was not kept; scroll events needed a synthetic dispatch there.
+
+---
+
 ## Out of scope
 
 MIDI keyboard input, MIDI playback, and `python-ly` formatting. Revisit only

@@ -57,6 +57,11 @@
         "command": "lily.showOutput",
         "title": "Show Output",
         "category": "LilyPond"
+      },
+      {
+        "command": "lily.preview.openToSide",
+        "title": "Open Preview to the Side",
+        "category": "LilyPond"
       }
     ],
     "configuration": {
@@ -76,6 +81,20 @@
           "default": [],
           "scope": "resource",
           "markdownDescription": "Extra command-line arguments for every `lilypond` run, one argument per item, for example `--include=/path/to/my library` or `-dno-point-and-click`."
+        },
+        "lily.preview.colors": {
+          "type": "string",
+          "enum": [
+            "theme",
+            "paper"
+          ],
+          "enumDescriptions": [
+            "Draw the score in the editor's foreground colour on the editor's background.",
+            "Draw the score in black on white pages, whatever the theme."
+          ],
+          "default": "theme",
+          "scope": "window",
+          "description": "Colours of the score preview."
         }
       }
     }

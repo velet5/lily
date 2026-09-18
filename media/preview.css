@@ -1,0 +1,171 @@
+/* Preview webview (DECISIONS D17). The CSP allows no inline styles, so every
+   rule lives here; preview.js only sets custom properties through the CSSOM. */
+
+html {
+  /* Always reserve the scrollbar: fit-width must not flip it on and off. */
+  overflow-y: scroll;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+  font: var(--vscode-font-size, 13px) var(--vscode-font-family, sans-serif);
+}
+
+#pages {
+  box-sizing: border-box;
+  /* Grows with zoomed pages so their left edge stays reachable by scrolling. */
+  width: max-content;
+  min-width: 100%;
+  padding: 16px; /* PADDING in preview.js */
+}
+
+.page {
+  width: var(--page-width, 100%);
+  margin: 0 auto 16px;
+  /* The classic SVG backend paints with currentColor (DECISIONS D1). */
+  color: var(--vscode-editor-foreground);
+  background: var(--vscode-editor-background);
+  outline: 1px solid var(--vscode-contrastBorder, var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.35)));
+}
+
+.page:last-child {
+  margin-bottom: 0;
+}
+
+body[data-colors='paper'] .page {
+  color: #000;
+  background: #fff;
+  outline-color: var(--vscode-contrastBorder, rgba(0, 0, 0, 0.2));
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+}
+
+.page svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* What LilyPond puts inline and the CSP discards. */
+.page tspan {
+  white-space: pre;
+}
+
+.page a {
+  color: inherit;
+  cursor: default;
+}
+
+.page-error {
+  box-sizing: border-box;
+  padding: 24px;
+  color: var(--vscode-errorForeground);
+}
+
+#empty {
+  margin: 0;
+  padding: 25vh 24px 0;
+  text-align: center;
+  color: var(--vscode-descriptionForeground);
+}
+
+#empty:empty {
+  display: none;
+}
+
+#progress {
+  position: fixed;
+  z-index: 2;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  overflow: hidden;
+}
+
+#progress::before {
+  content: '';
+  position: absolute;
+  width: 30%;
+  height: 100%;
+  background: var(--vscode-progressBar-background, #0e70c0);
+  animation: progress 1.4s linear infinite;
+}
+
+@keyframes progress {
+  from {
+    left: -30%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #progress::before {
+    left: 0;
+    width: 100%;
+    animation: none;
+  }
+}
+
+#note,
+#zoom {
+  position: fixed;
+  z-index: 1;
+  bottom: 12px;
+  border: 1px solid var(--vscode-contrastBorder, var(--vscode-editorWidget-border, transparent));
+  border-radius: 4px;
+  background: var(--vscode-editorWidget-background);
+  color: var(--vscode-editorWidget-foreground);
+  box-shadow: 0 2px 8px var(--vscode-widget-shadow, rgba(0, 0, 0, 0.3));
+}
+
+#note {
+  left: 12px;
+  /* Leaves room for the zoom control. */
+  max-width: calc(100% - 190px);
+  margin: 0;
+  padding: 4px 10px;
+}
+
+#zoom {
+  right: 12px;
+  display: flex;
+  opacity: 0.6;
+}
+
+#zoom:hover,
+#zoom:focus-within {
+  opacity: 1;
+}
+
+#zoom button {
+  min-width: 28px;
+  padding: 3px 6px;
+  border: 0;
+  border-radius: 3px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+#zoom-fit {
+  min-width: 48px;
+}
+
+#zoom button:hover {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+#zoom button:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+[hidden] {
+  display: none !important;
+}

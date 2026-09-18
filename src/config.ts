@@ -1,4 +1,5 @@
 import * as vscode from 'vscode'
+import type { PreviewColors } from './preview/panel'
 
 // Typed access to the `lily.*` settings contributed in package.json. Values are
 // read on every call, never cached, so a change applies to the next compile
@@ -21,4 +22,14 @@ export function getCompileSettings(scope?: vscode.ConfigurationScope): CompileSe
       ? extraArgs.filter((arg): arg is string => typeof arg === 'string' && arg.length > 0)
       : [],
   }
+}
+
+export interface PreviewSettings {
+  /** `lily.preview.colors`. */
+  colors: PreviewColors
+}
+
+export function getPreviewSettings(): PreviewSettings {
+  const colors = vscode.workspace.getConfiguration('lily').get<unknown>('preview.colors')
+  return { colors: colors === 'paper' ? 'paper' : 'theme' }
 }

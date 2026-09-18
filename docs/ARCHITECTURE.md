@@ -163,14 +163,14 @@ src/
     parse.ts            stderr → LyDiagnostic[], column → character, token span (no vscode)
     publish.ts          CompileReporter: Problems, output channel, status bar item
   preview/
-    panel.ts            WebviewPanel lifecycle, message protocol
+    panel.ts            PreviewManager / PreviewPanel, html + CSP, message protocol (types-only vscode)
     sync.ts             textedit link index, cursor ↔ element mapping
   language/
     completion.ts       context-aware completion
     hover.ts
   cli.ts                headless entry (step 11)
   mcp.ts                minimal MCP server (step 11)
-media/                  webview script + css (no framework)
+media/                  preview.js + preview.css for the webview (no framework, no build)
 syntaxes/               lilypond.tmLanguage.json (authored here)
 snippets/
 data/                   generated lilypond-data.json
@@ -229,6 +229,9 @@ Facts the implementation must respect, all **[verified]**:
 - Refresh replaces page nodes in place and restores `scrollTop` as a fraction
   of page height, so zoom + position survive recompiles.
   `retainContextWhenHidden` is not needed; state is small and re-sent.
+- LilyPond's SVG carries an inline `<style>` (`tspan { white-space: pre; }`)
+  and `style="color:inherit;"` on every link **[verified, 2.26]**. The CSP
+  discards both, so `media/preview.css` restates them; details in D17.
 - Point-and-click links are `<a xlink:href="textedit://…">`. The webview
   intercepts clicks, `preventDefault`s, and posts the href to the host.
 
@@ -308,7 +311,7 @@ Where each piece of upcoming work should look first:
 | Grammar and snippets (done) | D2 — **do not copy** from the CC BY-NC grammar; D14 for scopes, modes, snapshot workflow |
 | Compile service (done) | §3.3, D3, D5, D15; keep `src/compile/**` free of `vscode` |
 | Diagnostics (done) | §3.5 (stderr rows), D6, D16 |
-| Preview panel, refresh on save | §3.4, §3.6, D1, D4, D10 |
+| Preview panel, refresh on save | §3.4, §3.6, D1, D4, D10, D17 |
 | Score ↔ source sync | §3.5 (SVG link row), D7 |
 | IntelliSense data | D8 (includes the verified Scheme recipe) |
 | CLI / MCP for agents | §3.1 `CompileResult`, D11 |

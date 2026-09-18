@@ -1,6 +1,6 @@
 import * as assert from 'node:assert'
 import * as vscode from 'vscode'
-import { getCompileSettings } from '../src/config'
+import { getCompileSettings, getPreviewSettings } from '../src/config'
 
 suite('compile settings', () => {
   const config = () => vscode.workspace.getConfiguration('lily')
@@ -10,6 +10,7 @@ suite('compile settings', () => {
   teardown(async () => {
     await config().update('lilypond.path', undefined, target)
     await config().update('compile.extraArgs', undefined, target)
+    await config().update('preview.colors', undefined, target)
   })
 
   test('defaults search PATH and add no arguments', () => {
@@ -23,5 +24,11 @@ suite('compile settings', () => {
       lilypondPath: '/opt/lilypond/bin/lilypond',
       extraArgs: ['--include=/my library'],
     })
+  })
+
+  test('the preview follows the theme unless paper is asked for', async () => {
+    assert.deepStrictEqual(getPreviewSettings(), { colors: 'theme' })
+    await config().update('preview.colors', 'paper', target)
+    assert.deepStrictEqual(getPreviewSettings(), { colors: 'paper' })
   })
 })
