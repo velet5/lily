@@ -795,7 +795,8 @@ into the compile and stderr modules.
 - **Commands.** One list, four kinds: `function` (with signature and return
   kind), `music` (predefined identifiers such as `\stemUp`, `\staccato`, `\f`,
   context modifications, durations; with their expansion from
-  `music->lily-string` when it is short), `keyword`, `markup`. A name that is
+  `music->lily-string` when it is short and holds no printed Scheme object —
+  `#<hash-table 10ac…>` would change with every run), `keyword`, `markup`. A name that is
   also a markup command (`\tiny`, `\override`, `\score`) keeps one entry with a
   `markup` sub-entry. User properties only: internal grob properties are
   dropped, and a grob's properties are the union over its interfaces, the ones

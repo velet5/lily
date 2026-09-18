@@ -48,6 +48,10 @@ describe('data/completions.json', () => {
     }
   })
 
+  test('expansions are LilyPond, not printed Scheme objects whose address changes per run', () => {
+    for (const command of data.commands) assert.doesNotMatch(command.expansion ?? '', /#</, command.name)
+  })
+
   test('every function is documented and has its signature', () => {
     for (const command of data.commands.filter((entry) => entry.kind === 'function')) {
       assert.ok(command.doc, command.name)

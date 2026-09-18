@@ -383,7 +383,8 @@ function expansionOf(name, expansion) {
   const body = inner.filter((line) => line.trim()).map((line) => line.replace(/^ {2}/, ''))
   if (body.length === 0 || body.length > MAX_EXPANSION_LINES) return undefined
   if (body.length === 1 && body[0] === `\\${name}`) return undefined
-  if (body.some((line) => line.length > 100 || line.includes('%{'))) return undefined
+  // `#<hash-table 10ac3fd20 …>` is no LilyPond, and its address differs from run to run.
+  if (body.some((line) => line.length > 100 || line.includes('%{') || line.includes('#<'))) return undefined
   return body.join('\n')
 }
 
