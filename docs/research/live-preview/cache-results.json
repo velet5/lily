@@ -1,0 +1,62 @@
+[
+  {
+    "score": "small",
+    "median_ms": 408.05,
+    "runs": [
+      {
+        "ms": 418.33,
+        "pages": 1,
+        "bytes": 24033,
+        "links": 39,
+        "currentColor": true,
+        "byte_identical_to_cold": true
+      },
+      {
+        "ms": 407.3,
+        "pages": 1,
+        "bytes": 24033,
+        "links": 39,
+        "currentColor": true,
+        "byte_identical_to_cold": true
+      },
+      {
+        "ms": 408.05,
+        "pages": 1,
+        "bytes": 24033,
+        "links": 39,
+        "currentColor": true,
+        "byte_identical_to_cold": true
+      }
+    ]
+  },
+  {
+    "score": "medium",
+    "median_ms": 712.95,
+    "runs": [
+      {
+        "ms": 731.7,
+        "pages": 2,
+        "bytes": 386173,
+        "links": 610,
+        "currentColor": true,
+        "byte_identical_to_cold": true
+      },
+      {
+        "ms": 712.95,
+        "pages": 2,
+        "bytes": 386173,
+        "links": 610,
+        "currentColor": true,
+        "byte_identical_to_cold": true
+      },
+      {
+        "ms": 712.43,
+        "pages": 2,
+        "bytes": 386173,
+        "links": 610,
+        "currentColor": true,
+        "byte_identical_to_cold": true
+      }
+    ]
+  }
+]

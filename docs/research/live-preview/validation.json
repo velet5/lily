@@ -1,0 +1,33 @@
+[
+  {
+    "source": "test/fixtures/simple.ly",
+    "files": [
+      "score.svg"
+    ],
+    "byte_identical": true
+  },
+  {
+    "source": "test/fixtures/hello.ly",
+    "files": [
+      "score.svg"
+    ],
+    "byte_identical": true
+  },
+  {
+    "source": "test/fixtures/pages.ly",
+    "files": [
+      "score-2.svg",
+      "score-1.svg"
+    ],
+    "byte_identical": true
+  },
+  {
+    "source": "test/e2e/workspace/score.ly",
+    "files": [
+      "score-2.svg",
+      "score-1.svg",
+      "score.midi"
+    ],
+    "byte_identical": true
+  }
+]

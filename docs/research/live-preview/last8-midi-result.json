@@ -1,0 +1,13 @@
+{
+  "exitCode": 0,
+  "programming_error_count": 612,
+  "examples": [
+    "programming error: no current dynamic",
+    "programming error: asked to compute volume at -56.000000 for dynamic span of duration 8.000000 starting at 56",
+    "programming error: asked to compute volume at -55.875000 for dynamic span of duration 8.000000 starting at 56"
+  ],
+  "source": "medium-normal.ly",
+  "extraArgs": [
+    "-dlast=R1*8"
+  ]
+}

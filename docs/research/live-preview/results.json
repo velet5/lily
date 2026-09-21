@@ -1,0 +1,344 @@
+{
+  "date": "2026-09-21",
+  "platform": "macOS-26.5.2-arm64-arm-64bit-Mach-O",
+  "version": "GNU LilyPond 2.26.0 (running Guile 3.0)",
+  "method": "Fresh process; warm filesystem caches; one warmup per case; three measured runs in shuffled rounds; no editor overhead.",
+  "results": [
+    {
+      "score": "small",
+      "mode": "baseline",
+      "median_ms": 689.65,
+      "runs": [
+        {
+          "ms": 695.71,
+          "pages": 1,
+          "bytes": 24033,
+          "links": 39,
+          "currentColor": true
+        },
+        {
+          "ms": 689.65,
+          "pages": 1,
+          "bytes": 24033,
+          "links": 39,
+          "currentColor": true
+        },
+        {
+          "ms": 678.5,
+          "pages": 1,
+          "bytes": 24033,
+          "links": 39,
+          "currentColor": true
+        }
+      ]
+    },
+    {
+      "score": "small",
+      "mode": "minimal",
+      "median_ms": 680.41,
+      "runs": [
+        {
+          "ms": 673.14,
+          "pages": 1,
+          "bytes": 24072,
+          "links": 39,
+          "currentColor": true
+        },
+        {
+          "ms": 682.89,
+          "pages": 1,
+          "bytes": 24072,
+          "links": 39,
+          "currentColor": true
+        },
+        {
+          "ms": 680.41,
+          "pages": 1,
+          "bytes": 24072,
+          "links": 39,
+          "currentColor": true
+        }
+      ]
+    },
+    {
+      "score": "small",
+      "mode": "no-midi",
+      "median_ms": 685.77,
+      "runs": [
+        {
+          "ms": 685.77,
+          "pages": 1,
+          "bytes": 24072,
+          "links": 39,
+          "currentColor": true
+        },
+        {
+          "ms": 680.96,
+          "pages": 1,
+          "bytes": 24072,
+          "links": 39,
+          "currentColor": true
+        },
+        {
+          "ms": 694.58,
+          "pages": 1,
+          "bytes": 24072,
+          "links": 39,
+          "currentColor": true
+        }
+      ]
+    },
+    {
+      "score": "small",
+      "mode": "no-links",
+      "median_ms": 677.14,
+      "runs": [
+        {
+          "ms": 677.14,
+          "pages": 1,
+          "bytes": 19519,
+          "links": 0,
+          "currentColor": true
+        },
+        {
+          "ms": 672.73,
+          "pages": 1,
+          "bytes": 19519,
+          "links": 0,
+          "currentColor": true
+        },
+        {
+          "ms": 686.89,
+          "pages": 1,
+          "bytes": 19519,
+          "links": 0,
+          "currentColor": true
+        }
+      ]
+    },
+    {
+      "score": "small",
+      "mode": "cairo",
+      "median_ms": 313.09,
+      "runs": [
+        {
+          "ms": 313.24,
+          "pages": 1,
+          "bytes": 31997,
+          "links": 0,
+          "currentColor": false
+        },
+        {
+          "ms": 309.62,
+          "pages": 1,
+          "bytes": 31997,
+          "links": 0,
+          "currentColor": false
+        },
+        {
+          "ms": 313.09,
+          "pages": 1,
+          "bytes": 31997,
+          "links": 0,
+          "currentColor": false
+        }
+      ]
+    },
+    {
+      "score": "small",
+      "mode": "last8",
+      "median_ms": 681.86,
+      "runs": [
+        {
+          "ms": 674.37,
+          "pages": 1,
+          "bytes": 24072,
+          "links": 39,
+          "currentColor": true
+        },
+        {
+          "ms": 681.86,
+          "pages": 1,
+          "bytes": 24072,
+          "links": 39,
+          "currentColor": true
+        },
+        {
+          "ms": 706.43,
+          "pages": 1,
+          "bytes": 24072,
+          "links": 39,
+          "currentColor": true
+        }
+      ]
+    },
+    {
+      "score": "medium",
+      "mode": "baseline",
+      "median_ms": 5811.22,
+      "runs": [
+        {
+          "ms": 5777.16,
+          "pages": 2,
+          "bytes": 386173,
+          "links": 610,
+          "currentColor": true
+        },
+        {
+          "ms": 5811.22,
+          "pages": 2,
+          "bytes": 386173,
+          "links": 610,
+          "currentColor": true
+        },
+        {
+          "ms": 5962.96,
+          "pages": 2,
+          "bytes": 386173,
+          "links": 610,
+          "currentColor": true
+        }
+      ]
+    },
+    {
+      "score": "medium",
+      "mode": "minimal",
+      "median_ms": 5808.33,
+      "runs": [
+        {
+          "ms": 5808.33,
+          "pages": 2,
+          "bytes": 386847,
+          "links": 610,
+          "currentColor": true
+        },
+        {
+          "ms": 5803.14,
+          "pages": 2,
+          "bytes": 386847,
+          "links": 610,
+          "currentColor": true
+        },
+        {
+          "ms": 6063.38,
+          "pages": 2,
+          "bytes": 386847,
+          "links": 610,
+          "currentColor": true
+        }
+      ]
+    },
+    {
+      "score": "medium",
+      "mode": "no-midi",
+      "median_ms": 5828.84,
+      "runs": [
+        {
+          "ms": 5793.79,
+          "pages": 2,
+          "bytes": 386783,
+          "links": 610,
+          "currentColor": true
+        },
+        {
+          "ms": 5828.84,
+          "pages": 2,
+          "bytes": 386783,
+          "links": 610,
+          "currentColor": true
+        },
+        {
+          "ms": 6478.4,
+          "pages": 2,
+          "bytes": 386783,
+          "links": 610,
+          "currentColor": true
+        }
+      ]
+    },
+    {
+      "score": "medium",
+      "mode": "no-links",
+      "median_ms": 5835.55,
+      "runs": [
+        {
+          "ms": 5835.55,
+          "pages": 2,
+          "bytes": 314291,
+          "links": 0,
+          "currentColor": true
+        },
+        {
+          "ms": 5809.25,
+          "pages": 2,
+          "bytes": 314291,
+          "links": 0,
+          "currentColor": true
+        },
+        {
+          "ms": 5868.35,
+          "pages": 2,
+          "bytes": 314291,
+          "links": 0,
+          "currentColor": true
+        }
+      ]
+    },
+    {
+      "score": "medium",
+      "mode": "cairo",
+      "median_ms": 599.95,
+      "runs": [
+        {
+          "ms": 599.95,
+          "pages": 2,
+          "bytes": 482315,
+          "links": 0,
+          "currentColor": false
+        },
+        {
+          "ms": 597.77,
+          "pages": 2,
+          "bytes": 482315,
+          "links": 0,
+          "currentColor": false
+        },
+        {
+          "ms": 700.09,
+          "pages": 2,
+          "bytes": 482315,
+          "links": 0,
+          "currentColor": false
+        }
+      ]
+    },
+    {
+      "score": "medium",
+      "mode": "last8",
+      "median_ms": 1120.38,
+      "runs": [
+        {
+          "ms": 1085.17,
+          "pages": 1,
+          "bytes": 49627,
+          "links": 76,
+          "currentColor": true
+        },
+        {
+          "ms": 1120.38,
+          "pages": 1,
+          "bytes": 49627,
+          "links": 76,
+          "currentColor": true
+        },
+        {
+          "ms": 1325.09,
+          "pages": 1,
+          "bytes": 49627,
+          "links": 76,
+          "currentColor": true
+        }
+      ]
+    }
+  ]
+}

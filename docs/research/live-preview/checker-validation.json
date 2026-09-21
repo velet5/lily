@@ -1,0 +1,38 @@
+[
+  {
+    "file": "small-normal.ly",
+    "ok": true,
+    "errors": 0,
+    "warnings": 0
+  },
+  {
+    "file": "small-minimal.ly",
+    "ok": true,
+    "errors": 0,
+    "warnings": 0
+  },
+  {
+    "file": "small-no-midi.ly",
+    "ok": true,
+    "errors": 0,
+    "warnings": 0
+  },
+  {
+    "file": "medium-normal.ly",
+    "ok": true,
+    "errors": 0,
+    "warnings": 0
+  },
+  {
+    "file": "medium-minimal.ly",
+    "ok": true,
+    "errors": 0,
+    "warnings": 0
+  },
+  {
+    "file": "medium-no-midi.ly",
+    "ok": true,
+    "errors": 0,
+    "warnings": 0
+  }
+]

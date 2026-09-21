@@ -1,0 +1,484 @@
+{
+  "ms": 5833.4,
+  "pages": 2,
+  "bytes": 386173,
+  "links": 610,
+  "currentColor": true,
+  "spans": [
+    {
+      "name": "lilypond",
+      "ms": 5800.12,
+      "depth": 0
+    },
+    {
+      "name": "Parse scope",
+      "ms": 5569.214,
+      "depth": 1
+    },
+    {
+      "name": "Parse file",
+      "ms": 5569.097,
+      "depth": 2
+    },
+    {
+      "name": "Output svg",
+      "ms": 5313.871,
+      "depth": 3
+    },
+    {
+      "name": "output-stencils",
+      "ms": 5254.116,
+      "depth": 4
+    },
+    {
+      "name": "Process book",
+      "ms": 248.293,
+      "depth": 3
+    },
+    {
+      "name": "score",
+      "ms": 248.202,
+      "depth": 4
+    },
+    {
+      "name": "layout",
+      "ms": 238.004,
+      "depth": 5
+    },
+    {
+      "name": "Translate",
+      "ms": 130.569,
+      "depth": 6
+    },
+    {
+      "name": "Parse scope",
+      "ms": 120.139,
+      "depth": 1
+    },
+    {
+      "name": "Parse file",
+      "ms": 120.05,
+      "depth": 2
+    },
+    {
+      "name": "Boot Guile",
+      "ms": 91.462,
+      "depth": 1
+    },
+    {
+      "name": "springs-and-rods",
+      "ms": 79.866,
+      "depth": 6
+    },
+    {
+      "name": "Boot module",
+      "ms": 76.249,
+      "depth": 2
+    },
+    {
+      "name": "primitive-load-path lily",
+      "ms": 69.412,
+      "depth": 3
+    },
+    {
+      "name": "page-breaking",
+      "ms": 58.781,
+      "depth": 4
+    },
+    {
+      "name": "Parse file",
+      "ms": 46.926,
+      "depth": 3
+    },
+    {
+      "name": "Parse file",
+      "ms": 20.838,
+      "depth": 3
+    },
+    {
+      "name": "reset-all-fonts",
+      "ms": 16.29,
+      "depth": 1
+    },
+    {
+      "name": "Break items",
+      "ms": 14.07,
+      "depth": 6
+    },
+    {
+      "name": "midi",
+      "ms": 10.192,
+      "depth": 5
+    },
+    {
+      "name": "Translate",
+      "ms": 10.159,
+      "depth": 6
+    },
+    {
+      "name": "Parse file",
+      "ms": 8.933,
+      "depth": 3
+    },
+    {
+      "name": "Parse scope",
+      "ms": 8.646,
+      "depth": 4
+    },
+    {
+      "name": "Parse file",
+      "ms": 8.398,
+      "depth": 5
+    },
+    {
+      "name": "scm_init_funcs",
+      "ms": 6.592,
+      "depth": 3
+    },
+    {
+      "name": "Parse scope",
+      "ms": 5.454,
+      "depth": 3
+    },
+    {
+      "name": "Parse file",
+      "ms": 5.126,
+      "depth": 3
+    },
+    {
+      "name": "Parse file",
+      "ms": 5.101,
+      "depth": 3
+    },
+    {
+      "name": "Parse file",
+      "ms": 4.925,
+      "depth": 4
+    },
+    {
+      "name": "Parse file",
+      "ms": 3.954,
+      "depth": 3
+    },
+    {
+      "name": "Parse file",
+      "ms": 3.909,
+      "depth": 3
+    },
+    {
+      "name": "Parse scope",
+      "ms": 3.863,
+      "depth": 4
+    },
+    {
+      "name": "Handle dependencies",
+      "ms": 2.754,
+      "depth": 6
+    },
+    {
+      "name": "Parse file",
+      "ms": 2.025,
+      "depth": 5
+    },
+    {
+      "name": "Parse file",
+      "ms": 1.666,
+      "depth": 3
+    },
+    {
+      "name": "reset-all-fonts",
+      "ms": 1.595,
+      "depth": 3
+    },
+    {
+      "name": "reset-all-fonts",
+      "ms": 1.593,
+      "depth": 1
+    },
+    {
+      "name": "Parse file",
+      "ms": 1.408,
+      "depth": 3
+    },
+    {
+      "name": "Parse file",
+      "ms": 1.174,
+      "depth": 3
+    },
+    {
+      "name": "Parse file",
+      "ms": 1.132,
+      "depth": 3
+    },
+    {
+      "name": "Parse file",
+      "ms": 0.793,
+      "depth": 3
+    },
+    {
+      "name": "midi",
+      "ms": 0.776,
+      "depth": 4
+    },
+    {
+      "name": "Import module",
+      "ms": 0.771,
+      "depth": 2
+    },
+    {
+      "name": "Parse file",
+      "ms": 0.7,
+      "depth": 3
+    },
+    {
+      "name": "Parse file",
+      "ms": 0.692,
+      "depth": 3
+    },
+    {
+      "name": "Fix up refpoints",
+      "ms": 0.647,
+      "depth": 6
+    },
+    {
+      "name": "Parse file",
+      "ms": 0.563,
+      "depth": 3
+    },
+    {
+      "name": "Parse file",
+      "ms": 0.547,
+      "depth": 3
+    },
+    {
+      "name": "Parse file",
+      "ms": 0.507,
+      "depth": 5
+    },
+    {
+      "name": "Parse scope",
+      "ms": 0.308,
+      "depth": 4
+    },
+    {
+      "name": "Parse file",
+      "ms": 0.247,
+      "depth": 3
+    },
+    {
+      "name": "before-line-breaking",
+      "ms": 0.226,
+      "depth": 6
+    },
+    {
+      "name": "Parse scope",
+      "ms": 0.209,
+      "depth": 3
+    },
+    {
+      "name": "Parse file",
+      "ms": 0.202,
+      "depth": 3
+    },
+    {
+      "name": "Parse scope",
+      "ms": 0.174,
+      "depth": 4
+    },
+    {
+      "name": "page-stencil(s)",
+      "ms": 0.169,
+      "depth": 4
+    },
+    {
+      "name": "Import module",
+      "ms": 0.165,
+      "depth": 2
+    },
+    {
+      "name": "Scm_init::init",
+      "ms": 0.155,
+      "depth": 3
+    },
+    {
+      "name": "Read file",
+      "ms": 0.15,
+      "depth": 3
+    },
+    {
+      "name": "Parse scope",
+      "ms": 0.15,
+      "depth": 4
+    },
+    {
+      "name": "Parse scope",
+      "ms": 0.137,
+      "depth": 4
+    },
+    {
+      "name": "Read file",
+      "ms": 0.12,
+      "depth": 4
+    },
+    {
+      "name": "Import module",
+      "ms": 0.114,
+      "depth": 2
+    },
+    {
+      "name": "Read file",
+      "ms": 0.111,
+      "depth": 3
+    },
+    {
+      "name": "Read file",
+      "ms": 0.096,
+      "depth": 3
+    },
+    {
+      "name": "Read file",
+      "ms": 0.092,
+      "depth": 3
+    },
+    {
+      "name": "Read file",
+      "ms": 0.088,
+      "depth": 2
+    },
+    {
+      "name": "Read file",
+      "ms": 0.082,
+      "depth": 3
+    },
+    {
+      "name": "Import module",
+      "ms": 0.077,
+      "depth": 2
+    },
+    {
+      "name": "Read file",
+      "ms": 0.076,
+      "depth": 3
+    },
+    {
+      "name": "Read file",
+      "ms": 0.074,
+      "depth": 3
+    },
+    {
+      "name": "Read file",
+      "ms": 0.072,
+      "depth": 5
+    },
+    {
+      "name": "Import module",
+      "ms": 0.07,
+      "depth": 2
+    },
+    {
+      "name": "Read file",
+      "ms": 0.069,
+      "depth": 5
+    },
+    {
+      "name": "Read file",
+      "ms": 0.061,
+      "depth": 2
+    },
+    {
+      "name": "Read file",
+      "ms": 0.054,
+      "depth": 3
+    },
+    {
+      "name": "Read file",
+      "ms": 0.05,
+      "depth": 5
+    },
+    {
+      "name": "Read file",
+      "ms": 0.045,
+      "depth": 3
+    },
+    {
+      "name": "Read file",
+      "ms": 0.045,
+      "depth": 3
+    },
+    {
+      "name": "init_freetype",
+      "ms": 0.043,
+      "depth": 2
+    },
+    {
+      "name": "Read file",
+      "ms": 0.043,
+      "depth": 3
+    },
+    {
+      "name": "Read file",
+      "ms": 0.041,
+      "depth": 3
+    },
+    {
+      "name": "Read file",
+      "ms": 0.037,
+      "depth": 3
+    },
+    {
+      "name": "Read file",
+      "ms": 0.034,
+      "depth": 3
+    },
+    {
+      "name": "Read file",
+      "ms": 0.034,
+      "depth": 3
+    },
+    {
+      "name": "Read file",
+      "ms": 0.033,
+      "depth": 3
+    },
+    {
+      "name": "Read file",
+      "ms": 0.031,
+      "depth": 3
+    },
+    {
+      "name": "Read file",
+      "ms": 0.031,
+      "depth": 3
+    },
+    {
+      "name": "Import module",
+      "ms": 0.004,
+      "depth": 2
+    },
+    {
+      "name": "Import module",
+      "ms": 0.004,
+      "depth": 2
+    },
+    {
+      "name": "Import module",
+      "ms": 0.003,
+      "depth": 2
+    },
+    {
+      "name": "Import module",
+      "ms": 0.003,
+      "depth": 2
+    },
+    {
+      "name": "scm_c_use_module lily",
+      "ms": 0.003,
+      "depth": 2
+    },
+    {
+      "name": "Import module",
+      "ms": 0.002,
+      "depth": 2
+    }
+  ]
+}
