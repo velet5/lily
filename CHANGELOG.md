@@ -7,6 +7,8 @@
   Unsaved root/include snapshots preserve source navigation and diagnostic
   positions. A bounded debounce and one pending revision prevent starvation.
   Unchanged SVG pages and link indexes are reused; zoom, themes and MIDI remain.
+  Font-data caching further reduces SVG generation for dense scores. Saved and
+  unsaved previews now share page hashes for Cyrillic and other escaped filenames.
 
 - **MIDI playback.** ▶, ■ and a seek slider in the preview toolbar play the
   score's `\midi` output through a built-in Web Audio synthesizer: General

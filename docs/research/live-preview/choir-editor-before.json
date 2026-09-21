@@ -1,0 +1,49 @@
+{
+  "date": "2026-09-21T15:22:40.308Z",
+  "score": "как-молоды-мы-были-4-pages.ly",
+  "sourceSha256": "f3e130d193922f73dce72adfe210673c2ec671388c34ebc0a9adc1847c2a86a0",
+  "runtimeSha256": "ac94c3ffdaa80bc922657a908ca8a0592e4f6873a7167766addfcb7c05a3be0f",
+  "method": "Disposable VS Code host; original external score opened read-only on disk. Three unsaved edits toggle one melody pitch; 10 ms polling, acknowledgment after two animation frames. Four pages, no diagnostics, warm engine and forward navigation asserted. Source reverted without saving.",
+  "first": {
+    "editToRenderMs": 2424,
+    "compileMs": 2222,
+    "snapshotMs": 0,
+    "prepareMs": 12.031750000000102,
+    "renderMs": 179,
+    "totalMs": 2423,
+    "reusedPages": 0,
+    "engine": "warm"
+  },
+  "runs": [
+    {
+      "editToRenderMs": 2338,
+      "compileMs": 1990,
+      "snapshotMs": 2,
+      "prepareMs": 11.773124999999709,
+      "renderMs": 175,
+      "totalMs": 2331,
+      "reusedPages": 0,
+      "engine": "warm"
+    },
+    {
+      "editToRenderMs": 2198,
+      "compileMs": 1964,
+      "snapshotMs": 1,
+      "prepareMs": 7.031582999999955,
+      "renderMs": 70,
+      "totalMs": 2195,
+      "reusedPages": 3,
+      "engine": "warm"
+    },
+    {
+      "editToRenderMs": 2172,
+      "compileMs": 1956,
+      "snapshotMs": 2,
+      "prepareMs": 6.724958000000697,
+      "renderMs": 53,
+      "totalMs": 2169,
+      "reusedPages": 3,
+      "engine": "warm"
+    }
+  ]
+}

@@ -161,6 +161,24 @@ suite('refresh on save', () => {
     await vscode.commands.executeCommand('workbench.action.files.revert')
   })
 
+  test('saving a Cyrillic-named score reuses pages from its unsaved preview', async () => {
+    const { document, preview } = await previewed({ 'Молодость.ly': HEADER + pages(1) })
+    await preview.whenRendered()
+    const edit = new vscode.WorkspaceEdit()
+    edit.replace(document.uri, new vscode.Range(0, 0, document.lineCount, 0), HEADER + pages(2))
+    assert.ok(await vscode.workspace.applyEdit(edit))
+    await rendersPages(preview, 2)
+    assert.ok(document.isDirty)
+    assert.ok(await document.save())
+    await vscode.commands.executeCommand('lily.preview.refresh', document.uri)
+    await preview.whenRendered()
+    assert.strictEqual(preview.latency?.reusedPages, 2)
+    api.previews.followCursor({ file: document.uri.fsPath, line: 1, character: 2, lineText: document.lineAt(1).text })
+    const deadline = Date.now() + 5000
+    while (!preview.highlighted && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25))
+    assert.ok(preview.highlighted, 'source navigation survives saving the snapshot')
+  })
+
   test('LilyPond: Compile previews a dirty file without saving', async () => {
     // No delay: a refresh scheduled by the command's save would start at once
     // and supersede the command's run.

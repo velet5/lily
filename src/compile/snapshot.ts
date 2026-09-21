@@ -4,7 +4,7 @@ import { columnToCharacter, type LyDiagnostic } from '../diagnostics/parse'
 import { canonicalBuffers, includeDirsFromArgs, includeTokens } from './rootFile'
 
 interface Replacement { start: number; end: number; text: string }
-interface Source { file: string; text: string; generated: string; replacements: Replacement[] }
+interface Source { file: string; encodedFile: string; text: string; generated: string; replacements: Replacement[] }
 
 /** Immutable editor texts captured together, before any asynchronous work. */
 export type SourceBuffers = ReadonlyMap<string, string>
@@ -53,7 +53,7 @@ export class SourceSnapshot {
       }
       let generated = text
       for (const r of [...replacements].reverse()) generated = generated.slice(0, r.start) + r.text + generated.slice(r.end)
-      snapshot.files.set(target, { file, text, generated, replacements })
+      snapshot.files.set(target, { file, encodedFile: encodeSourcePath(file), text, generated, replacements })
       await fs.mkdir(path.dirname(target), { recursive: true })
       await fs.writeFile(target, generated)
       return target
@@ -84,6 +84,7 @@ export class SourceSnapshot {
   diagnostic(d: LyDiagnostic): LyDiagnostic {
     const source = this.files.get(path.normalize(d.file))
     if (!source) return d
+    if (source.replacements.length === 0) return { ...d, file: source.file }
     const line = source.generated.split('\n')[d.line - 1] ?? ''
     const loc = this.location(d.file, d.line, columnToCharacter(line, d.column ?? 1))!
     return { ...d, file: loc.file, line: loc.line, ...(d.column === undefined ? {} : { column: loc.column }) }
@@ -91,19 +92,30 @@ export class SourceSnapshot {
 
   /** Normalize before hashing: temporary paths never become page identities. */
   svg(svg: string): string {
-    return svg.replace(/textedit:\/\/([^"<>]+):(\d+):(\d+):(\d+)/g, (link, encoded: string, line: string, char: string) => {
+    return svg.replace(/textedit:\/\/([^"<>]+):(\d+):(\d+):(\d+)/g, (link, encoded: string, line: string, char: string, column: string) => {
       let file: string
       try { file = decodeURIComponent(encoded) } catch { return link }
       const source = this.files.get(path.normalize(file))
       if (!source) return link
+      // Most source files contain no rewritten includes. Keep LilyPond's exact
+      // positions and avoid rescanning the whole source for every printed note.
+      if (source.replacements.length === 0) return `textedit://${source.encodedFile}:${line}:${char}:${column}`
       const text = source.generated.split('\n')[Number(line) - 1] ?? ''
       const character = Array.from(text).slice(0, Number(char)).join('').length
       const loc = this.location(file, Number(line), character)!
-      // LilyPond URI-encodes unsafe characters but leaves slash/colon intact.
-      const encodedFile = encodeURI(loc.file).replaceAll("'", '%27').replaceAll('&', '%26')
-      return `textedit://${encodedFile}:${loc.line}:${loc.char}:${loc.column}`
+      return `textedit://${source.encodedFile}:${loc.line}:${loc.char}:${loc.column}`
     })
   }
+}
+
+/** Match ly:string-percent-encode, including lowercase UTF-8 hex. Otherwise a
+ * save invalidates identical pages for non-ASCII filenames; # and ? also need
+ * escaping so they cannot become URI fragments or queries. */
+function encodeSourcePath(file: string): string {
+  return encodeURIComponent(file)
+    .replace(/%2F/g, '/').replace(/%3A/g, ':')
+    .replace(/[!'()*~]/g, char => '%' + char.charCodeAt(0).toString(16))
+    .replace(/%[\dA-F]{2}/g, escape => escape.toLowerCase())
 }
 
 function visualColumn(text: string): number {

@@ -1,5 +1,5 @@
 // Reproducible compile-service latency, including snapshot and path remapping.
-// Run alone: node scripts/benchmark-preview.mjs > results.json
+// Run alone: node scripts/benchmark-preview.mjs [score.ly] [runtime-directory] > results.json
 // Browser/debounce are measured separately by the extension-host tests.
 import { build } from 'esbuild'
 import * as fs from 'node:fs/promises'
@@ -11,16 +11,20 @@ import { createHash } from 'node:crypto'
 const scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'lily-benchmark-'))
 await build({ entryPoints: ['src/compile/compiler.ts'], outfile: path.join(scratch, 'compiler.cjs'), bundle: true, platform: 'node', format: 'cjs' })
 const { CompileService } = createRequire(import.meta.url)(path.join(scratch, 'compiler.cjs'))
-const service = new CompileService({ tmpRoot: scratch, runtimeDir: path.resolve('runtime') })
+const runtimeDir = path.resolve(process.argv[3] ?? 'runtime')
+const service = new CompileService({ tmpRoot: scratch, runtimeDir })
 const digest = async files => Promise.all(files.map(async file => createHash('sha256').update(await fs.readFile(file)).digest('hex')))
 const rows = []
+const suppliedFile = process.argv[2] ? path.resolve(process.argv[2]) : undefined
+const inputs = []
 try {
-  for (const [score, staves, bars] of [['small', 1, 8], ['medium', 2, 64]]) {
+  for (const [score, staves, bars] of suppliedFile ? [[path.basename(suppliedFile), 0, 0]] : [['small', 1, 8], ['medium', 2, 64]]) {
     const music = Array.from({ length: bars / 4 }, () => "c8( d e f) g4-. e | d4 f a2 | g8 f e d c2 | e4 g c,2 |").join(' ')
     const staff = `\\new Staff \\relative c' { \\time 4/4 ${music} }\n`
-    const text = `\\version "2.26.0"\n\\header { tagline = ##f }\n\\score { <<\n${staff.repeat(staves)}>> \\layout {}\n\\midi { \\tempo 4 = 100 }\n}\n`
-    const rootFile = path.join(scratch, `${score}.ly`)
-    await fs.writeFile(rootFile, text)
+    const text = suppliedFile ? await fs.readFile(suppliedFile, 'utf8') : `\\version "2.26.0"\n\\header { tagline = ##f }\n\\score { <<\n${staff.repeat(staves)}>> \\layout {}\n\\midi { \\tempo 4 = 100 }\n}\n`
+    const rootFile = suppliedFile ?? path.join(scratch, `${score}.ly`)
+    if (!suppliedFile) await fs.writeFile(rootFile, text)
+    inputs.push({ score, sha256: createHash('sha256').update(text).digest('hex') })
     let reference
     for (const acceleration of ['off', 'cache', 'auto']) {
       const runs = []
@@ -33,11 +37,13 @@ try {
         const hashes = await digest([...result.pages, ...result.midi])
         reference ??= hashes
         if (JSON.stringify(reference) !== JSON.stringify(hashes)) throw new Error('Output differs')
-        runs.push({ durationMs: result.durationMs, snapshotMs: result.snapshotMs, pages: result.pages.length, svgAndMidiIdentical: true })
+        runs.push({ durationMs: result.durationMs, snapshotMs: result.snapshotMs, engine: result.engine,
+          pages: result.pages.length, midi: result.midi.length, svgAndMidiIdentical: true })
+        process.stderr.write(`${score}: ${acceleration} ${repeat + 1}/4 ${result.durationMs} ms\n`)
       }
       rows.push({ score, acceleration, first: runs[0], medianMs: runs.slice(1).map(r => r.durationMs).sort((a, b) => a - b)[1], runs: runs.slice(1) })
     }
   }
-  process.stdout.write(JSON.stringify({ date: new Date().toISOString(), platform: `${os.platform()} ${os.release()} ${os.arch()}`,
+  process.stdout.write(JSON.stringify({ date: new Date().toISOString(), platform: `${os.platform()} ${os.release()} ${os.arch()}`, inputs,
     method: 'One initial run then median of three, modes run sequentially, warm filesystem caches. Auto includes a new unsaved snapshot each time. Compile-service timings exclude debounce/editor/browser; first auto includes parent startup.', results: rows }, null, 2) + '\n')
 } finally { await service.dispose(); await fs.rm(scratch, { recursive: true, force: true }) }

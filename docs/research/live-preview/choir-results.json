@@ -1,0 +1,130 @@
+{
+  "date": "2026-09-21T15:20:26.770Z",
+  "platform": "darwin 25.5.0 arm64",
+  "inputs": [
+    {
+      "score": "как-молоды-мы-были-4-pages.ly",
+      "sha256": "f3e130d193922f73dce72adfe210673c2ec671388c34ebc0a9adc1847c2a86a0"
+    }
+  ],
+  "method": "One initial run then median of three, modes run sequentially, warm filesystem caches. Auto includes a new unsaved snapshot each time. Compile-service timings exclude debounce/editor/browser; first auto includes parent startup.",
+  "results": [
+    {
+      "score": "как-молоды-мы-были-4-pages.ly",
+      "acceleration": "off",
+      "first": {
+        "durationMs": 17509,
+        "snapshotMs": 0,
+        "engine": "spawn",
+        "pages": 4,
+        "midi": 0,
+        "svgAndMidiIdentical": true
+      },
+      "medianMs": 17253,
+      "runs": [
+        {
+          "durationMs": 17255,
+          "snapshotMs": 0,
+          "engine": "spawn",
+          "pages": 4,
+          "midi": 0,
+          "svgAndMidiIdentical": true
+        },
+        {
+          "durationMs": 17225,
+          "snapshotMs": 0,
+          "engine": "spawn",
+          "pages": 4,
+          "midi": 0,
+          "svgAndMidiIdentical": true
+        },
+        {
+          "durationMs": 17253,
+          "snapshotMs": 0,
+          "engine": "spawn",
+          "pages": 4,
+          "midi": 0,
+          "svgAndMidiIdentical": true
+        }
+      ]
+    },
+    {
+      "score": "как-молоды-мы-были-4-pages.ly",
+      "acceleration": "cache",
+      "first": {
+        "durationMs": 1610,
+        "snapshotMs": 0,
+        "engine": "cache",
+        "pages": 4,
+        "midi": 0,
+        "svgAndMidiIdentical": true
+      },
+      "medianMs": 1536,
+      "runs": [
+        {
+          "durationMs": 1554,
+          "snapshotMs": 0,
+          "engine": "cache",
+          "pages": 4,
+          "midi": 0,
+          "svgAndMidiIdentical": true
+        },
+        {
+          "durationMs": 1536,
+          "snapshotMs": 0,
+          "engine": "cache",
+          "pages": 4,
+          "midi": 0,
+          "svgAndMidiIdentical": true
+        },
+        {
+          "durationMs": 1518,
+          "snapshotMs": 0,
+          "engine": "cache",
+          "pages": 4,
+          "midi": 0,
+          "svgAndMidiIdentical": true
+        }
+      ]
+    },
+    {
+      "score": "как-молоды-мы-были-4-pages.ly",
+      "acceleration": "auto",
+      "first": {
+        "durationMs": 1483,
+        "snapshotMs": 1,
+        "engine": "warm",
+        "pages": 4,
+        "midi": 0,
+        "svgAndMidiIdentical": true
+      },
+      "medianMs": 1372,
+      "runs": [
+        {
+          "durationMs": 1372,
+          "snapshotMs": 1,
+          "engine": "warm",
+          "pages": 4,
+          "midi": 0,
+          "svgAndMidiIdentical": true
+        },
+        {
+          "durationMs": 1381,
+          "snapshotMs": 1,
+          "engine": "warm",
+          "pages": 4,
+          "midi": 0,
+          "svgAndMidiIdentical": true
+        },
+        {
+          "durationMs": 1367,
+          "snapshotMs": 1,
+          "engine": "warm",
+          "pages": 4,
+          "midi": 0,
+          "svgAndMidiIdentical": true
+        }
+      ]
+    }
+  ]
+}

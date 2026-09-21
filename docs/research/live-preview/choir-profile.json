@@ -1,0 +1,12 @@
+{
+  "method": "LilyPond 2.26.0 time-trace-file on original score with the 55a508b glyph cache, fresh process. Inclusive timings overlap; do not sum rows. Output svg includes page breaking. Trace is instrumented, not a benchmark sample.",
+  "inclusiveMs": {
+    "Output svg": 1034.4,
+    "output-stencils": 884.9,
+    "Process book": 609.6,
+    "Translate": 439.2,
+    "springs-and-rods": 160.0,
+    "page-breaking": 149.3,
+    "Boot Guile": 87.0
+  }
+}

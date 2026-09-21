@@ -1102,8 +1102,12 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   deriving resources from their source filename cannot be fully snapshotted;
   save these projects before compiling. Untitled buffers still need filenames.
 - **Acceleration gate.** `runtime/glyph-cache.scm` caches only string-valued
-  music glyph requests; list requests preserve cumulative advance, and unknown
-  types keep original behavior. A host probe requires LilyPond **2.26.0** and
+  music glyph output. Font definitions and individual glyph XML are also cached,
+  so new sizes and list-valued requests do not repeatedly scan entire SVG fonts.
+  List requests still call the original extractor on every invocation, preserving
+  cumulative advance, offsets, spaces and scaling. Unknown types and missing
+  glyphs keep original behavior. All caches clear at session end, and every
+  wrapped private function has an arity guard. A host probe requires LilyPond **2.26.0** and
   SHA-256 `82b4a568e196239557fba92670dc0d9a685edae129dc0625fc1f1ef65a70e6d2`
   for the installed `lily/output-svg.scm`. The hash is checked each request;
   the shim also guards version/arity. Installed files are never edited.
@@ -1137,6 +1141,10 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   pages. Removed pages drop out of both indexes. All page text is still sent in
   the message. Scroll/zoom/theme behavior is unchanged, and identical MIDI is
   not resent. Whole-score playback is always retained; no passage cropping.
+  Snapshot path encoding matches LilyPond's lowercase UTF-8 escapes, including
+  URI-reserved punctuation, so saving a Cyrillic-named file retains identical
+  page hashes. Files without rewritten includes retain their original source
+  positions directly, avoiding a whole-source scan for each link.
 - **Timing.** `CompileResult` adds engine, fallback reason and snapshot time;
   `PreviewPanel.latency` records host preparation, host-to-ack time, busy-period
   time and reused-page count. The rendered acknowledgment follows two animation

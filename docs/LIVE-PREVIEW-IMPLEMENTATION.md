@@ -119,3 +119,78 @@ The temporary configuration was removed; production code opens no debug port.
   strings. No cropped MIDI, passage preview or measure-level compiler rewrite
   is introduced: the demonstrated glyph bottleneck no longer warrants that
   complexity for these probes.
+
+## Follow-up: a real four-page vocal/piano score
+
+The small synthetic results did not predict the user's editing latency for
+`как-молоды-мы-были-4-pages.ly`. Their installed extension log confirmed the warm
+engine was active, with successful compiles taking 1.9–2.0 seconds. This score
+has 48 written bars, four staff definitions, chords, several lyric lines and
+closing text. It produces four pages and has no MIDI block. The source file
+was read and compiled without modifying it on disk; its hash is in the results.
+
+Profiling the original cache found about 885 ms in `output-stencils` and
+610 ms in processing the book's layout. The broader `Output svg` span was
+1,034 ms, including page breaking; these inclusive times overlap and must not
+be added. [Profile summary](research/live-preview/choir-profile.json).
+
+The follow-up caches the font's definitions and each glyph's XML in addition
+to the existing named-glyph output. Upstream extraction still runs for every
+list-valued request, retaining advance, offsets, empty glyphs and scaling.
+Every wrapped function is guarded and caches clear at session end. This avoids
+scanning a whole SVG font for each new glyph/size while retaining byte-identical
+output. Snapshot mapping also bypasses line rescanning when no include was
+rewritten, and matches LilyPond's lowercase URI encoding. The latter fixes
+unnecessary page replacement when switching between saved and unsaved files
+with Cyrillic names or reserved punctuation.
+
+Same machine and LilyPond 2.26.0, one initial run followed by three measured
+runs. The standalone benchmark ran without concurrent tests:
+
+| Path | Median compile time |
+| --- | ---: |
+| Ordinary LilyPond | 17,253 ms |
+| Updated glyph/font-data cache, fresh process | 1,536 ms |
+| Updated warm worker, with unsaved snapshot | 1,372 ms |
+
+All four SVG pages were **byte-identical** to ordinary LilyPond in every run,
+including source links. MIDI preservation was verified separately by the
+fixtures, since this score emits none. [Raw results](research/live-preview/choir-results.json).
+Reproduce against the local source with:
+
+```sh
+node scripts/benchmark-preview.mjs '/Volumes/T5/Choir/Sheets/как-молоды-мы-были-4-pages.ly'
+```
+
+Two disposable VS Code hosts compared the previously installed extension with
+the updated packaged VSIX. Each opened the same original file, then alternated
+one melody pitch through three unsaved edits. Measurements include the default
+150 ms debounce, host work and the webview's two-frame acknowledgment, polled
+every 10 ms. Both runs asserted four rendered pages, no diagnostics, the warm
+engine, working forward navigation and unchanged disk contents; edits were
+reverted without saving.
+
+| Editor measurement | Previously installed | Updated VSIX |
+| --- | ---: | ---: |
+| Median compile during edits | 1,964 ms | 1,409 ms |
+| Median edit → rendered acknowledgment | 2,198 ms | 1,638 ms |
+| Initial open → rendered acknowledgment | 2,424 ms | 2,003 ms |
+| Unchanged pages reused on first unsaved edit | 0 | 3 |
+
+[Before observations](research/live-preview/choir-editor-before.json) and
+[after observations](research/live-preview/choir-editor-after.json) include
+source/runtime hashes and each sample. This is about a 25% reduction in editing
+latency from the first implementation, **not instant or sub-second preview**.
+Full-score engraving remains the limiting operation; a separate passage mode
+would be needed to investigate a substantially lower latency target for this
+score. No score content, pagination or playback was removed to obtain these
+numbers.
+
+Follow-up validation: 237 unit tests, 45 extension-host tests, 7 packaged release
+tests, and both real-score editor probes passed with zero skips. Types, lint
+and grammar checks passed. The full host suite again used temporary focus
+emulation for its existing native editor smoke tests; the release tests and
+real-score probes did not need it. New regressions compare glyph-string
+advances/offsets/spaces across sizes and fonts, verify exact SVG/MIDI for
+Unicode/URI-reserved filenames, and verify DOM reuse and navigation after saving
+a Cyrillic-named score.

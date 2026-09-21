@@ -176,6 +176,9 @@ follow VS Code's own switches, which can be set per language:
   processes. A failed warm process falls back automatically. No installed
   LilyPond files are changed. Set acceleration to `off` for Scheme that changes
   backend internals or unusual fonts. See [measurements and limits](docs/LIVE-PREVIEW-IMPLEMENTATION.md).
+- **Dense scores.** Every update still engraves the whole score. A four-page
+  vocal/piano score measured about 1.4 seconds of warm compilation, before the
+  debounce and display work. Acceleration does not guarantee instant updates.
 - **Snapshot limits.** Literal relative/absolute includes and `-I` directories
   are supported. Computed includes and known Scheme include APIs are rejected
   while buffers are dirty, with an explanation in the LilyPond output. Arbitrary

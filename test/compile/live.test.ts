@@ -18,6 +18,22 @@ after(async () => { await service?.dispose(); if (scratch) await fs.rm(scratch, 
 
 const content = async (files: string[]) => Promise.all(files.map(file => fs.readFile(file)))
 
+test('snapshot paths preserve ordinary output for Cyrillic and URI-reserved filenames', async () => {
+  const rootFile = path.join(scratch, "Как молоды #?&'()!~.ly")
+  const text = String.raw`\version "2.26.0"
+\score { \new Staff { c'4 d' e' f' } \layout {} \midi {} }
+`
+  await fs.writeFile(rootFile, text)
+  const disk = await service.compile({ rootFile, acceleration: 'off' })
+  assert.equal(disk.ok, true, disk.stderr)
+  assert.equal(disk.stderr, '')
+  const reference = await content([...disk.pages, ...disk.midi])
+  const snapshot = await service.compile({ rootFile, buffers: new Map([[rootFile, text]]), acceleration: 'auto' })
+  assert.equal(snapshot.ok, true, snapshot.stderr)
+  assert.equal(snapshot.engine, 'warm', snapshot.fallback)
+  assert.deepEqual(await content([...snapshot.pages, ...snapshot.midi]), reference)
+})
+
 for (const fixture of ['simple.ly', 'hello.ly', 'pages.ly', '../e2e/workspace/score.ly']) {
   test(`cache and isolated warm worker preserve SVG, links and MIDI: ${fixture}`, async () => {
     const rootFile = path.resolve('test/fixtures', fixture)
@@ -62,6 +78,45 @@ test('multiple books, sizes, tablature, drums, ligatures and music glyphs in mar
   }
 })
 
+test('font-data caching preserves glyph-string advances, spaces, offsets and size changes', async () => {
+  const rootFile = path.join(scratch, 'glyph-positions.ly')
+  await fs.writeFile(rootFile, String.raw`\version "2.26.0"
+#(let* ((module (resolve-module '(lily output-svg)))
+        (render (module-ref module 'cache-font)))
+   (for-each
+     (lambda (font-name)
+       (let ((font (ly:find-file font-name)))
+         (for-each
+           (lambda (size)
+             (module-set! module 'next-horiz-adv 0.0)
+             (for-each
+               (lambda (glyph)
+                 (display (render font size glyph)))
+               '((1.5 0 0.25 0.5 "f") (0.75 0 0 0 "space")
+                 (1.5 0 -0.5 0 "f") (1.0 0 0 0 "p")))
+             (unless (= (module-ref module 'next-horiz-adv) 4.75)
+               (ly:error "Glyph advance was lost"))
+             (display (render font size "noteheads.s2")))
+           '(4.0 6.0 4.0))))
+     '("emmentaler-20.svg" "emmentaler-26.svg" "emmentaler-20.svg"))
+   (module-set! module 'next-horiz-adv 0.0))
+\markup { \dynamic "sff p" \fontsize #4 \dynamic "sff p" }
+\score { { c'4\pp d'\sfz e'\ff f'\p } \layout {} \midi {} }
+`)
+  const plain = await service.compile({ rootFile, acceleration: 'off' })
+  assert.equal(plain.ok, true, plain.stderr)
+  assert.equal(plain.stderr, '')
+  const reference = await content([...plain.pages, ...plain.midi])
+  for (const acceleration of ['cache', 'auto', 'auto'] as const) {
+    const result = await service.compile({ rootFile, acceleration })
+    assert.equal(result.ok, true, result.stderr)
+    assert.equal(result.stderr, '')
+    assert.equal(result.engine, acceleration === 'auto' ? 'warm' : 'cache', result.fallback)
+    assert.equal(result.stdout, plain.stdout)
+    assert.deepEqual(await content([...result.pages, ...result.midi]), reference)
+  }
+})
+
 test('unsaved root and nested/absolute includes map links and diagnostic columns to real sources', async () => {
   const rootFile = path.join(scratch, 'unicode space λ.ly')
   const part = path.join(scratch, 'part.ily')
@@ -78,7 +133,7 @@ test('unsaved root and nested/absolute includes map links and diagnostic columns
   assert.ok(!svg.includes('/sources/'), 'snapshot paths must not reach the viewer')
   assert.ok(svg.includes(`textedit://${encodeURI(nested)}:1:10:11`), svg.slice(-2000))
   const note = root.split('\n')[1].indexOf("c'4")
-  assert.ok(svg.includes(`textedit://${encodeURI(rootFile)}:2:${note}:${note + 1}`))
+  assert.ok(svg.includes(`textedit://${encodeURI(rootFile).replace(/%[\dA-F]{2}/g, escape => escape.toLowerCase())}:2:${note}:${note + 1}`))
   assert.equal(await fs.readFile(part, 'utf8'), "music = { d'4 }\n", 'never save editors')
   buffers.set(rootFile, root.replace("c'4", "\\stacato c'4"))
   const bad = await service.compile({ rootFile, buffers, acceleration: 'auto' })
