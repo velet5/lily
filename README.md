@@ -1,9 +1,10 @@
 # Lily — LilyPond for VS Code
 
 Write [LilyPond](https://lilypond.org) on the left, see the engraved score on the
-right. One extension, no dependencies on other extensions: syntax highlighting,
-a live SVG preview, errors in the Problems panel, completion and hover for every
-LilyPond command, and a headless checker for coding agents.
+right, and hear it. One extension, no dependencies on other extensions: syntax
+highlighting, a live SVG preview, MIDI playback, errors in the Problems panel,
+completion and hover for every LilyPond command, and a headless checker for
+coding agents.
 
 ![Code on the left, the score on the right](docs/images/preview.png)
 
@@ -39,9 +40,28 @@ compiling needs it, and says so when it is missing.
 - **Click a note** to jump to the place in the source that wrote it. **Move the
   cursor**, and the note it is on is marked in the score and scrolled into view.
 - A toolbar in the preview: refresh, previous and next page, zoom out, fit to
-  width, zoom in, and export to PDF or MIDI.
+  width, zoom in, play, and export to PDF or MIDI.
 - Nothing is written next to your sources. Compiles happen in a temporary
   directory; PDF and MIDI files appear only when you export them.
+
+### Playback
+
+Give the score a `\midi { }` block and press ▶ in the preview (or
+<kbd>Space</kbd> with the preview focused) to hear it. The music comes from the
+same compile that drew the pages, so it is as fresh as the last save, and a
+save that changes only the layout does not interrupt it. Pause, stop and seek
+from the toolbar. The sound is a small built-in synthesizer: General MIDI
+instruments (`midiInstrument`), drums, dynamics, tempo changes and pedalling
+are all followed, well enough to check rhythm and harmony; there is no
+SoundFont and nothing to install.
+
+An exported `.midi` file, or any other, opens in a player of its own when you
+click it in the Explorer, with its tracks and instruments listed. The
+notification after **Export MIDI** offers *Play*.
+
+VS Code lets a webview make sound only after you have clicked in it once. A
+button in the toolbar counts; **Play or Pause MIDI** from the Command Palette
+may ask you for that click the first time.
 
 ### Errors where they happen
 
@@ -109,6 +129,8 @@ All commands are in the Command Palette under **LilyPond**.
 | Refresh Preview | <kbd>Ctrl/⌘</kbd>+<kbd>K</kbd> <kbd>B</kbd> in the preview | preview toolbar and title |
 | Export PDF | | preview toolbar, editor title `…`, Explorer context menu |
 | Export MIDI | | preview toolbar, editor title `…`, Explorer context menu |
+| Play or Pause MIDI | <kbd>Space</kbd> in the preview | preview toolbar, editor title `…`, preview title `…` |
+| Stop MIDI | | preview toolbar, preview title `…` |
 | Zoom In Preview, Zoom Out Preview, Fit Preview to Width | | preview toolbar |
 | Next Page in Preview, Previous Page in Preview | <kbd>Alt</kbd>+<kbd>PageDown</kbd>, <kbd>Alt</kbd>+<kbd>PageUp</kbd> in the preview | preview toolbar |
 | Show Output | | preview title `…` menu |
@@ -147,7 +169,10 @@ follow VS Code's own switches, which can be set per language:
   treated as a score, and usually engraves nothing.
 - **Windows** paths and process handling are written from documentation and have
   not been run yet.
-- Not included: MIDI playback and input, and code formatting.
+- **Playback in the background.** The preview is destroyed while its tab is
+  hidden behind another, and the music stops with it; keep the preview in a
+  pane of its own, as **Open Preview to the Side** does.
+- Not included: MIDI input, and code formatting.
 
 ## Development
 

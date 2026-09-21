@@ -1,5 +1,6 @@
 // Preview webview script (DECISIONS D17). Plain JS, no build step (D12); the
 // message types are HostMessage / WebviewMessage in src/preview/panel.ts.
+// media/midi.js is loaded before it and plays the score (D24).
 //
 // The first half is pure and is also loaded by test/preview/panel.test.ts, which
 // is why the file ends with a CommonJS export that a webview never reaches.
@@ -145,6 +146,10 @@
   const pageLabel = document.getElementById('page-label')
   const previousButton = document.getElementById('page-previous')
   const nextButton = document.getElementById('page-next')
+  const playButton = document.getElementById('midi-play')
+  const stopButton = document.getElementById('midi-stop')
+  const seekEl = document.getElementById('midi-seek')
+  const timeEl = document.getElementById('midi-time')
 
   // Survives the webview being destroyed while its tab is hidden.
   const state = { zoom: 1, anchor: null, x: 0.5, ...vscode.getState() }
@@ -333,9 +338,77 @@
   function showStatus() {
     progressEl.hidden = !status.busy
     const hasPages = pagesEl.children.length > 0
-    noteEl.hidden = !hasPages || !status.note
-    noteEl.textContent = status.note ?? ''
-    emptyEl.textContent = hasPages ? '' : status.busy ? 'Compiling…' : (status.note ?? '')
+    const note = blocked ? CLICK_TO_PLAY : status.note
+    noteEl.hidden = !hasPages || !note
+    noteEl.textContent = note ?? ''
+    emptyEl.textContent = hasPages ? '' : status.busy ? 'Compiling…' : (note ?? '')
+  }
+
+  // ---- playback (DECISIONS D24) -------------------------------------------------
+
+  const { parseMidi, formatTime, Player } = LilyMidi
+  const NO_MIDI = 'Add a \\midi { } block to the \\score to hear it'
+  const CLICK_TO_PLAY =
+    'Click \u25B6\uFE0E to play: VS Code lets a preview make sound only after a click in it.'
+  const SEEK_STEPS = Number(seekEl.max)
+
+  /** The base64 that is loaded, so that a refresh with the same music plays on. */
+  let loaded = null
+  let unplayable = ''
+  /** The host asked for sound before the user had clicked here. */
+  let blocked = false
+  /** While the slider is dragged it shows where the drag is, not where the music is. */
+  let seeking = false
+  let reportedPlayback = ''
+
+  const player = new Player({ onChange: showPlayback })
+
+  function showPlayback() {
+    const { state, position, duration } = player
+    const playing = state === 'playing'
+    const ready = player.midi !== undefined
+    playButton.disabled = stopButton.disabled = seekEl.disabled = !ready
+    playButton.textContent = playing ? '\u275A\u275A' : '\u25B6\uFE0E'
+    playButton.title = ready ? (playing ? 'Pause (Space)' : 'Play (Space)') : unplayable || NO_MIDI
+    playButton.setAttribute('aria-label', ready && playing ? 'Pause' : 'Play')
+    timeEl.textContent = ready ? `${formatTime(position)} / ${formatTime(duration)}` : ''
+    if (!seeking) seekEl.value = String(duration > 0 ? Math.round((position / duration) * SEEK_STEPS) : 0)
+
+    // The host hears of states, not of every tenth of a second.
+    const report = { type: 'playback', state, duration, blocked }
+    if (JSON.stringify(report) === reportedPlayback) return
+    reportedPlayback = JSON.stringify(report)
+    vscode.postMessage({ ...report, position })
+  }
+
+  /** `gesture`: the user clicked or typed here, which is what allows sound at all. */
+  async function play(gesture) {
+    if (!player.midi) return
+    const started = await player.play()
+    const refused = !started && !gesture && player.suspended
+    if (refused !== blocked) {
+      blocked = refused
+      showStatus()
+      showPlayback()
+    }
+  }
+
+  function togglePlayback(gesture) {
+    if (player.state === 'playing') player.pause()
+    else void play(gesture)
+  }
+
+  function loadMidi(data) {
+    if (data === loaded) return
+    loaded = data
+    unplayable = ''
+    let midi
+    try {
+      if (data) midi = parseMidi(Uint8Array.from(atob(data), (char) => char.charCodeAt(0)))
+    } catch (error) {
+      unplayable = error instanceof Error ? error.message : String(error)
+    }
+    player.load(midi)
   }
 
   window.addEventListener('message', ({ data }) => {
@@ -359,7 +432,26 @@
       case 'highlight':
         highlight(data)
         break
+      case 'midi':
+        loadMidi(data.data)
+        break
+      case 'playback':
+        if (data.action === 'stop') player.stop()
+        else if (data.action === 'play') void play(false)
+        else togglePlayback(false)
+        break
     }
+  })
+
+  playButton.addEventListener('click', () => togglePlayback(true))
+  stopButton.addEventListener('click', () => player.stop())
+  seekEl.addEventListener('input', () => {
+    seeking = true
+    timeEl.textContent = `${formatTime((seekEl.value / SEEK_STEPS) * player.duration)} / ${formatTime(player.duration)}`
+  })
+  seekEl.addEventListener('change', () => {
+    seeking = false
+    void player.seek((seekEl.value / SEEK_STEPS) * player.duration)
   })
 
   // What only the host can do; it maps the name to a command of its own (D20).
@@ -382,7 +474,11 @@
 
   window.addEventListener('keydown', (event) => {
     if (event.altKey) return
-    if (event.key === '+' || event.key === '=') setZoom(stepZoom(state.zoom, 1))
+    if (event.key === ' ') {
+      // On a button, Space presses that button.
+      if (event.target instanceof HTMLButtonElement || event.repeat) return
+      togglePlayback(true)
+    } else if (event.key === '+' || event.key === '=') setZoom(stepZoom(state.zoom, 1))
     else if (event.key === '-') setZoom(stepZoom(state.zoom, -1))
     else if (event.key === '0') setZoom(1)
     else return
@@ -427,5 +523,6 @@
   layout()
   showStatus()
   showPage()
+  showPlayback()
   vscode.postMessage({ type: 'ready' })
 })()

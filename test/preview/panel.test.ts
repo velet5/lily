@@ -23,6 +23,7 @@ const uri = (value: string) => ({ toString: () => value }) as vscode.Uri
 const assets = {
   root: uri('file:///ext/media'),
   script: uri('file:///ext/media/preview.js'),
+  midiScript: uri('file:///ext/media/midi.js'),
   style: uri('file:///ext/media/preview.css'),
 }
 
@@ -32,6 +33,8 @@ class FakePanel {
   disposals = 0
   /** Whether this is the tab the user is in. */
   active = false
+  /** False behind another tab of its group, where VS Code destroys the webview. */
+  visible = true
   private receive: (message: WebviewMessage) => void = () => {}
   private readonly disposeListeners: Array<() => void> = []
 
@@ -100,6 +103,7 @@ describe('previewHtml', () => {
     cspSource: 'https://webview.test',
     nonce: 'N0nce+/=',
     scriptUri: 'https://webview.test/media/preview.js?a=1&b="2"',
+    midiScriptUri: 'https://webview.test/media/midi.js',
     styleUri: 'https://webview.test/media/preview.css',
     colors: 'paper',
   })
@@ -115,9 +119,10 @@ describe('previewHtml', () => {
     assert.doesNotMatch(csp, /unsafe|\*/)
   })
 
-  test('the only script carries the nonce and nothing is inline', () => {
+  test('both scripts carry the nonce, the player first, and nothing is inline', () => {
     const scripts = html.match(/<script\b[^>]*>/g)
     assert.deepStrictEqual(scripts, [
+      '<script nonce="N0nce+/=" src="https://webview.test/media/midi.js">',
       '<script nonce="N0nce+/=" src="https://webview.test/media/preview.js?a=1&amp;b=&quot;2&quot;">',
     ])
     assert.doesNotMatch(html, /<style\b|\sstyle=|\son[a-z]+=/i)
@@ -136,6 +141,8 @@ describe('previewHtml', () => {
       'zoom-out',
       'zoom-fit',
       'zoom-in',
+      'midi-play',
+      'midi-stop',
       'export-pdf',
       'export-midi',
     ])
@@ -208,6 +215,7 @@ describe('PreviewPanel', () => {
     assert.deepStrictEqual(fake.take(), [
       { type: 'colors', colors: 'paper' },
       { type: 'render', revision: 1, pages: ['<svg>one</svg>'] },
+      { type: 'midi', data: null },
       { type: 'status', busy: false, note: undefined },
     ])
   })
@@ -292,6 +300,87 @@ describe('PreviewPanel', () => {
     fake.fromWebview({ type: 'rendered', revision: 2, pages: 2 })
     assert.strictEqual(await waiting, 2)
     assert.strictEqual(await preview.whenRendered(), 2)
+  })
+
+  test('the MIDI of a run is sent once, as base64, and again to a reloaded webview', async () => {
+    const { fake, preview } = create()
+    const midiFile = path.join(dir, 'song.midi')
+    await fs.writeFile(midiFile, 'MThd-one')
+    const data = Buffer.from('MThd-one').toString('base64')
+    assert.strictEqual(preview.hasMidi, false)
+
+    // A second \\score with \\midi writes a second file; the first is played.
+    const run = result({ pages: [pageFiles[0]], midi: [midiFile, path.join(dir, 'song-1.midi')] })
+    await preview.follow(Promise.resolve(run))
+    assert.deepStrictEqual(fake.take().slice(1, 3), [
+      { type: 'midi', data },
+      { type: 'render', revision: 1, pages: ['<svg>one</svg>'] },
+    ])
+    assert.strictEqual(preview.hasMidi, true)
+
+    // The same music again: the webview keeps playing what it has.
+    await preview.follow(Promise.resolve(run))
+    assert.ok(!fake.take().some((message) => message.type === 'midi'))
+
+    fake.fromWebview({ type: 'ready' })
+    assert.deepStrictEqual(fake.take()[2], { type: 'midi', data })
+  })
+
+  test('a failed run keeps the MIDI; a good one without \\midi takes it away', async () => {
+    const { fake, preview } = create()
+    const midiFile = path.join(dir, 'kept.midi')
+    await fs.writeFile(midiFile, 'MThd-kept')
+    await preview.follow(Promise.resolve(result({ pages: [pageFiles[0]], midi: [midiFile] })))
+    fake.take()
+
+    await preview.follow(Promise.resolve(result({ ok: false, exitCode: 1 })))
+    assert.ok(!fake.take().some((message) => message.type === 'midi'))
+    assert.strictEqual(preview.hasMidi, true)
+
+    await preview.follow(Promise.resolve(result({ pages: [pageFiles[0]] })))
+    assert.deepStrictEqual(fake.take()[1], { type: 'midi', data: null })
+    assert.strictEqual(preview.hasMidi, false)
+  })
+
+  test('a score of \\midi alone has no pages and can still be played', async () => {
+    const { fake, preview } = create()
+    const midiFile = path.join(dir, 'only.midi')
+    await fs.writeFile(midiFile, 'MThd-only')
+    await preview.follow(Promise.resolve(result({ midi: [midiFile] })))
+    assert.deepStrictEqual(fake.take().slice(1), [
+      { type: 'midi', data: Buffer.from('MThd-only').toString('base64') },
+      { type: 'status', busy: false, note: 'LilyPond produced no pages.' },
+    ])
+  })
+
+  test('play reaches a visible webview at once, and a hidden one when it is back', () => {
+    const { fake, preview } = create()
+    preview.play()
+    preview.play('stop')
+    assert.deepStrictEqual(fake.take(), [
+      { type: 'playback', action: 'toggle' },
+      { type: 'playback', action: 'stop' },
+    ])
+
+    fake.visible = false
+    preview.play()
+    assert.deepStrictEqual(fake.take(), [])
+    assert.strictEqual(fake.reveals.length, 1)
+
+    fake.visible = true
+    fake.fromWebview({ type: 'ready' })
+    assert.deepStrictEqual(fake.take().at(-1), { type: 'playback', action: 'play' })
+    fake.fromWebview({ type: 'ready' })
+    assert.ok(!fake.take().some((message) => message.type === 'playback'), 'only once')
+  })
+
+  test('remembers what the player reports, whatever the webview sends', () => {
+    const { fake, preview } = create()
+    assert.strictEqual(preview.playback, undefined)
+    fake.fromWebview({ type: 'playback', state: 'playing', position: 1.5, duration: 15, blocked: false })
+    assert.deepStrictEqual(preview.playback, { state: 'playing', position: 1.5, duration: 15, blocked: false })
+    fake.fromWebview({ type: 'playback', state: 'loud', position: 'x', blocked: 1 } as never)
+    assert.deepStrictEqual(preview.playback, { state: 'stopped', position: 0, duration: 0, blocked: false })
   })
 
   test('zoom, page turns and colours are forwarded to the webview', () => {

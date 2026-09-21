@@ -3,6 +3,7 @@ import * as vscode from 'vscode'
 import type { CompileResult, CompileService, ExportFormat, ExportResult } from './compile/compiler'
 import { getCompileSettings } from './config'
 import type { CompileReporter } from './diagnostics/publish'
+import { MIDI_PLAYER_VIEW_TYPE } from './midi/player'
 import type { PreviewManager, PreviewPanel, ToolbarCommand } from './preview/panel'
 
 // The command surface (DECISIONS D20): every `lily.*` command is registered
@@ -162,18 +163,48 @@ export function registerCommands(host: CommandHost): vscode.Disposable {
       return
     }
     const names = result.exported.map((file) => path.basename(file)).join(', ')
+    // A PDF belongs to the system's viewer; a MIDI file is played here (D24).
+    const open = format === 'midi' ? 'Play' : 'Open'
     const choice = result.ok
-      ? await vscode.window.showInformationMessage(`Exported ${names}.`, 'Open', 'Reveal')
+      ? await vscode.window.showInformationMessage(`Exported ${names}.`, open, 'Reveal')
       : await vscode.window.showWarningMessage(
           `Exported ${names}, but LilyPond reported errors.`,
-          'Open',
+          open,
           'Reveal',
         )
-    // A PDF or MIDI file belongs to the system's viewer or player, not to an editor tab.
     if (choice === 'Open') await vscode.env.openExternal(vscode.Uri.file(first))
+    if (choice === 'Play') {
+      await vscode.commands.executeCommand('vscode.openWith', vscode.Uri.file(first), MIDI_PLAYER_VIEW_TYPE)
+    }
     if (choice === 'Reveal') {
       await vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(first))
     }
+  }
+
+  /**
+   * Plays or pauses the score in its preview (D24), which is opened, and the
+   * score compiled, when there is none yet. Resolves with the preview that was
+   * told to play: the sound itself is the webview's business.
+   */
+  const playMidi = async (uri?: vscode.Uri): Promise<PreviewPanel | undefined> => {
+    const file = uri instanceof vscode.Uri && uri.scheme !== 'webview-panel' ? uri : undefined
+    // As for a refresh: from an editor that shows an include, the score on screen is meant.
+    let preview = file ? previews.get(file.fsPath) : previews.target(activeFile())
+    if (!preview) {
+      const document = await compilable(file)
+      if (!document) return undefined
+      preview = previews.open(document.uri.fsPath).preview
+      host.followCursor(vscode.window.activeTextEditor)
+      if (!(await compileDocument(document))) return undefined
+    }
+    if (!preview.hasMidi) {
+      void vscode.window.showWarningMessage(
+        `${path.basename(preview.rootFile)} wrote no MIDI file. Add a \\midi { } block to its \\score.`,
+      )
+      return undefined
+    }
+    preview.play()
+    return preview
   }
 
   const commands: Record<string, (...args: never[]) => unknown> = {
@@ -188,6 +219,9 @@ export function registerCommands(host: CommandHost): vscode.Disposable {
     'lily.preview.previousPage': () => targetPreview()?.page('previous'),
     'lily.export.pdf': (uri?: vscode.Uri) => exportScore('pdf', uri),
     'lily.export.midi': (uri?: vscode.Uri) => exportScore('midi', uri),
+    'lily.midi.play': playMidi,
+    'lily.midi.stop': (uri?: vscode.Uri) =>
+      ((uri instanceof vscode.Uri && previews.get(uri.fsPath)) || targetPreview())?.play('stop'),
   }
   return vscode.Disposable.from(
     ...Object.entries(commands).map(([id, run]) => vscode.commands.registerCommand(id, run)),

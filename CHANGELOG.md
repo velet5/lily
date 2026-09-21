@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- **MIDI playback.** ▶, ■ and a seek slider in the preview toolbar play the
+  score's `\midi` output through a built-in Web Audio synthesizer: General
+  MIDI instruments, drums, dynamics, tempo changes and the sustain pedal.
+  <kbd>Space</kbd> in the preview plays or pauses. **Play or Pause MIDI** and
+  **Stop MIDI** in the Command Palette and the `…` menus.
+- **MIDI player** for `.mid` and `.midi` files: click one in the Explorer to
+  see its tracks and instruments and play it. **Export MIDI** now offers *Play*.
+
 ## 0.1.0 — 2026-09-18
 
 First packaged release.

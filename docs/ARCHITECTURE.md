@@ -101,10 +101,11 @@ changed.
 | G11 | Root file must be configured by hand per workspace. | — | Infer the root from `\include` relationships, setting as override. (D10) |
 | G12 | No way to drive it headlessly; an agent cannot compile and read errors. | Logic is tied to `vscode` APIs and module-level state. | Compile core has no `vscode` import; CLI + MCP wrap it. (D11) |
 
-Deliberately **not** carried over: MIDI keyboard input, MIDI playback and
-`python-ly` formatting. They account for most of VSLilyPond's code and
-dependencies (`jzz`, bundled Python binaries) and none of what was asked for.
-MIDI *export* stays, because it is free (D5).
+Deliberately **not** carried over: MIDI keyboard input and `python-ly`
+formatting. They account for most of VSLilyPond's code and dependencies (`jzz`,
+bundled Python binaries) and none of what was asked for. MIDI *export* stays,
+because it is free (D5), and MIDI *playback* came back after the release, done
+in the webview with Web Audio instead of through a MIDI port (D24).
 
 ## 3. Our architecture
 
@@ -123,8 +124,9 @@ One extension, one compile pipeline, consumers that subscribe to its results.
         ▼               ▼               ▼                ▼              ▼
    Diagnostics     Output channel   Status bar     PreviewPanel     CLI / MCP
    (Problems)                                       (webview)        (JSON)
-                                                        ▲  │
-                                   cursor → highlight ──┘  └── click → reveal
+                                                        ▲  │  │
+                                   cursor → highlight ──┘  │  └── .midi → Web Audio
+                                                click → reveal
 ```
 
 `CompileResult` is the single contract between the layers:
@@ -166,12 +168,15 @@ src/
     panel.ts            PreviewManager / PreviewPanel, html + CSP, message protocol (types-only vscode)
     autoPreview.ts      AutoPreview: saves → debounced compiles of the previewed roots (no vscode)
     pointAndClick.ts    textedit link parser and index, CHAR ↔ character (no vscode)
+  midi/
+    player.ts           the custom editor for .mid/.midi files, html + CSP (types-only vscode)
   intellisense/
     data.ts             shape, index and loader of data/completions.json (no vscode)
     completion.ts       what to offer after `\`, `\new`, `\override`, `\set` (no vscode)
     hover.ts            hover lookup and the Markdown both providers show (no vscode)
     provider.ts         the two VS Code providers
 media/                  preview.js + preview.css for the webview (no framework, no build)
+                        midi.js: SMF parser, Web Audio synthesizer, player (D24); player.js + player.css
 syntaxes/               lilypond.tmLanguage.json (authored here)
 snippets/
 data/                   completions.json, generated and committed (D21)
@@ -223,7 +228,7 @@ Facts the implementation must respect, all **[verified]**:
   A second plain `\book` reuses the first book's page names and overwrites
   them; that is LilyPond's behaviour and we do not work around it.
 - `\midi {}` in the source yields `<base>.midi` in the same directory at no
-  extra cost.
+  extra cost. The preview plays it (D24).
 - The source must be compiled **from disk**. Feeding stdin makes every
   location read `-:line:col` and every link point at `-`.
 
@@ -349,6 +354,7 @@ Where each piece of upcoming work should look first:
 | IntelliSense data, completion, hover (done) | D8 (the verified Scheme recipe), D21 |
 | CLI / MCP for agents (done) | §3.1 `CompileResult`, D11, D22, `AGENTS.md` |
 | Packaging, CI, README, release pass (done) | D23; what is left before publishing is listed there |
+| MIDI playback in the preview and for exported files (done) | D24; `media/midi.js` is the whole audio path |
 
 Appendix A is reproducible: each row is a one-line `lilypond` invocation on a
 two- or three-line input, and should be re-run when the minimum supported

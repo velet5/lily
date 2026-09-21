@@ -6,6 +6,7 @@ import { registerCommands, runToolbarCommand, setPreviewOpen } from './commands'
 import { getAutoPreviewSettings, getCompileSettings, getPreviewSettings } from './config'
 import { CompileReporter } from './diagnostics/publish'
 import { registerIntelliSense } from './intellisense/provider'
+import { MIDI_PLAYER_VIEW_TYPE, MidiPlayerProvider } from './midi/player'
 import { AutoPreview } from './preview/autoPreview'
 import { PREVIEW_VIEW_TYPE, PreviewManager, type PreviewPanel } from './preview/panel'
 import { charToCharacter, type SourceLocation } from './preview/pointAndClick'
@@ -16,6 +17,8 @@ import { charToCharacter, type SourceLocation } from './preview/pointAndClick'
 /** What `activate` returns; the extension-host tests reach the previews through it. */
 export interface LilyApi {
   previews: PreviewManager
+  /** The open viewers of MIDI files (D24). */
+  midiPlayers: MidiPlayerProvider
   autoPreview: AutoPreview
   /** What a click on a note does: shows `location` in an editor outside `preview`'s column. */
   revealSource(location: SourceLocation, preview?: PreviewPanel): Promise<void>
@@ -28,10 +31,12 @@ export function activate(context: vscode.ExtensionContext): LilyApi {
   const compiler = (service = new CompileService())
   const reporter = new CompileReporter()
   const media = vscode.Uri.joinPath(context.extensionUri, 'media')
+  const midiScript = vscode.Uri.joinPath(media, 'midi.js')
   const previews = new PreviewManager({
     assets: {
       root: media,
       script: vscode.Uri.joinPath(media, 'preview.js'),
+      midiScript,
       style: vscode.Uri.joinPath(media, 'preview.css'),
     },
     colors: () => getPreviewSettings().colors,
@@ -125,7 +130,29 @@ export function activate(context: vscode.ExtensionContext): LilyApi {
     compile: compileRoot,
   })
 
+  // Exported MIDI files open in a player of their own (D24).
+  const midiPlayers = new MidiPlayerProvider({
+    assets: {
+      root: media,
+      script: vscode.Uri.joinPath(media, 'player.js'),
+      midiScript,
+      style: vscode.Uri.joinPath(media, 'player.css'),
+    },
+    readFile: (uri) => vscode.workspace.fs.readFile(uri),
+    watch: (uri, listener) => {
+      const folder = vscode.Uri.joinPath(uri, '..')
+      const name = uri.path.slice(uri.path.lastIndexOf('/') + 1)
+      const watcher = vscode.workspace.createFileSystemWatcher(
+        new vscode.RelativePattern(folder, name),
+      )
+      watcher.onDidChange(listener)
+      watcher.onDidCreate(listener)
+      return watcher
+    },
+  })
+
   context.subscriptions.push(
+    vscode.window.registerCustomEditorProvider(MIDI_PLAYER_VIEW_TYPE, midiPlayers),
     reporter,
     previews,
     autoPreview,
@@ -148,7 +175,7 @@ export function activate(context: vscode.ExtensionContext): LilyApi {
       }
     }),
   )
-  return { previews, autoPreview, revealSource }
+  return { previews, midiPlayers, autoPreview, revealSource }
 }
 
 /** The column in which `uri` already has a tab, visible or not. */

@@ -215,6 +215,46 @@ body[data-colors='paper'] .page {
   font-variant-numeric: tabular-nums;
 }
 
+/* Playback (DECISIONS D24). */
+#midi-play,
+#midi-stop {
+  font-size: 0.85em;
+}
+
+#midi-seek {
+  width: 96px;
+  height: 4px;
+  margin: 0 6px;
+  accent-color: var(--vscode-progressBar-background, #0e70c0);
+  cursor: pointer;
+}
+
+#midi-seek:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#midi-time {
+  font-variant-numeric: tabular-nums;
+}
+
+#midi-time:not(:empty) {
+  margin: 0 4px;
+}
+
+/* What is dispensable goes first: the slider, then the time. */
+@media (max-width: 680px) {
+  #midi-seek {
+    display: none;
+  }
+}
+
+@media (max-width: 540px) {
+  #midi-time {
+    display: none;
+  }
+}
+
 /* A pane squeezed beside the code: keep the export buttons in sight. */
 @media (max-width: 400px) {
   #toolbar {

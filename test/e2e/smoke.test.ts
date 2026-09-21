@@ -74,6 +74,9 @@ suite('release smoke pass on the packaged extension', () => {
       'language-configuration.json',
       'media/preview.js',
       'media/preview.css',
+      'media/midi.js',
+      'media/player.js',
+      'media/player.css',
       'media/icons/preview.svg',
       'media/icons/preview-dark.svg',
     ]) {
@@ -165,6 +168,28 @@ suite('release smoke pass on the packaged extension', () => {
       assert.deepStrictEqual([result.ok, result.exported], [true, [path.join(scratch, `score.${format}`)]])
     }
     assert.deepStrictEqual((await fs.readdir(scratch)).sort(), ['score.ly', 'score.midi', 'score.pdf'])
+  })
+
+  test('the score plays in its preview, and the exported MIDI file in a player of its own', async () => {
+    // Sound needs a click in the webview; from a test, asking for it is as far as it goes.
+    const asked = (state: { state: string; blocked: boolean } | undefined) =>
+      state !== undefined && (state.state === 'playing' || state.blocked)
+    const preview = api.previews.get(score)
+    assert.ok(preview)
+    await vscode.commands.executeCommand('lily.midi.play', vscode.Uri.file(score))
+    // Eight bars of 3/4 at 96: the shipped media/midi.js read the file the compile wrote.
+    await eventually('the preview to play', () => preview.playback?.duration === 15 && asked(preview.playback))
+    await vscode.commands.executeCommand('lily.midi.stop', vscode.Uri.file(score))
+    await eventually('the preview to stop', () => preview.playback?.state === 'stopped')
+
+    const exported = vscode.Uri.file(path.join(scratch, 'score.midi'))
+    await vscode.commands.executeCommand('vscode.openWith', exported, 'lily.midiPlayer')
+    const player = await eventually('the MIDI player', () => api.midiPlayers.get(exported))
+    await eventually('the file to load', () => player.playback?.duration === 15)
+    player.play()
+    await eventually('the player to play', () => asked(player.playback))
+    player.play('stop')
+    await eventually('the player to stop', () => player.playback?.state === 'stopped')
   })
 
   test('the shipped lily-check compiles the score and reports its pages', async () => {

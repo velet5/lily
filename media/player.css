@@ -1,0 +1,128 @@
+/* MIDI viewer webview (DECISIONS D24). The CSP allows no inline styles, so every
+   rule lives here. */
+
+body {
+  margin: 0;
+  padding: 0 24px;
+  background: var(--vscode-editor-background);
+  color: var(--vscode-editor-foreground);
+  font: var(--vscode-font-size, 13px) var(--vscode-font-family, sans-serif);
+}
+
+main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 12vh 0 32px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 1.6em;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+#summary {
+  min-height: 1.4em;
+  margin: 4px 0 20px;
+  color: var(--vscode-descriptionForeground);
+  font-variant-numeric: tabular-nums;
+}
+
+#transport {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border: 1px solid var(--vscode-contrastBorder, var(--vscode-editorWidget-border, transparent));
+  border-radius: 6px;
+  background: var(--vscode-editorWidget-background);
+  color: var(--vscode-editorWidget-foreground);
+  user-select: none;
+}
+
+#transport button {
+  min-width: 30px;
+  height: 28px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+#transport button:hover:not(:disabled) {
+  background: var(--vscode-toolbar-hoverBackground);
+}
+
+#transport button:active:not(:disabled) {
+  background: var(--vscode-toolbar-activeBackground, var(--vscode-toolbar-hoverBackground));
+}
+
+#transport button:focus-visible,
+#midi-seek:focus-visible {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+#transport button:disabled,
+#midi-seek:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+#midi-seek {
+  flex: 1 1 80px;
+  min-width: 40px;
+  height: 4px;
+  margin: 0 8px;
+  accent-color: var(--vscode-progressBar-background, #0e70c0);
+  cursor: pointer;
+}
+
+#midi-time {
+  min-width: 78px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+#note {
+  margin: 12px 0 0;
+  color: var(--vscode-descriptionForeground);
+}
+
+#note.error {
+  color: var(--vscode-errorForeground);
+}
+
+#tracks {
+  width: 100%;
+  margin-top: 28px;
+  border-collapse: collapse;
+}
+
+#tracks th,
+#tracks td {
+  padding: 5px 12px 5px 0;
+  border-bottom: 1px solid var(--vscode-contrastBorder, var(--vscode-editorWidget-border, rgba(128, 128, 128, 0.35)));
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+#tracks th {
+  color: var(--vscode-descriptionForeground);
+  font-weight: normal;
+}
+
+#tracks th:last-child,
+#tracks td:last-child {
+  padding-right: 0;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+[hidden] {
+  display: none !important;
+}

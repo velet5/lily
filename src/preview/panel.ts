@@ -29,6 +29,9 @@ export type HostMessage =
   | { type: 'page'; action: PageAction }
   /** The links to mark as the cursor's; `reveal` scrolls the first one into view. */
   | { type: 'highlight'; hrefs: string[]; reveal: boolean }
+  /** What the score sounds like: a MIDI file as base64, or null when it has none (D24). */
+  | { type: 'midi'; data: string | null }
+  | { type: 'playback'; action: PlaybackAction }
 
 /** Webview → host. */
 export type WebviewMessage =
@@ -42,9 +45,13 @@ export type WebviewMessage =
   | ({ type: 'view' } & PreviewView)
   /** A toolbar button that only the host can act on. */
   | { type: 'command'; command: ToolbarCommand }
+  /** The player, whenever its state changes; the position is not reported as it runs. */
+  | ({ type: 'playback' } & PreviewPlayback)
 
 export type ZoomAction = 'in' | 'out' | 'fit'
 export type PageAction = 'next' | 'previous'
+/** `toggle` is play or pause, whichever applies. */
+export type PlaybackAction = 'play' | 'toggle' | 'stop'
 
 /** The webview names one of these, never a VS Code command (D20). */
 export const TOOLBAR_COMMANDS = ['refresh', 'exportPdf', 'exportMidi'] as const
@@ -56,6 +63,15 @@ export interface PreviewView {
   pages: number
   /** 1 is fit-width. */
   zoom: number
+}
+
+export interface PreviewPlayback {
+  state: 'stopped' | 'playing' | 'paused'
+  /** Seconds. */
+  position: number
+  duration: number
+  /** Play was asked for, and the webview may not make sound before a click in it. */
+  blocked: boolean
 }
 
 /** Where the editor's cursor is, in the editor's own terms. */
@@ -72,6 +88,8 @@ export interface PreviewAssets {
   /** The only directory the webview may load from. */
   root: vscode.Uri
   script: vscode.Uri
+  /** The parser, synthesizer and player that the MIDI viewer uses too (D24). */
+  midiScript: vscode.Uri
   style: vscode.Uri
 }
 
@@ -79,6 +97,8 @@ export interface PreviewHtmlOptions {
   cspSource: string
   nonce: string
   scriptUri: string
+  /** media/midi.js, which the script expects to be loaded before it (D24). */
+  midiScriptUri: string
   styleUri: string
   colors: PreviewColors
 }
@@ -127,11 +147,19 @@ export function previewHtml(options: PreviewHtmlOptions): string {
 <button id="zoom-in" type="button" title="Zoom In (+)" aria-label="Zoom In">+</button>
 </span>
 <span class="spacer"></span>
+<span id="player" class="group">
+<button id="midi-play" type="button" disabled>&#x25B6;&#xFE0E;</button>
+<button id="midi-stop" type="button" title="Stop" aria-label="Stop" disabled>&#x25A0;&#xFE0E;</button>
+<input id="midi-seek" type="range" min="0" max="1000" value="0" aria-label="Playback position" disabled>
+<span id="midi-time"></span>
+</span>
+<span class="spacer"></span>
 <span class="group">
 <button id="export-pdf" type="button" title="Export PDF next to the source">PDF</button>
 <button id="export-midi" type="button" title="Export MIDI next to the source">MIDI</button>
 </span>
 </div>
+<script nonce="${attribute(nonce)}" src="${attribute(options.midiScriptUri)}"></script>
 <script nonce="${attribute(nonce)}" src="${attribute(options.scriptUri)}"></script>
 </body>
 </html>
@@ -175,6 +203,11 @@ export class PreviewPanel {
   private marking = false
   private marked = 0
   private shown: PreviewView | undefined
+  /** The MIDI file of the run on screen, as base64 (D24). */
+  private midi: string | undefined
+  private player: PreviewPlayback | undefined
+  /** play() found the webview hidden; it starts once it is back. */
+  private playWhenReady = false
   private readonly subscriptions: vscode.Disposable[]
 
   constructor(
@@ -193,6 +226,7 @@ export class PreviewPanel {
       cspSource: webview.cspSource,
       nonce: randomBytes(16).toString('base64'),
       scriptUri: webview.asWebviewUri(options.assets.script).toString(),
+      midiScriptUri: webview.asWebviewUri(options.assets.midiScript).toString(),
       styleUri: webview.asWebviewUri(options.assets.style).toString(),
       colors: options.colors,
     })
@@ -210,6 +244,16 @@ export class PreviewPanel {
   /** What the webview's toolbar last reported; undefined until it has. */
   get view(): PreviewView | undefined {
     return this.shown
+  }
+
+  /** Whether the last compile wrote a MIDI file, which takes a `\midi` block. */
+  get hasMidi(): boolean {
+    return this.midi !== undefined
+  }
+
+  /** What the webview's player last reported; undefined until it has. */
+  get playback(): PreviewPlayback | undefined {
+    return this.player
   }
 
   /** Whether this is the tab the user is in. */
@@ -267,6 +311,17 @@ export class PreviewPanel {
     this.post({ type: 'page', action })
   }
 
+  /** Plays, pauses or stops the score's MIDI in the webview, which is where the sound is made. */
+  play(action: PlaybackAction = 'toggle'): void {
+    if (action !== 'stop' && !this.panel.visible) {
+      // A hidden webview is destroyed; the new one says `ready` and is told then.
+      this.playWhenReady = true
+      this.reveal()
+      return
+    }
+    this.post({ type: 'playback', action })
+  }
+
   /**
    * Marks what the cursor points at, or nothing. `cursor.file` is canonical
    * (canonicalFile). `reveal` also scrolls the element into view; a refresh
@@ -303,15 +358,24 @@ export class PreviewPanel {
 
     const update = ++this.latestUpdate
     let pages: string[]
+    let midi: string | undefined
     try {
       // Now: the run's directory is deleted when the next one completes (D15).
       pages = await Promise.all(result.pages.map((page) => fs.readFile(page, 'utf8')))
+      // Several \score blocks with \midi write several files; the first is the one heard.
+      const [first] = result.midi
+      if (first !== undefined) midi = await fs.readFile(first, 'base64')
     } catch {
       return
     }
     const links = await LinkIndex.build(pages)
     if (update !== this.latestUpdate || this.disposed) return
 
+    // A failed run that wrote no MIDI keeps the previous one, as it keeps the pages.
+    if ((midi !== undefined || result.ok) && midi !== this.midi) {
+      this.midi = midi
+      this.post({ type: 'midi', data: midi ?? null })
+    }
     if (pages.length > 0) {
       this.pages = pages
       this.links = links
@@ -338,7 +402,10 @@ export class PreviewPanel {
         // Sent on every (re)load: a hidden webview is destroyed, not retained.
         this.post({ type: 'colors', colors: this.colors })
         if (this.pages) this.post({ type: 'render', revision: this.revision, pages: this.pages })
+        this.post({ type: 'midi', data: this.midi ?? null })
         this.postStatus()
+        if (this.playWhenReady) this.post({ type: 'playback', action: 'play' })
+        this.playWhenReady = false
         this.marking = false
         this.marked = 0
         this.showCursor(this.cursor, false)
@@ -365,6 +432,14 @@ export class PreviewPanel {
           page: Number(message.page) || 0,
           pages: Number(message.pages) || 0,
           zoom: Number(message.zoom) || 1,
+        }
+        break
+      case 'playback':
+        this.player = {
+          state: message.state === 'playing' || message.state === 'paused' ? message.state : 'stopped',
+          position: Number(message.position) || 0,
+          duration: Number(message.duration) || 0,
+          blocked: message.blocked === true,
         }
         break
       case 'command':

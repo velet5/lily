@@ -923,9 +923,10 @@ into the compile and stderr modules.
 - **Packaging.** `npm run vsix` is `vsce package --no-dependencies
   --no-rewrite-relative-links --allow-missing-repository`; `vscode:prepublish`
   runs the production build first. There are no run-time dependencies to pack
-  (D12). There is no `repository` yet, so README links cannot be rewritten to a
-  remote: images ship inside the VSIX, and the README links only to files that
-  ship (`AGENTS.md`) or to https. `publisher` is still the placeholder
+  (D12). There was no `repository` at 0.1.0, so README links could not be
+  rewritten to a remote: images ship inside the VSIX, and the README links only
+  to files that ship (`AGENTS.md`) or to https. The repository is
+  github.com/velet5/lily since D24; the packaging is unchanged. `publisher` is still the placeholder
   `lily-dev` (D12) and `private: true` stays, against an accidental
   `npm publish`. **Nothing was published.** Before publishing: a real publisher,
   a `repository`, a 128 px `icon`, and then the images can leave the VSIX.
@@ -978,7 +979,84 @@ into the compile and stderr modules.
 
 ---
 
+## D24 — MIDI playback conventions
+
+**Status:** accepted · **Refines:** D5, D12, D17, D20 · **Supersedes** the
+playback part of *Out of scope*
+
+- **Decision.** The score is played by the webviews themselves, with a Standard
+  MIDI File parser and a small Web Audio synthesizer written for this extension
+  (`media/midi.js`, plain JS like the rest of `media/`, D12). No `jzz`, no
+  system MIDI port, no SoundFont: VSLilyPond's playback needed a native module
+  and a synthesizer the user had to have; a General MIDI SoundFont is 10–150 MB
+  and would have to be licensed and shipped. Two oscillators and an envelope per
+  note are enough to hear whether the rhythm and the harmony are what was meant,
+  which is what proof-listening a score is for. The synthesizer can be replaced
+  later without touching the parser, the player or the protocol.
+- **Files.** `media/midi.js`: `parseMidi` (bytes → notes with the channel state
+  they began in; a tempo map; the sustain pedal and pitch bend resolved),
+  `Synth` (any `BaseAudioContext`, one voice per General MIDI family, drums on
+  channel 10, a limiter so a tutti chord does not clip), `Player` (play, pause,
+  stop, seek; schedules 0.4 s ahead of the audio clock every 50 ms). The first
+  half is pure and is what `test/midi/midi.test.ts` loads; the player runs
+  there against a fake context. `src/midi/player.ts` and `media/player.js` /
+  `player.css` are the viewer of `.mid` / `.midi` files.
+- **Where playback lives.** In the preview, because the compile that draws the
+  pages writes the MIDI at no cost (§3.3): `PreviewPanel.update()` reads the
+  first `.midi` of the run as base64 and posts `{ type: 'midi', data }`; a
+  failed run without one keeps the previous file, as it keeps the pages; a good
+  run without `\midi` clears it; a score of `\midi` alone has no pages and still
+  plays. The same bytes again (a refresh that changed only the layout) are not
+  re-sent, so the music plays on. The toolbar gains `▶ ■ ──── 0:07 / 0:24`
+  between the zoom group and the exports; the slider goes below 680 px and the
+  time below 540 px, the buttons stay. `Space` in the preview plays or pauses.
+- **Exported files.** A custom read-only editor, `lily.midiPlayer`, opens
+  `*.mid` and `*.midi` (priority `default`: VS Code has nothing for them but
+  "the file is binary"). It shows the title lilypond writes into the first
+  track, the length, and a table of tracks with their General MIDI instrument
+  names — the names `midiInstrument` takes. A file system watcher on the file
+  re-sends it, so an export while the player is open is heard on the next play.
+  The export notification's *Open* is *Play* for MIDI and opens this editor; a
+  PDF still goes to the system viewer.
+- **Commands** (D20). `lily.midi.play` (*Play or Pause MIDI*): the `Uri`
+  argument's preview, else the target preview (D20: the active one, the active
+  editor's, or the only one); without one it opens the preview of the
+  compilable document and plays once compiled. A score without MIDI is told
+  which block to add. `lily.midi.stop`. Both in the palette, the editor's `…`
+  menu (play) and the preview's `…` menu. No keybinding: the webview's `Space`
+  is the key, and a contributed one would fire together with it.
+- **Sound needs a click.** VS Code's windows run with Chromium's
+  `autoplayPolicy: 'user-gesture-required'` and delegate `autoplay` to the
+  webview iframe **[verified in the 1.138 bundle]**: an `AudioContext` stays
+  `suspended` until the user has clicked or typed in that webview once. A
+  button in the toolbar is such a gesture; a command from the palette is not,
+  the first time. `Player.play()` then resolves with `false` and the webview
+  shows *Click ▶ to play* in the note area and reports `blocked: true` in
+  `{ type: 'playback', state, position, duration, blocked }`, which
+  `PreviewPanel.playback` / `MidiPlayerPanel.playback` keep. The tests, which
+  cannot click, accept `playing` or `blocked` and assert on the duration, which
+  proves the shipped parser read the file. **[verified]** in the host tests:
+  a command-driven play is `blocked` there.
+- **Hidden webviews.** A preview behind another tab is destroyed (D17), and its
+  music with it. `PreviewPanel.play()` on a hidden panel reveals it and plays
+  on the next `ready`. Playback does not survive a window reload either.
+- **Untrusted input.** A `.midi` file is parsed by hand in the webview, never
+  `eval`ed; track names are set as `textContent`. The parser throws on anything
+  that is not a metrical SMF 0/1, and the message is shown instead of a player.
+  The viewer's CSP is the preview's without `img-src`.
+- **Verified** in headless Chrome with an `OfflineAudioContext`: the sample
+  score renders without NaN at a peak of 0.48, a twenty-note fortissimo chord
+  at 0.71 (the limiter holds), and every General MIDI family and drum sounds.
+  How it *sounds* was not judged by ear; the harmonic tables are a first cut.
+- **Not done here.** No highlighting of the notes as they play and no "play
+  from the cursor": lilypond's MIDI carries no source positions, so that needs
+  a mapping from the SVG's `textedit:` links to the note list, a later step.
+  No tempo or volume control, no metronome, no choice among several `\midi`
+  files of one score (the first is played), and no playback from the CLI.
+
+---
+
 ## Out of scope
 
-MIDI keyboard input, MIDI playback, and `python-ly` formatting. Revisit only
-after step 12.
+MIDI keyboard input and `python-ly` formatting. MIDI playback was out of scope
+until step 12 and is D24.

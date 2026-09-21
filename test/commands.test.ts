@@ -7,7 +7,7 @@ import pkg from '../package.json'
 import type { ExportResult } from '../src/compile/compiler'
 import { locateLilyPond } from '../src/compile/locate'
 import type { LilyApi } from '../src/extension'
-import type { PreviewView } from '../src/preview/panel'
+import type { PreviewPanel, PreviewPlayback, PreviewView } from '../src/preview/panel'
 
 const extension = () => vscode.extensions.getExtension<LilyApi>(`${pkg.publisher}.${pkg.name}`)!
 
@@ -158,5 +158,57 @@ suite('command surface: preview and export', () => {
     )
     assert.deepStrictEqual(audible.exported, [path.join(scratch, 'audible.midi')])
     assert.strictEqual((await fs.readFile(audible.exported[0])).subarray(0, 4).toString(), 'MThd')
+  })
+
+  /** Waits for a webview's player to report what `accept` wants. */
+  async function playback(
+    read: () => PreviewPlayback | undefined,
+    what: string,
+    accept: (state: PreviewPlayback) => boolean,
+  ): Promise<PreviewPlayback> {
+    const deadline = Date.now() + 5000
+    let shown = read()
+    while (!(shown && accept(shown)) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 25))
+      shown = read()
+    }
+    assert.ok(shown && accept(shown), `${what}; the player reports ${JSON.stringify(shown)}`)
+    return shown
+  }
+
+  /** Sound needs a click in the webview; from a test, having asked for it is as far as it goes. */
+  const asked = (state: PreviewPlayback) => state.state === 'playing' || state.blocked
+
+  test('Play MIDI opens the preview of a score and plays it; a score without \\midi is told so', async () => {
+    const file = path.join(scratch, 'audible.ly')
+    const preview = await vscode.commands.executeCommand<PreviewPanel | undefined>(
+      'lily.midi.play',
+      vscode.Uri.file(file),
+    )
+    assert.ok(preview, 'no preview was opened')
+    assert.strictEqual(preview.hasMidi, true)
+    // Four crotchets at lilypond's default tempo: media/midi.js parsed what the compile wrote.
+    await playback(() => preview.playback, 'play', (s) => s.duration === 4 && asked(s))
+
+    await vscode.commands.executeCommand('lily.midi.stop', vscode.Uri.file(file))
+    await playback(() => preview.playback, 'stop', (s) => s.state === 'stopped' && s.position === 0)
+
+    const silent = await vscode.commands.executeCommand<PreviewPanel | undefined>(
+      'lily.midi.play',
+      vscode.Uri.file(path.join(scratch, 'refreshed.ly')),
+    )
+    assert.strictEqual(silent, undefined)
+  })
+
+  test('an exported MIDI file opens in the player, which plays it', async () => {
+    const uri = vscode.Uri.file(path.join(scratch, 'audible.midi'))
+    await vscode.commands.executeCommand('vscode.openWith', uri, 'lily.midiPlayer')
+    const player = api.midiPlayers.get(uri)
+    assert.ok(player, 'the custom editor was not resolved')
+    await playback(() => player.playback, 'load', (s) => s.state === 'stopped' && s.duration === 4)
+    player.play()
+    await playback(() => player.playback, 'play', asked)
+    player.play('stop')
+    await playback(() => player.playback, 'stop', (s) => s.state === 'stopped')
   })
 })

@@ -1,8 +1,21 @@
+# Dependencies and build output
 node_modules/
 dist/
 out/
+*.tsbuildinfo
+
+# Test hosts, packages and scratch files
 .vscode-test/
 *.vsix
 .worktrees/
-.DS_Store
 test/e2e/workspace/sample.ly
+*.log
+
+# Local secrets and machine-specific settings; never commit these
+.env
+.env.*
+.claude/settings.local.json
+
+# OS files
+.DS_Store
+Thumbs.db

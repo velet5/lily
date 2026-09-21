@@ -1,11 +1,19 @@
 {
   "name": "lily",
   "displayName": "Lily — LilyPond",
-  "description": "LilyPond editing with a side-by-side SVG preview, diagnostics and IntelliSense.",
+  "description": "LilyPond editing with a side-by-side SVG preview, MIDI playback, diagnostics and IntelliSense.",
   "version": "0.1.0",
   "publisher": "lily-dev",
   "private": true,
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/velet5/lily.git"
+  },
+  "homepage": "https://github.com/velet5/lily#readme",
+  "bugs": {
+    "url": "https://github.com/velet5/lily/issues"
+  },
   "engines": {
     "vscode": "^1.100.0"
   },
@@ -16,7 +24,8 @@
     "lilypond",
     "music",
     "notation",
-    "score"
+    "score",
+    "midi"
   ],
   "main": "./dist/extension.js",
   "bin": {
@@ -48,6 +57,21 @@
       {
         "language": "lilypond",
         "path": "./snippets/lilypond.json"
+      }
+    ],
+    "customEditors": [
+      {
+        "viewType": "lily.midiPlayer",
+        "displayName": "MIDI Player",
+        "selector": [
+          {
+            "filenamePattern": "*.mid"
+          },
+          {
+            "filenamePattern": "*.midi"
+          }
+        ],
+        "priority": "default"
       }
     ],
     "commands": [
@@ -119,6 +143,18 @@
         "title": "Export MIDI",
         "category": "LilyPond",
         "icon": "$(music)"
+      },
+      {
+        "command": "lily.midi.play",
+        "title": "Play or Pause MIDI",
+        "category": "LilyPond",
+        "icon": "$(play-circle)"
+      },
+      {
+        "command": "lily.midi.stop",
+        "title": "Stop MIDI",
+        "category": "LilyPond",
+        "icon": "$(debug-stop)"
       }
     ],
     "menus": {
@@ -134,6 +170,14 @@
         {
           "command": "lily.export.midi",
           "when": "editorLangId == lilypond || activeWebviewPanelId == 'lily.preview'"
+        },
+        {
+          "command": "lily.midi.play",
+          "when": "editorLangId == lilypond || activeWebviewPanelId == 'lily.preview'"
+        },
+        {
+          "command": "lily.midi.stop",
+          "when": "lily.previewOpen"
         },
         {
           "command": "lily.preview.openToSide",
@@ -186,6 +230,11 @@
           "group": "1_lily@3"
         },
         {
+          "command": "lily.midi.play",
+          "when": "editorLangId == lilypond && !notebookEditorFocused",
+          "group": "1_lily@4"
+        },
+        {
           "command": "lily.preview.refresh",
           "when": "activeWebviewPanelId == 'lily.preview'",
           "group": "navigation@1"
@@ -199,6 +248,16 @@
           "command": "lily.export.midi",
           "when": "activeWebviewPanelId == 'lily.preview'",
           "group": "1_lily@1"
+        },
+        {
+          "command": "lily.midi.play",
+          "when": "activeWebviewPanelId == 'lily.preview'",
+          "group": "1_lily@2"
+        },
+        {
+          "command": "lily.midi.stop",
+          "when": "activeWebviewPanelId == 'lily.preview'",
+          "group": "1_lily@3"
         },
         {
           "command": "lily.preview.zoomIn",
