@@ -1,5 +1,9 @@
 # Faster LilyPond previews
 
+Implementation followed in [D25](DECISIONS.md#d25--unsaved-accelerated-live-preview);
+see [implementation measurements and limits](LIVE-PREVIEW-IMPLEMENTATION.md).
+The research below preserves the pre-implementation findings.
+
 Research and local experiments, 2026-09-21. This is a proposal, not an accepted
 architecture change. The extension's compile and preview code is unchanged.
 

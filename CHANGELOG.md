@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Faster unsaved previews.** Guarded classic SVG glyph caching and an isolated
+  warm parent on supported LilyPond 2.26.0 installations; ordinary fallback.
+  Unsaved root/include snapshots preserve source navigation and diagnostic
+  positions. A bounded debounce and one pending revision prevent starvation.
+  Unchanged SVG pages and link indexes are reused; zoom, themes and MIDI remain.
+
 - **MIDI playback.** ▶, ■ and a seek slider in the preview toolbar play the
   score's `\midi` output through a built-in Web Audio synthesizer: General
   MIDI instruments, drums, dynamics, tempo changes and the sustain pedal.

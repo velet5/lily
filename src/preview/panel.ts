@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto'
+import { createHash, randomBytes } from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import type * as vscode from 'vscode'
@@ -22,7 +22,7 @@ export type PreviewColors = 'theme' | 'paper'
 
 /** Host → webview. */
 export type HostMessage =
-  | { type: 'render'; revision: number; pages: string[] }
+  | { type: 'render'; revision: number; pages: string[]; hashes: string[] }
   | { type: 'status'; busy: boolean; note?: string }
   | { type: 'colors'; colors: PreviewColors }
   | { type: 'zoom'; action: ZoomAction }
@@ -36,7 +36,7 @@ export type HostMessage =
 /** Webview → host. */
 export type WebviewMessage =
   | { type: 'ready' }
-  | { type: 'rendered'; revision: number; pages: number }
+  | { type: 'rendered'; revision: number; pages: number; renderMs?: number; reusedPages?: number }
   /** A `textedit:` link was clicked. */
   | { type: 'reveal'; href: string }
   /** Answers every `highlight` with the number of elements now marked. */
@@ -184,12 +184,20 @@ export interface PreviewPanelOptions {
 export class PreviewPanel {
   /** The pages on screen; kept when a later run produces none. */
   private pages: string[] | undefined
+  private hashes: string[] = []
+  private pageIndexes = new Map<string, LinkIndex>()
+  private updateStarted = 0
+  private sentAt = 0
+  /** Host preparation plus webview acknowledgement after two animation frames.
+   * Background/hidden panels may acknowledge much later; this is not GPU timing. */
+  latency?: { compileMs: number; snapshotMs: number; prepareMs: number; renderMs: number; totalMs: number; reusedPages: number; engine?: string }
   private revision = 0
   /** What the webview last reported as drawn. */
   private rendered: { revision: number; pages: number } | undefined
   private waiters: Array<(pages: number) => void> = []
   /** Compiles in flight that this panel follows. */
   private pending = 0
+  private updating = false
   private note: string | undefined
   private latestUpdate = 0
   private disposed = false
@@ -277,6 +285,7 @@ export class PreviewPanel {
    * compile could not run at all.
    */
   async follow(run: Promise<CompileResult | undefined>): Promise<void> {
+    if (this.updateStarted === 0) this.updateStarted = Date.now()
     this.pending++
     this.postStatus()
     let result: CompileResult | undefined
@@ -295,6 +304,12 @@ export class PreviewPanel {
       return Promise.resolve(this.rendered.pages)
     }
     return new Promise((resolve) => this.waiters.push(resolve))
+  }
+
+  setUpdating(updating: boolean): void {
+    if (updating && this.updateStarted === 0) this.updateStarted = Date.now()
+    this.updating = updating
+    this.postStatus()
   }
 
   setColors(colors: PreviewColors): void {
@@ -356,6 +371,7 @@ export class PreviewPanel {
       return
     }
 
+    const prepareStart = performance.now()
     const update = ++this.latestUpdate
     let pages: string[]
     let midi: string | undefined
@@ -368,7 +384,13 @@ export class PreviewPanel {
     } catch {
       return
     }
-    const links = await LinkIndex.build(pages)
+    const hashes = pages.map(page => createHash('sha256').update(page).digest('hex'))
+    const indexes = new Map<string, LinkIndex>()
+    for (let i = 0; i < pages.length; i++) {
+      const hash = hashes[i]
+      indexes.set(hash, this.pageIndexes.get(hash) ?? await LinkIndex.build([pages[i]]))
+    }
+    const links = LinkIndex.merge(hashes.map(hash => indexes.get(hash)!))
     if (update !== this.latestUpdate || this.disposed) return
 
     // A failed run that wrote no MIDI keeps the previous one, as it keeps the pages.
@@ -378,9 +400,14 @@ export class PreviewPanel {
     }
     if (pages.length > 0) {
       this.pages = pages
+      this.hashes = hashes
+      this.pageIndexes = indexes
+      this.sentAt = Date.now()
+      this.latency = { compileMs: result.durationMs, snapshotMs: result.snapshotMs ?? 0,
+        prepareMs: performance.now() - prepareStart, renderMs: 0, totalMs: 0, reusedPages: 0, engine: result.engine }
       this.links = links
       this.revision++
-      this.post({ type: 'render', revision: this.revision, pages })
+      this.post({ type: 'render', revision: this.revision, pages, hashes })
       // The new page nodes carry no mark, and the links may have moved.
       this.marking = false
       this.marked = 0
@@ -401,7 +428,7 @@ export class PreviewPanel {
       case 'ready':
         // Sent on every (re)load: a hidden webview is destroyed, not retained.
         this.post({ type: 'colors', colors: this.colors })
-        if (this.pages) this.post({ type: 'render', revision: this.revision, pages: this.pages })
+        if (this.pages) this.post({ type: 'render', revision: this.revision, pages: this.pages, hashes: this.hashes })
         this.post({ type: 'midi', data: this.midi ?? null })
         this.postStatus()
         if (this.playWhenReady) this.post({ type: 'playback', action: 'play' })
@@ -413,6 +440,12 @@ export class PreviewPanel {
       case 'rendered':
         this.rendered = { revision: message.revision, pages: message.pages }
         if (message.revision === this.revision) {
+          if (this.latency) {
+            this.latency.renderMs = Date.now() - this.sentAt
+            this.latency.totalMs = Date.now() - (this.updateStarted || this.sentAt)
+            this.latency.reusedPages = message.reusedPages ?? 0
+            if (!this.updating && this.pending === 0) this.updateStarted = 0
+          }
           for (const resolve of this.waiters.splice(0)) resolve(message.pages)
         }
         break
@@ -451,7 +484,7 @@ export class PreviewPanel {
   }
 
   private postStatus(): void {
-    this.post({ type: 'status', busy: this.pending > 0, note: this.note })
+    this.post({ type: 'status', busy: this.pending > 0 || this.updating, note: this.updating ? 'Updating…' : this.note })
   }
 
   private post(message: HostMessage): void {

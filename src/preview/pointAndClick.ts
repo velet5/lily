@@ -113,6 +113,17 @@ export class LinkIndex {
     return new LinkIndex(files)
   }
 
+  static merge(indexes: readonly LinkIndex[]): LinkIndex {
+    const files = new Map<string, Map<number, Link[]>>()
+    for (const index of indexes) for (const [file, lines] of index.files) {
+      let target = files.get(file)
+      if (!target) files.set(file, (target = new Map()))
+      for (const [line, links] of lines) target.set(line, [...(target.get(line) ?? []), ...links])
+    }
+    for (const lines of files.values()) for (const links of lines.values()) links.sort((a, b) => a.char - b.char)
+    return new LinkIndex(files)
+  }
+
   /**
    * The hrefs to highlight for a cursor at `char` of `line`: the nearest link at
    * or before the cursor on that line, so a cursor anywhere in `cis'4.` finds

@@ -1,4 +1,5 @@
 import * as assert from 'node:assert'
+import { createHash } from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -17,6 +18,8 @@ import type { SourceLocation } from '../../src/preview/pointAndClick'
 
 // Runs without an extension host (DECISIONS D13): the panel only uses `vscode`
 // types, so a fake WebviewPanel is enough.
+
+const renderMessage = (revision: number, pages: string[]): HostMessage => ({ type: 'render', revision, pages, hashes: pages.map(page => createHash('sha256').update(page).digest('hex')) })
 
 const uri = (value: string) => ({ toString: () => value }) as vscode.Uri
 
@@ -200,7 +203,7 @@ describe('PreviewPanel', () => {
     finish(result({ pages: pageFiles }))
     await following
     assert.deepStrictEqual(fake.take(), [
-      { type: 'render', revision: 1, pages: ['<svg>one</svg>', '<svg>two</svg>'] },
+      renderMessage(1, ['<svg>one</svg>', '<svg>two</svg>']),
       { type: 'status', busy: false, note: undefined },
     ])
     assert.strictEqual(preview.hasPages, true)
@@ -214,7 +217,7 @@ describe('PreviewPanel', () => {
     fake.fromWebview({ type: 'ready' })
     assert.deepStrictEqual(fake.take(), [
       { type: 'colors', colors: 'paper' },
-      { type: 'render', revision: 1, pages: ['<svg>one</svg>'] },
+      renderMessage(1, ['<svg>one</svg>']),
       { type: 'midi', data: null },
       { type: 'status', busy: false, note: undefined },
     ])
@@ -242,7 +245,7 @@ describe('PreviewPanel', () => {
     const { fake, preview } = create()
     await preview.follow(Promise.resolve(result({ ok: false, exitCode: 1, pages: [pageFiles[1]] })))
     assert.deepStrictEqual(fake.take().slice(1), [
-      { type: 'render', revision: 1, pages: ['<svg>two</svg>'] },
+      renderMessage(1, ['<svg>two</svg>']),
       { type: 'status', busy: false, note: 'Compiled with errors. See the Problems panel.' },
     ])
   })
@@ -274,7 +277,7 @@ describe('PreviewPanel', () => {
     finish(result({ pages: [pageFiles[0]] }))
     await successor
     assert.deepStrictEqual(fake.take(), [
-      { type: 'render', revision: 1, pages: ['<svg>one</svg>'] },
+      renderMessage(1, ['<svg>one</svg>']),
       { type: 'status', busy: false, note: undefined },
     ])
   })
@@ -314,7 +317,7 @@ describe('PreviewPanel', () => {
     await preview.follow(Promise.resolve(run))
     assert.deepStrictEqual(fake.take().slice(1, 3), [
       { type: 'midi', data },
-      { type: 'render', revision: 1, pages: ['<svg>one</svg>'] },
+      renderMessage(1, ['<svg>one</svg>']),
     ])
     assert.strictEqual(preview.hasMidi, true)
 
@@ -476,7 +479,7 @@ describe('PreviewPanel', () => {
       await preview.follow(Promise.resolve(result({ pages: [linked] })))
       const again = { type: 'highlight', hrefs: [href(2)], reveal: false }
       assert.deepStrictEqual(fake.take().slice(1, 3), [
-        { type: 'render', revision: 2, pages: [await fs.readFile(linked, 'utf8')] },
+        renderMessage(2, [await fs.readFile(linked, 'utf8')]),
         again,
       ])
 

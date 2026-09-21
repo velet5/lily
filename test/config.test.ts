@@ -17,13 +17,14 @@ suite('compile settings', () => {
   })
 
   test('defaults search PATH and add no arguments', () => {
-    assert.deepStrictEqual(getCompileSettings(), { lilypondPath: '', extraArgs: [] })
+    assert.deepStrictEqual(getCompileSettings(), { lilypondPath: '', extraArgs: [], acceleration: 'auto' })
   })
 
   test('a change is visible to the next read without a reload', async () => {
     await config().update('lilypond.path', '  /opt/lilypond/bin/lilypond ', target)
     await config().update('compile.extraArgs', ['--include=/my library', '', 7], target)
     assert.deepStrictEqual(getCompileSettings(), {
+      acceleration: 'auto',
       lilypondPath: '/opt/lilypond/bin/lilypond',
       extraArgs: ['--include=/my library'],
     })
@@ -37,10 +38,10 @@ suite('compile settings', () => {
   })
 
   test('the preview refreshes on save unless told otherwise', async () => {
-    assert.deepStrictEqual(getAutoPreviewSettings(), { enabled: true, delayMs: 300 })
+    assert.deepStrictEqual(getAutoPreviewSettings(), { enabled: true, onChange: true, delayMs: 150 })
     await config().update('preview.refreshOnSave', false, target)
     await config().update('preview.refreshDelay', 60000, target)
-    assert.deepStrictEqual(getAutoPreviewSettings(), { enabled: false, delayMs: 5000 })
+    assert.deepStrictEqual(getAutoPreviewSettings(), { enabled: false, onChange: true, delayMs: 5000 })
     await config().update('preview.refreshDelay', -1, target)
     assert.strictEqual(getAutoPreviewSettings().delayMs, 0)
   })

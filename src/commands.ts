@@ -63,7 +63,7 @@ export function registerCommands(host: CommandHost): vscode.Disposable {
       void vscode.window.showInformationMessage('Open a LilyPond file to compile it.')
       return undefined
     }
-    // lilypond reads the file from disk, never the editor buffer (ARCHITECTURE §3.3).
+    // Snapshots still need a real filename for include resolution and navigation.
     if (document.uri.scheme !== 'file') {
       void vscode.window.showInformationMessage('Save this file to disk to compile it.')
       return undefined
@@ -71,11 +71,10 @@ export function registerCommands(host: CommandHost): vscode.Disposable {
     return document
   }
 
-  /** Resolves with undefined when the save was refused or lilypond could not run. */
+  /** Preview compilation never saves the document (D25). */
   const compileDocument = async (
     document: vscode.TextDocument,
   ): Promise<CompileResult | undefined> => {
-    if (document.isDirty && !(await document.save())) return undefined
     return host.compileRoot(document.uri.fsPath)
   }
 

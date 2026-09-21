@@ -158,6 +158,8 @@
   let status = { busy: false, note: undefined }
   /** href → the `<a>` elements of the pages on screen that carry it. */
   let sourceLinks = new Map()
+  const pageLinks = new WeakMap()
+  let pageHashes = []
   let current = []
   let reported = ''
 
@@ -293,13 +295,24 @@
 
   function indexLinks() {
     sourceLinks = new Map()
+    for (const link of current) link.classList.remove('current')
     current = []
-    for (const link of pagesEl.querySelectorAll('a')) {
-      const href = linkHref(link)
-      if (!isSourceLink(href)) continue
-      link.classList.add('source')
-      if (sourceLinks.has(href)) sourceLinks.get(href).push(link)
-      else sourceLinks.set(href, [link])
+    for (const page of pagesEl.children) {
+      let entries = pageLinks.get(page)
+      if (!entries) {
+        entries = []
+        for (const link of page.querySelectorAll('a')) {
+          const href = linkHref(link)
+          if (!isSourceLink(href)) continue
+          link.classList.add('source')
+          entries.push([href, link])
+        }
+        pageLinks.set(page, entries)
+      }
+      for (const [href, link] of entries) {
+        if (sourceLinks.has(href)) sourceLinks.get(href).push(link)
+        else sourceLinks.set(href, [link])
+      }
     }
   }
 
@@ -320,10 +333,31 @@
   }
 
   function render(message) {
+    if (message.revision < revision) return
+    const started = performance.now()
+    let reusedPages = 0
     if (message.revision !== revision) {
       // Nothing on screen yet: this is a reload, so go back to the saved place.
       const position = pagesEl.children.length > 0 ? capture(0) : state
-      pagesEl.replaceChildren(...message.pages.map(toPage))
+      const previous = [...pagesEl.children]
+      const next = message.pages.map((text, index) => {
+        if (previous[index] && pageHashes[index] === message.hashes[index]) {
+          reusedPages++
+          return previous[index]
+        }
+        return toPage(text, index)
+      })
+      // Keep unchanged nodes in place; only changed/additional pages are parsed
+      // and sanitized. Pagination removals cannot leave stale DOM or indexes.
+      next.forEach((page, index) => {
+        const old = pagesEl.children[index]
+        if (old !== page) {
+          if (old) old.replaceWith(page)
+          else pagesEl.append(page)
+        }
+      })
+      while (pagesEl.children.length > next.length) pagesEl.lastElementChild.remove()
+      pageHashes = message.hashes
       indexLinks()
       revision = message.revision
       layout()
@@ -332,7 +366,11 @@
       showStatus()
       showPage()
     }
-    vscode.postMessage({ type: 'rendered', revision, pages: pagesEl.children.length })
+    const renderedRevision = revision
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (renderedRevision === revision) vscode.postMessage({ type: 'rendered', revision,
+        pages: pagesEl.children.length, reusedPages, renderMs: performance.now() - started })
+    }))
   }
 
   function showStatus() {

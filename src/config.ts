@@ -11,12 +11,14 @@ export interface CompileSettings {
   lilypondPath: string
   /** `lily.compile.extraArgs`; an array, so arguments may contain spaces (D3). */
   extraArgs: string[]
+  acceleration: 'off' | 'cache' | 'auto'
 }
 
 export function getCompileSettings(scope?: vscode.ConfigurationScope): CompileSettings {
   const config = vscode.workspace.getConfiguration('lily', scope)
   const extraArgs = config.get<unknown>('compile.extraArgs')
   return {
+    acceleration: config.get<'off' | 'cache' | 'auto'>('preview.acceleration', 'auto'),
     lilypondPath: config.get<string>('lilypond.path', '').trim(),
     // settings.json is hand-edited; drop anything that is not an argument.
     extraArgs: Array.isArray(extraArgs)
@@ -49,9 +51,10 @@ export function getAutoPreviewSettings(): AutoPreviewSettings {
   const delay = config.get<unknown>('preview.refreshDelay')
   return {
     enabled: config.get<unknown>('preview.refreshOnSave') !== false,
+    onChange: config.get<unknown>('preview.refreshOnChange') !== false,
     delayMs:
       typeof delay === 'number' && Number.isFinite(delay)
         ? Math.min(Math.max(delay, 0), MAX_REFRESH_DELAY_MS)
-        : 300,
+        : 150,
   }
 }

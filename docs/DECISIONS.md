@@ -1060,3 +1060,89 @@ playback part of *Out of scope*
 
 MIDI keyboard input and `python-ly` formatting. MIDI playback was out of scope
 until step 12 and is D24.
+
+---
+
+## D25 — Unsaved, accelerated live preview
+
+**Status:** accepted · **Supersedes:** the disk-only/save-only and editor
+cancellation portions of D3, D15 and D18; the disk-only diagnostic text rule in
+D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
+
+- **Default behavior.** Preview/Compile reads an immutable capture of dirty
+  editor buffers without saving them. `refreshOnChange` defaults to true and
+  requires the existing `refreshOnSave` master switch. The delay is now 150 ms.
+  A separate maximum-wait timer fires within 750 ms of a typing burst (or the
+  configured delay when longer). A `LiveQueue` owns one running and one
+  replaceable pending callback per root, including manual requests. It waits
+  for panel/reporter consumption before starting the successor. Low-level
+  `CompileService.compile()` keeps its cancellation contract for CLI/MCP and
+  explicit disposal. Closing a preview drops pending work and kills its run.
+- **Revisions.** Buffers and document versions are captured synchronously at
+  the start of the queued callback. Literal dependencies are followed through
+  those buffers. Completed results may advance the visible score while newer
+  edits wait, with an Updating indicator. They cannot overtake a later result.
+  Diagnostics use captured text and are published only if the relevant open
+  document versions and compile settings still match; an edit clears obsolete
+  diagnostics immediately. Config changes queue a new preview.
+- **Snapshots.** `src/compile/snapshot.ts` writes the root and resolved literal
+  include closure into the run directory, rewriting include string tokens to
+  absolute snapshot paths. Each text is read once. Editor buffers are captured
+  together; external disk changes do not have filesystem-wide transaction
+  semantics. Search order stays including directory, root directory, then `-I`;
+  built-in library includes remain on LilyPond's search path. Symlink aliases
+  resolve dirty buffers too. Exact replacement offsets map SVG links (CHAR and
+  tab-expanded COLUMN) and parsed diagnostics back to original files, including
+  notes after an include on the same line. Raw stderr remains raw in the log.
+  Normalized SVG is written before hashing and delivered to every preview.
+- **Conservative boundary.** A known computed include or Scheme include API
+  with dirty buffers fails explicitly instead of silently mixing in stale disk
+  content. Dependency scheduling treats known computed includes conservatively.
+  Arbitrary Scheme file I/O, dynamically hidden include APIs, and programs
+  deriving resources from their source filename cannot be fully snapshotted;
+  save these projects before compiling. Untitled buffers still need filenames.
+- **Acceleration gate.** `runtime/glyph-cache.scm` caches only string-valued
+  music glyph requests; list requests preserve cumulative advance, and unknown
+  types keep original behavior. A host probe requires LilyPond **2.26.0** and
+  SHA-256 `82b4a568e196239557fba92670dc0d9a685edae129dc0625fc1f1ef65a70e6d2`
+  for the installed `lily/output-svg.scm`. The hash is checked each request;
+  the shim also guards version/arity. Installed files are never edited.
+  Unknown versions/patched backends, missing resources and custom options
+  beyond include directories use ordinary spawning. `preview.acceleration`
+  selects `auto`, `cache` or `off`; there is no acceleration in exports or the
+  headless checker. Arbitrary runtime backend mutation/custom music fonts remain
+  a reason to choose `off` despite the compatibility checks.
+- **Warm isolation.** `auto` on Unix uses a parent that has loaded the backend
+  but has **not** called `ly:reset-all-fonts` or parsed declarations-init. Each
+  request forks and calls `lilypond-all` in the child, following LilyPond's own
+  pre-Pango fork ordering. Fonts, sessions, options and arbitrary score Scheme
+  die with that child; no sequential shared-state worker is shipped. The private
+  protocol accepts only an integer request id plus source/output path strings
+  on stdin (read, never eval); fd 3 carries READY/DONE responses and is closed in
+  the child. Score stdout/stderr go to per-request files. No network listener.
+- **Lifetime and recovery.** Parent identity includes binary realpath, size,
+  modification time, environment, arguments and root. A worker is replaced
+  after 32 requests or five minutes, or stopped after one idle minute. At most
+  four parents are retained; capacity falls back to spawning if all are busy.
+  Startup is limited to ten seconds and a compile to sixty seconds. Cancellation
+  kills the Unix process group, including a stuck child. Protocol errors,
+  crashes and worker timeouts disable that worker configuration and retry with
+  ordinary LilyPond. A failed optimized score is also retried without the shim
+  (syntax errors therefore cost an extra run). Fallback has its own sixty-second
+  timeout; `CompileRequest.timeoutMs` permits shorter tests. A changed binary
+  or configuration can start a fresh worker. Windows uses spawning.
+- **Viewer reuse.** SHA-256 of normalized SVG identifies each page. The host
+  retains unchanged per-page `LinkIndex` objects and combines them; the webview
+  retains same-position page DOM and cached link lists, sanitizing only changed
+  pages. Removed pages drop out of both indexes. All page text is still sent in
+  the message. Scroll/zoom/theme behavior is unchanged, and identical MIDI is
+  not resent. Whole-score playback is always retained; no passage cropping.
+- **Timing.** `CompileResult` adds engine, fallback reason and snapshot time;
+  `PreviewPanel.latency` records host preparation, host-to-ack time, busy-period
+  time and reused-page count. The rendered acknowledgment follows two animation
+  frames, approximating a paint opportunity, not measuring GPU completion.
+  Hidden webviews can delay it. The benchmark and measurements live in
+  [LIVE-PREVIEW-IMPLEMENTATION.md](LIVE-PREVIEW-IMPLEMENTATION.md).
+- **Packaging.** `runtime/*.scm` is explicitly allowed into the VSIX. The release
+  test checks both files and asserts that the packaged preview actually used
+  the warm engine, so a silent fallback cannot mask a missing resource.

@@ -1,0 +1,193 @@
+{
+  "date": "2026-09-21T13:23:57.299Z",
+  "platform": "darwin 25.5.0 arm64",
+  "method": "One initial run then median of three, modes run sequentially, warm filesystem caches. Auto includes a new unsaved snapshot each time. Compile-service timings exclude debounce/editor/browser; first auto includes parent startup.",
+  "results": [
+    {
+      "score": "small",
+      "acceleration": "off",
+      "first": {
+        "durationMs": 657,
+        "snapshotMs": 0,
+        "pages": 1,
+        "svgAndMidiIdentical": true
+      },
+      "medianMs": 653,
+      "runs": [
+        {
+          "durationMs": 654,
+          "snapshotMs": 0,
+          "pages": 1,
+          "svgAndMidiIdentical": true
+        },
+        {
+          "durationMs": 653,
+          "snapshotMs": 0,
+          "pages": 1,
+          "svgAndMidiIdentical": true
+        },
+        {
+          "durationMs": 650,
+          "snapshotMs": 0,
+          "pages": 1,
+          "svgAndMidiIdentical": true
+        }
+      ]
+    },
+    {
+      "score": "small",
+      "acceleration": "cache",
+      "first": {
+        "durationMs": 495,
+        "snapshotMs": 0,
+        "pages": 1,
+        "svgAndMidiIdentical": true
+      },
+      "medianMs": 373,
+      "runs": [
+        {
+          "durationMs": 373,
+          "snapshotMs": 0,
+          "pages": 1,
+          "svgAndMidiIdentical": true
+        },
+        {
+          "durationMs": 369,
+          "snapshotMs": 0,
+          "pages": 1,
+          "svgAndMidiIdentical": true
+        },
+        {
+          "durationMs": 374,
+          "snapshotMs": 0,
+          "pages": 1,
+          "svgAndMidiIdentical": true
+        }
+      ]
+    },
+    {
+      "score": "small",
+      "acceleration": "auto",
+      "first": {
+        "durationMs": 387,
+        "snapshotMs": 2,
+        "pages": 1,
+        "svgAndMidiIdentical": true
+      },
+      "medianMs": 268,
+      "runs": [
+        {
+          "durationMs": 262,
+          "snapshotMs": 0,
+          "pages": 1,
+          "svgAndMidiIdentical": true
+        },
+        {
+          "durationMs": 268,
+          "snapshotMs": 0,
+          "pages": 1,
+          "svgAndMidiIdentical": true
+        },
+        {
+          "durationMs": 268,
+          "snapshotMs": 0,
+          "pages": 1,
+          "svgAndMidiIdentical": true
+        }
+      ]
+    },
+    {
+      "score": "medium",
+      "acceleration": "off",
+      "first": {
+        "durationMs": 5616,
+        "snapshotMs": 0,
+        "pages": 2,
+        "svgAndMidiIdentical": true
+      },
+      "medianMs": 5644,
+      "runs": [
+        {
+          "durationMs": 5644,
+          "snapshotMs": 0,
+          "pages": 2,
+          "svgAndMidiIdentical": true
+        },
+        {
+          "durationMs": 5617,
+          "snapshotMs": 0,
+          "pages": 2,
+          "svgAndMidiIdentical": true
+        },
+        {
+          "durationMs": 5657,
+          "snapshotMs": 0,
+          "pages": 2,
+          "svgAndMidiIdentical": true
+        }
+      ]
+    },
+    {
+      "score": "medium",
+      "acceleration": "cache",
+      "first": {
+        "durationMs": 674,
+        "snapshotMs": 0,
+        "pages": 2,
+        "svgAndMidiIdentical": true
+      },
+      "medianMs": 672,
+      "runs": [
+        {
+          "durationMs": 674,
+          "snapshotMs": 0,
+          "pages": 2,
+          "svgAndMidiIdentical": true
+        },
+        {
+          "durationMs": 672,
+          "snapshotMs": 0,
+          "pages": 2,
+          "svgAndMidiIdentical": true
+        },
+        {
+          "durationMs": 672,
+          "snapshotMs": 0,
+          "pages": 2,
+          "svgAndMidiIdentical": true
+        }
+      ]
+    },
+    {
+      "score": "medium",
+      "acceleration": "auto",
+      "first": {
+        "durationMs": 675,
+        "snapshotMs": 1,
+        "pages": 2,
+        "svgAndMidiIdentical": true
+      },
+      "medianMs": 563,
+      "runs": [
+        {
+          "durationMs": 564,
+          "snapshotMs": 0,
+          "pages": 2,
+          "svgAndMidiIdentical": true
+        },
+        {
+          "durationMs": 556,
+          "snapshotMs": 0,
+          "pages": 2,
+          "svgAndMidiIdentical": true
+        },
+        {
+          "durationMs": 563,
+          "snapshotMs": 0,
+          "pages": 2,
+          "svgAndMidiIdentical": true
+        }
+      ]
+    }
+  ]
+}

@@ -48,6 +48,7 @@ export class CompileReporter implements vscode.Disposable {
   async run<T extends CompileResult>(
     rootFile: string,
     compile: () => Promise<T>,
+    current: () => boolean = () => true,
   ): Promise<T | undefined> {
     const run = ++this.latestRun
     this.setStatus(run, { kind: 'compiling', rootFile })
@@ -71,8 +72,9 @@ export class CompileReporter implements vscode.Disposable {
       return result
     }
 
-    const diagnostics = parseStderr(result.stderr, { rootFile: result.rootFile })
-    await this.publish(result.rootFile, diagnostics)
+    if (result.engine) this.log(`Compiler: ${result.engine}${result.fallback ? `; ${result.fallback}` : ''}`)
+    const diagnostics = parseStderr(result.stderr, { rootFile: result.rootFile }).map(d => result.snapshot?.diagnostic(d) ?? d)
+    if (current()) await this.publish(result.rootFile, diagnostics, result.snapshot?.sources, current)
     const errors = diagnostics.filter((d) => d.severity === 'error').length
     const warnings = diagnostics.length - errors
 
@@ -82,6 +84,11 @@ export class CompileReporter implements vscode.Disposable {
     this.log(`${path.basename(rootFile)}: ${summary(result, errors, warnings)}\n`)
     this.setStatus(run, { kind: 'done', result, errors, warnings })
     return result
+  }
+
+  invalidate(uri: vscode.Uri): void {
+    for (const files of this.byRoot.values()) files.delete(uri.toString())
+    this.collection.delete(uri)
   }
 
   showOutput(): void {
@@ -96,16 +103,18 @@ export class CompileReporter implements vscode.Disposable {
   }
 
   /** Replaces what `rootFile` reported last time, in every file it touched. */
-  private async publish(rootFile: string, diagnostics: readonly LyDiagnostic[]): Promise<void> {
+  private async publish(rootFile: string, diagnostics: readonly LyDiagnostic[], sources?: ReadonlyMap<string, string>, current = () => true): Promise<void> {
     const next = new Map<string, vscode.Diagnostic[]>()
     const lineCache = new Map<string, Promise<string[] | undefined>>()
     for (const diagnostic of diagnostics) {
       let lines = lineCache.get(diagnostic.file)
-      if (!lines) lineCache.set(diagnostic.file, (lines = readLines(diagnostic.file)))
+      if (!lines) lineCache.set(diagnostic.file, (lines = sources?.has(diagnostic.file)
+        ? Promise.resolve(sources.get(diagnostic.file)!.split(/\r?\n/)) : readLines(diagnostic.file)))
       const uri = vscode.Uri.file(diagnostic.file).toString()
       next.set(uri, [...(next.get(uri) ?? []), toVsCode(diagnostic, await lines)])
     }
 
+    if (!current()) return
     const key = rootKey(rootFile)
     const touched = new Set([...(this.byRoot.get(key)?.keys() ?? []), ...next.keys()])
     this.byRoot.set(key, next)

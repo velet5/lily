@@ -25,7 +25,7 @@ compiling needs it, and says so when it is missing.
 2. Press <kbd>Ctrl</kbd>+<kbd>K</kbd> <kbd>V</kbd> (<kbd>⌘K</kbd> <kbd>V</kbd>
    on macOS), or click the preview button in the editor title. The score opens
    in the pane beside the editor, and the editor keeps the focus.
-3. Edit and save. The preview redraws, and keeps its zoom and scroll position.
+3. Edit. The preview redraws, and keeps its zoom and scroll position.
 
 ## Features
 
@@ -33,10 +33,10 @@ compiling needs it, and says so when it is missing.
 
 - Every page of the score, drawn as SVG: sharp at any zoom, and in the colours
   of your theme (or black on white, with `lily.preview.colors`).
-- **Refresh on save.** Saving the file, or any file it reaches through
-  `\include`, recompiles it. Saving a part refreshes the score that includes it;
-  several saves at once (**Save All**) lead to one compile, and a compile that is
-  overtaken by a newer save is cancelled.
+- **Unsaved live preview.** Editing the root or a literal `\include` refreshes
+  the score after a short pause. One compile finishes while the newest pending
+  edit waits; continuous typing cannot keep postponing the preview. Editors are
+  never saved automatically. Unchanged pages retain their DOM and navigation index.
 - **Click a note** to jump to the place in the source that wrote it. **Move the
   cursor**, and the note it is on is marked in the score and scrolled into view.
 - A toolbar in the preview: refresh, previous and next page, zoom out, fit to
@@ -48,8 +48,8 @@ compiling needs it, and says so when it is missing.
 
 Give the score a `\midi { }` block and press ▶ in the preview (or
 <kbd>Space</kbd> with the preview focused) to hear it. The music comes from the
-same compile that drew the pages, so it is as fresh as the last save, and a
-save that changes only the layout does not interrupt it. Pause, stop and seek
+same compile that drew the pages, so it is as fresh as the displayed revision, and an
+edit that changes only the layout does not interrupt it. Pause, stop and seek
 from the toolbar. The sound is a small built-in synthesizer: General MIDI
 instruments (`midiInstrument`), drums, dynamics, tempo changes and pedalling
 are all followed, well enough to check rhythm and harmony; there is no
@@ -71,8 +71,8 @@ The compile that draws the preview also reports LilyPond's errors and warnings:
 as squiggles under the token LilyPond points at, in the Problems panel, and as
 counts in the status bar. Messages about an included file land in that file.
 The full log is in the **LilyPond** output channel (**LilyPond: Show Output**).
-There is no as-you-type compile: diagnostics are as fresh as the last save or
-**Compile**.
+Open previews compile unsaved edits too. Diagnostics from an older editor
+revision are discarded; editing clears obsolete squiggles in that document.
 
 ### Completion and hover
 
@@ -136,7 +136,8 @@ All commands are in the Command Palette under **LilyPond**.
 | Show Output | | preview title `…` menu |
 
 **Export PDF** and **Export MIDI** write `name.pdf` and `name.midi` next to the
-source. MIDI needs a `\midi { }` block in the score.
+source, using an ordinary disk compile (the root is saved first). Dirty included
+files remain unsaved; save them explicitly before exporting their changes. MIDI needs a `\midi { }` block in the score.
 
 ## Settings
 
@@ -146,8 +147,10 @@ source. MIDI needs a `\midi { }` block in the score.
 | `lily.compile.extraArgs` | `[]` | Extra arguments for every `lilypond` run, one per item, for example `--include=/path/to/library` or `-dno-point-and-click`. Can be set per folder. |
 | `lily.preview.colors` | `"theme"` | `theme`: the score in the editor's foreground colour on its background. `paper`: black on white pages, whatever the theme. |
 | `lily.preview.followCursor` | `true` | Mark the note the cursor is on in an open preview, and scroll to it. Clicking a note always goes to its source. |
-| `lily.preview.refreshOnSave` | `true` | Recompile and redraw an open preview when its file, or a file it includes, is saved. When off, use **Compile**. |
-| `lily.preview.refreshDelay` | `300` | Milliseconds to wait after a save before recompiling (0–5000). Saves within the delay lead to one compile. |
+| `lily.preview.refreshOnSave` | `true` | Enable automatic preview refreshes. When off, use **Compile** or **Refresh Preview**. |
+| `lily.preview.refreshOnChange` | `true` | Also refresh unsaved edits. Turn off for save-only refreshes. Requires `refreshOnSave`. |
+| `lily.preview.acceleration` | `"auto"` | Guarded glyph cache plus isolated warm compiler on supported macOS/Linux installations. `"cache"` starts a fresh process; `"off"` uses ordinary compilation. |
+| `lily.preview.refreshDelay` | `150` | Milliseconds to coalesce edits/saves (0–5000). A burst starts a request within 750 ms, or this delay when longer. |
 
 All settings take effect at once; nothing needs a reload. Completion and hover
 follow VS Code's own switches, which can be set per language:
@@ -164,9 +167,21 @@ follow VS Code's own switches, which can be set per language:
   `lilypond`. With `lilypond-syntax` or VSLilyPond installed as well, two
   extensions answer for the same files, and which grammar wins is up to VS Code.
   Disable the others.
-- **Included files.** Open the preview on the score, not on a part: saving the
+- **Included files.** Open the preview on the score, not on a part: editing the
   part then refreshes the score. A part previewed or compiled on its own is
   treated as a score, and usually engraves nothing.
+- **Acceleration compatibility.** Enabled only for LilyPond 2.26.0 with the
+  verified classic SVG backend file. Unknown/patched backends, custom compiler
+  options other than include directories, and unsupported systems use ordinary
+  processes. A failed warm process falls back automatically. No installed
+  LilyPond files are changed. Set acceleration to `off` for Scheme that changes
+  backend internals or unusual fonts. See [measurements and limits](docs/LIVE-PREVIEW-IMPLEMENTATION.md).
+- **Snapshot limits.** Literal relative/absolute includes and `-I` directories
+  are supported. Computed includes and known Scheme include APIs are rejected
+  while buffers are dirty, with an explanation in the LilyPond output. Arbitrary
+  Scheme file I/O and paths derived from source filenames are outside the
+  snapshot model. Save those projects before compiling. Untitled files still
+  need a filename. A failed preview keeps the last available pages/MIDI.
 - **Windows** paths and process handling are written from documentation and have
   not been run yet.
 - **Playback in the background.** The preview is destroyed while its tab is

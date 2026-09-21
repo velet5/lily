@@ -3,17 +3,22 @@ import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { locateLilyPond } from './locate'
+import { Accelerator, type ProcessResult } from './accelerator'
+import { SourceSnapshot, SnapshotUnavailableError, type SourceBuffers } from './snapshot'
 
-// The only place that spawns lilypond (DECISIONS D3). No `vscode` import here or
+// Owns LilyPond processes, including the acceleration helpers (D3, D25). No `vscode` import here or
 // anywhere else under src/compile/, so the CLI and MCP server can reuse it (D11).
 
 export interface CompileRequest {
-  /** The .ly file to compile; it is read from disk, never from an editor buffer. */
+  /** The real .ly root; optional editor texts are materialized in a private snapshot. */
   rootFile: string
   /** Value of `lily.lilypond.path`; empty means PATH, then well-known directories. */
   lilypondPath?: string
   /** Value of `lily.compile.extraArgs`, passed through verbatim. */
   extraArgs?: readonly string[]
+  buffers?: SourceBuffers
+  acceleration?: 'off' | 'cache' | 'auto'
+  timeoutMs?: number
 }
 
 export interface CompileResult {
@@ -34,6 +39,10 @@ export interface CompileResult {
   /** This run's private directory. Already deleted when `cancelled`. */
   outputDir: string | undefined
   durationMs: number
+  snapshot?: SourceSnapshot
+  snapshotMs?: number
+  engine?: 'spawn' | 'cache' | 'warm'
+  fallback?: string
 }
 
 /** What an export writes into the user's folder (D5, D20). */
@@ -54,11 +63,13 @@ export interface ExportResult extends CompileResult {
 export interface CompileServiceOptions {
   /** Parent of the per-run directories. Defaults to the OS temp dir. */
   tmpRoot?: string
+  runtimeDir?: string
 }
 
 interface Run {
   cancelled: boolean
   child?: ChildProcess
+  stop?: () => void
   outputDir?: string
 }
 
@@ -82,6 +93,7 @@ const EXPORTS: Record<ExportFormat, { formatArgs: string[]; pattern: RegExp }> =
 
 export class CompileService {
   private readonly tmpRoot: string
+  private readonly accelerator: Accelerator
   /** In-flight run per root file; at most one each. */
   private readonly live = new Map<string, Run>()
   /** Output directory of the last completed run per root file. */
@@ -89,6 +101,7 @@ export class CompileService {
 
   constructor(options: CompileServiceOptions = {}) {
     this.tmpRoot = options.tmpRoot ?? os.tmpdir()
+    this.accelerator = new Accelerator(options.runtimeDir)
   }
 
   /**
@@ -162,10 +175,14 @@ export class CompileService {
     })
 
     let keepOutput = false
+    let snapshot: SourceSnapshot | undefined
+    let snapshotMs = 0
+    let engine: CompileResult['engine'] = 'spawn'
+    let fallback: string | undefined
     try {
       // Checked here because a missing source directory, being the child's cwd,
       // would otherwise be reported as "spawn lilypond ENOENT".
-      await fs.access(rootFile, fs.constants.R_OK)
+      if (!request.buffers?.has(rootFile)) await fs.access(rootFile, fs.constants.R_OK)
       const binary = await locateLilyPond({ configuredPath: request.lilypondPath })
       if (run.cancelled) return result({ cancelled: true })
 
@@ -173,17 +190,74 @@ export class CompileService {
       run.outputDir = await fs.mkdtemp(path.join(this.tmpRoot, 'lily-'))
       if (run.cancelled) return result({ cancelled: true })
 
+      const snapshotStart = performance.now()
+      if (mode.keep && request.buffers?.size) {
+        try {
+          snapshot = await SourceSnapshot.create(rootFile, request.buffers, path.join(run.outputDir, 'sources'), request.extraArgs ?? [])
+        } catch (error) {
+          if (!(error instanceof SnapshotUnavailableError)) throw error
+          // An unsupported/incomplete include is an editing diagnostic, not a
+          // modal failure-to-start notification on every keystroke.
+          return result({ stderr: `fatal error: ${error.message}\n`, outputDir: undefined,
+            cancelled: run.cancelled })
+        }
+      }
+      snapshotMs = Math.round(performance.now() - snapshotStart)
+      if (run.cancelled) return result({ cancelled: true })
+      const source = snapshot?.rootFile ?? rootFile
       const base = path.basename(rootFile, path.extname(rootFile))
-      const args = [
-        '--loglevel=WARNING',
-        ...mode.formatArgs,
-        ...(request.extraArgs ?? []),
-        // Last, so extra arguments cannot redirect output into the source tree (D5).
-        '-o',
-        path.join(run.outputDir, base),
-        rootFile,
-      ]
-      const exit = await this.spawn(run, binary.path, args, path.dirname(rootFile))
+      const extra = [...(request.extraArgs ?? [])]
+      const timeoutMs = request.timeoutMs ?? (mode.keep && request.acceleration ? 60000 : 0)
+      // Arbitrary -e/options may initialize fonts before the fork, change the
+      // backend or replace its functions. Keep that entire path ordinary.
+      const safeArgs = extra.every((arg, i) =>
+        arg === '-I' || arg === '--include' || arg.startsWith('--include=') || arg.startsWith('-I') ||
+        extra[i - 1] === '-I' || extra[i - 1] === '--include')
+      const identity = mode.keep && request.acceleration !== 'off' && safeArgs
+        ? await this.accelerator.identity(binary.path) : ''
+      const accelerated = identity !== '' && await this.accelerator.supported(binary.path, identity)
+      const common = ['--loglevel=WARNING', ...mode.formatArgs, ...extra]
+      const ordinary = (cache: boolean) => this.spawn(run, binary.path, [
+        ...common, ...(cache ? this.accelerator.cacheArgs() : []),
+        '-o', path.join(run.outputDir!, base), source,
+      ], path.dirname(rootFile), timeoutMs)
+      let exit: ProcessResult | undefined
+      if (run.cancelled) return result({ cancelled: true })
+      if (accelerated && request.acceleration === 'auto' && ['darwin', 'linux'].includes(process.platform)) {
+        const worker = this.accelerator.worker(rootFile, identity, binary.path, [
+          ...common, ...this.accelerator.cacheArgs(), '-o', base,
+        ])
+        if (worker) {
+          run.stop = () => this.accelerator.release(rootFile, worker)
+          try {
+            exit = await worker.run(source, run.outputDir, timeoutMs)
+            engine = 'warm'
+          } catch (error) {
+            this.accelerator.failedWorker(rootFile, worker)
+            if (run.cancelled) return result({ cancelled: true })
+            fallback = error instanceof Error ? error.message : String(error)
+            // A failed worker may have written partial pages. Never collect them.
+            for (const name of await fs.readdir(run.outputDir)) {
+              if (name !== 'sources') await fs.rm(path.join(run.outputDir, name), { recursive: true, force: true })
+            }
+          } finally { run.stop = undefined }
+        }
+      } else this.accelerator.release(rootFile)
+      if (!exit) {
+        const cache = accelerated && !fallback
+        exit = await ordinary(cache)
+        engine = cache ? 'cache' : 'spawn'
+      }
+      // Optimization errors must never prevent a normal compiler result. Syntax
+      // errors are retried too; this costs time while a score is incomplete.
+      if (!run.cancelled && engine !== 'spawn' && exit.exitCode !== 0) {
+        fallback ??= 'Accelerated compile failed; retried with ordinary LilyPond.'
+        for (const name of await fs.readdir(run.outputDir)) {
+          if (name !== 'sources') await fs.rm(path.join(run.outputDir, name), { recursive: true, force: true })
+        }
+        exit = await ordinary(false)
+        engine = 'spawn'
+      }
       if (run.cancelled) return result({ ...exit, cancelled: true })
 
       const produced = await fs.readdir(run.outputDir)
@@ -192,8 +266,16 @@ export class CompileService {
       // `finally` nothing yields, so a superseded or disposed run is never kept.
       if (run.cancelled) return result({ ...exit, cancelled: true })
       const absolute = (name: string) => path.join(run.outputDir!, name)
+      if (snapshot) {
+        for (const name of orderPages(produced, base)) {
+          const file = absolute(name)
+          await fs.writeFile(file, snapshot.svg(await fs.readFile(file, 'utf8')))
+        }
+      }
+      if (run.cancelled) return result({ ...exit, cancelled: true })
       keepOutput = mode.keep
       return result({
+        snapshot, snapshotMs, engine, fallback,
         ...exit,
         ok: exit.exitCode === 0,
         pages: orderPages(produced, base).map(absolute),
@@ -227,6 +309,8 @@ export class CompileService {
 
   /** Deletes the kept output of `rootFile`, e.g. when its preview closes (D5). */
   async release(rootFile: string): Promise<void> {
+    this.cancel(rootFile)
+    this.accelerator.release(path.resolve(rootFile))
     const key = runKey(path.resolve(rootFile))
     const dir = this.kept.get(key)
     this.kept.delete(key)
@@ -236,6 +320,7 @@ export class CompileService {
   /** Kills every run and deletes every kept output directory. */
   async dispose(): Promise<void> {
     this.cancel()
+    this.accelerator.dispose()
     const dirs = [...this.kept.values()]
     this.kept.clear()
     await Promise.all(dirs.map(removeDir))
@@ -245,6 +330,7 @@ export class CompileService {
     if (!run || run.cancelled) return
     run.cancelled = true
     // Nothing to flush: the run's directory is discarded anyway.
+    run.stop?.()
     run.child?.kill('SIGKILL')
   }
 
@@ -253,6 +339,7 @@ export class CompileService {
     command: string,
     args: string[],
     cwd: string,
+    timeoutMs: number,
   ): Promise<Pick<CompileResult, 'exitCode' | 'stdout' | 'stderr'>> {
     return new Promise((resolve, reject) => {
       // cwd is the source directory so relative \include keeps working.
@@ -268,8 +355,12 @@ export class CompileService {
       let stderr = ''
       child.stdout.setEncoding('utf8').on('data', (chunk: string) => (stdout += chunk))
       child.stderr.setEncoding('utf8').on('data', (chunk: string) => (stderr += chunk))
-      child.on('error', reject)
-      child.on('close', (exitCode) => resolve({ exitCode, stdout, stderr }))
+      const timer = timeoutMs > 0 ? setTimeout(() => {
+        stderr += '\nfatal error: LilyPond compile timed out.\n'
+        child.kill('SIGKILL')
+      }, timeoutMs) : undefined
+      child.on('error', (error) => { clearTimeout(timer); reject(error) })
+      child.on('close', (exitCode) => { clearTimeout(timer); resolve({ exitCode, stdout, stderr }) })
     })
   }
 }

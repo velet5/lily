@@ -9,18 +9,22 @@ import * as path from 'node:path'
  * Only the first alternative captures.
  */
 const TOKEN =
-  /\\include\s*"((?:[^"\\]|\\[\s\S])*)"|%\{[\s\S]*?(?:%\}|$)|%[^\n]*|"(?:[^"\\]|\\[\s\S])*(?:"|$)/g
+  /\\include\s*"((?:[^"\\]|\\[\s\S])*)"|\\include\b|%\{[\s\S]*?(?:%\}|$)|%[^\n]*|"(?:[^"\\]|\\[\s\S])*(?:"|$)/g
 
 /**
  * The file names `source` includes, as written. `\include` takes a string
  * literal in practice; a name computed in Scheme is not seen.
  */
+export function includeTokens(source: string): Array<{ name?: string; start: number; end: number }> {
+  return [...source.matchAll(TOKEN)].filter(match => match[0].startsWith('\\include')).map(match => ({
+    name: match[1]?.replace(/\\([\s\S])/g, '$1'),
+    start: match.index! + Math.max(0, match[0].indexOf('"')),
+    end: match.index! + match[0].length,
+  }))
+}
+
 export function parseIncludes(source: string): string[] {
-  const names: string[] = []
-  for (const match of source.matchAll(TOKEN)) {
-    if (match[1] !== undefined) names.push(match[1].replace(/\\([\s\S])/g, '$1'))
-  }
-  return names
+  return includeTokens(source).flatMap(token => token.name === undefined ? [] : [token.name])
 }
 
 /**
@@ -43,6 +47,8 @@ export function includeDirsFromArgs(args: readonly string[], rootDir: string): s
 export interface IncludeOptions {
   /** Extra search directories, see `includeDirsFromArgs`. */
   includeDirs?: readonly string[]
+  buffers?: ReadonlyMap<string, string>
+  conservative?: boolean
 }
 
 /**
@@ -58,6 +64,7 @@ export async function includeClosure(
   rootFile: string,
   options: IncludeOptions = {},
 ): Promise<Set<string>> {
+  const buffers = await canonicalBuffers(options.buffers)
   const root = await canonical(rootFile)
   const rootDir = path.dirname(root)
   const seen = new Set<string>([root])
@@ -65,14 +72,16 @@ export async function includeClosure(
   for (let file = queue.shift(); file !== undefined; file = queue.shift()) {
     let source: string
     try {
-      source = await fs.readFile(file, 'utf8')
+      source = buffers.get(file) ?? await fs.readFile(file, 'utf8')
     } catch {
       continue
     }
     const dirs = [path.dirname(file), rootDir, ...(options.includeDirs ?? [])]
     for (const name of parseIncludes(source)) {
       for (const dir of new Set(dirs)) {
-        const target = await existing(path.resolve(dir, name))
+        const candidate = path.resolve(dir, name)
+        const real = await canonical(candidate)
+        const target = buffers.has(real) ? real : await existing(candidate)
         if (target !== undefined && !seen.has(target)) {
           seen.add(target)
           queue.push(target)
@@ -94,7 +103,18 @@ export async function rootsIncluding(
 ): Promise<string[]> {
   const target = await canonical(file)
   const reached = await Promise.all(
-    roots.map(async (root) => (await includeClosure(root, optionsFor(root))).has(target)),
+    roots.map(async (root) => {
+      const options = optionsFor(root)
+      const closure = await includeClosure(root, options)
+      if (closure.has(target)) return true
+      if (options.conservative) {
+        for (const source of closure) {
+          const text = options.buffers?.get(source) ?? await fs.readFile(source, 'utf8').catch(() => '')
+          if (includeTokens(text).some(token => token.name === undefined) || /ly:parser-include/.test(text)) return true
+        }
+      }
+      return false
+    }),
   )
   return roots.filter((_, index) => reached[index])
 }
@@ -111,4 +131,9 @@ async function existing(file: string): Promise<string | undefined> {
   } catch {
     return undefined
   }
+}
+
+/** Editors may open a symlink while a literal include uses the real path. */
+export async function canonicalBuffers(buffers?: ReadonlyMap<string, string>): Promise<Map<string, string>> {
+  return new Map(await Promise.all([...(buffers ?? [])].map(async ([file, text]) => [await canonical(file), text] as const)))
 }

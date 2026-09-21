@@ -31,11 +31,11 @@ async function eventually<T>(what: string, probe: () => T | undefined | false, t
 }
 
 /** Replaces the whole text through the editor, as typing would, and saves it. */
-async function rewrite(document: vscode.TextDocument, text: string): Promise<void> {
+async function rewrite(document: vscode.TextDocument, text: string, save = true): Promise<void> {
   const edit = new vscode.WorkspaceEdit()
   edit.replace(document.uri, new vscode.Range(0, 0, document.lineCount, 0), text)
   assert.ok(await vscode.workspace.applyEdit(edit))
-  assert.ok(await document.save())
+  if (save) assert.ok(await document.save())
 }
 
 suite('release smoke pass on the packaged extension', () => {
@@ -77,6 +77,8 @@ suite('release smoke pass on the packaged extension', () => {
       'media/midi.js',
       'media/player.js',
       'media/player.css',
+      'runtime/glyph-cache.scm',
+      'runtime/worker.scm',
       'media/icons/preview.svg',
       'media/icons/preview-dark.svg',
     ]) {
@@ -113,6 +115,7 @@ suite('release smoke pass on the packaged extension', () => {
     assert.ok(preview, 'no preview was registered for the score')
     // Reported by the webview: the shipped media/preview.js drew the pages.
     assert.strictEqual(await preview.whenRendered(), 2)
+    assert.strictEqual(preview.latency?.engine, 'warm', 'the packaged warm resources must actually run')
     assert.strictEqual(preview.viewColumn, vscode.ViewColumn.Two)
     assert.strictEqual(vscode.window.activeTextEditor?.document, editor.document)
     assert.deepStrictEqual(vscode.languages.getDiagnostics(vscode.Uri.file(score)), [])
@@ -139,14 +142,16 @@ suite('release smoke pass on the packaged extension', () => {
     await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor')
   })
 
-  test('saving a mistake marks it in the source, and saving the fix clears it and redraws', async () => {
+  test('an unsaved mistake is mapped to the real source, and saving the fix clears it and redraws', async () => {
     const uri = vscode.Uri.file(score)
     const editor = await vscode.window.showTextDocument(uri, { viewColumn: vscode.ViewColumn.One })
     const good = editor.document.getText()
     const preview = api.previews.get(score)
     assert.ok(preview)
 
-    await rewrite(editor.document, good.replace('g4 a b |', 'g4 a \\stacato b |'))
+    await rewrite(editor.document, good.replace('g4 a b |', 'g4 a \\stacato b |'), false)
+    assert.ok(editor.document.isDirty)
+    assert.strictEqual(await fs.readFile(score, 'utf8'), good)
     const [problem] = await eventually('the diagnostic', () => {
       const found = vscode.languages.getDiagnostics(uri)
       return found.length > 0 && found

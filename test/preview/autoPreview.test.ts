@@ -47,6 +47,19 @@ describe('AutoPreview', () => {
     assert.strictEqual(auto.pending, 0)
   })
 
+  test('sustained typing cannot postpone a compile beyond the maximum wait', async () => {
+    const { auto, state } = fixture()
+    await auto.documentChanged(SONG)
+    for (let i = 0; i < 7; i++) {
+      mock.timers.tick(100)
+      await auto.documentChanged(SONG)
+    }
+    assert.deepStrictEqual(state.compiled, [])
+    mock.timers.tick(50)
+    assert.deepStrictEqual(state.compiled, [SONG])
+    auto.dispose()
+  })
+
   test('a burst of saves restarts the delay and compiles once', async () => {
     const { auto, state } = fixture()
     await auto.documentSaved(SONG)

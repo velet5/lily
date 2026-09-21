@@ -1,6 +1,6 @@
 {
   "name": "lily",
-  "displayName": "Lily — LilyPond",
+  "displayName": "Lily \u2014 LilyPond",
   "description": "LilyPond editing with a side-by-side SVG preview, MIDI playback, diagnostics and IntelliSense.",
   "version": "0.1.0",
   "publisher": "lily-dev",
@@ -391,11 +391,28 @@
         },
         "lily.preview.refreshDelay": {
           "type": "number",
-          "default": 300,
+          "default": 150,
           "minimum": 0,
           "maximum": 5000,
           "scope": "window",
-          "markdownDescription": "Milliseconds to wait after a save before recompiling for `#lily.preview.refreshOnSave#`. Saves that follow within the delay, such as **Save All**, lead to one compile."
+          "markdownDescription": "Milliseconds to coalesce edits/saves before refreshing an open preview. Continuous edits start a request at least every 750 ms (or this delay, if longer); a running compile finishes before the newest pending revision starts."
+        },
+        "lily.preview.refreshOnChange": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "markdownDescription": "Preview unsaved edits to the root and literal includes. Requires `#lily.preview.refreshOnSave#`. Editors are never saved automatically for preview."
+        },
+        "lily.preview.acceleration": {
+          "type": "string",
+          "enum": [
+            "auto",
+            "cache",
+            "off"
+          ],
+          "default": "auto",
+          "scope": "resource",
+          "markdownDescription": "Accelerate classic SVG on the verified LilyPond 2.26.0 backend. Auto uses an isolated warm parent on macOS/Linux; cache starts a fresh process. Unknown backends and custom options fall back to ordinary spawning. Exports always use ordinary LilyPond."
         }
       }
     }

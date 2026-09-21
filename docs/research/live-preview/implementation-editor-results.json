@@ -1,0 +1,32 @@
+{
+  "platform": "macOS arm64, VS Code 1.138.0, LilyPond 2.26.0",
+  "method": "Real extension-host webview; editor applyEdit to render acknowledgement, polled every 50 ms. The unfocused automation host used Chromium focus emulation for native editor smoke tests.",
+  "observations": [
+    {
+      "scenario": "unsaved include edit-to-render",
+      "elapsedMs": 415,
+      "metrics": {
+        "compileMs": 229.0,
+        "snapshotMs": 2.0,
+        "prepareMs": 0.36079199999949196,
+        "renderMs": 14.0,
+        "totalMs": 397.0,
+        "reusedPages": 0.0,
+        "engine": "warm"
+      }
+    },
+    {
+      "scenario": "edit-to-render (queued after incomplete score)",
+      "elapsedMs": 1504,
+      "metrics": {
+        "compileMs": 221.0,
+        "snapshotMs": 1.0,
+        "prepareMs": 0.24729200000001583,
+        "renderMs": 17.0,
+        "totalMs": 1632.0,
+        "reusedPages": 0.0,
+        "engine": "warm"
+      }
+    }
+  ]
+}

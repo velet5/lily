@@ -110,7 +110,58 @@ suite('refresh on save', () => {
     assert.strictEqual(await preview.whenRendered(), 2)
   })
 
-  test('LilyPond: Compile on a dirty file does not compile again for its own save', async () => {
+  test('unsaved includes update the root, preserve navigation and reuse identical pages', async () => {
+    const { preview } = await previewed({
+      'live-root.ly': `${HEADER}\\include "live-part.ily"\n{ \\music }\n`,
+      'live-part.ily': `music = ${pages(1)}`,
+    })
+    await preview.whenRendered()
+    const include = await vscode.workspace.openTextDocument(path.join(scratch, 'live-part.ily'))
+    const original = include.getText()
+    const edit = new vscode.WorkspaceEdit()
+    edit.replace(include.uri, new vscode.Range(0, 0, include.lineCount, 0), `music = ${pages(2)}`)
+    const editedAt = Date.now()
+    assert.ok(await vscode.workspace.applyEdit(edit))
+    await rendersPages(preview, 2)
+    console.log('live-preview unsaved include edit-to-render:', Date.now() - editedAt, 'ms', preview.latency)
+    assert.ok(include.isDirty)
+    assert.strictEqual(await fs.readFile(include.uri.fsPath, 'utf8'), original)
+    assert.strictEqual(preview.latency?.engine, 'warm')
+    await vscode.commands.executeCommand('lily.preview.refresh', vscode.Uri.file(preview.rootFile))
+    await preview.whenRendered()
+    assert.strictEqual(preview.latency?.reusedPages, 2)
+    // Forward lookup uses the original include, not its now-deleted snapshot.
+    api.previews.followCursor({ file: include.uri.fsPath, line: 0, character: 10, lineText: include.lineAt(0).text })
+    const deadline = Date.now() + 5000
+    while (!preview.highlighted && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25))
+    assert.ok(preview.highlighted)
+    await vscode.window.showTextDocument(include)
+    await vscode.commands.executeCommand('workbench.action.files.revert')
+  })
+
+  test('a result from an older source revision cannot publish stale diagnostics', async () => {
+    const good = HEADER + '#(usleep 400000)\n' + pages(1)
+    const { document, preview } = await previewed({ 'revisions.ly': good })
+    await preview.whenRendered()
+    const replace = async (text: string) => {
+      const edit = new vscode.WorkspaceEdit()
+      edit.replace(document.uri, new vscode.Range(0, 0, document.lineCount, 0), text)
+      assert.ok(await vscode.workspace.applyEdit(edit))
+    }
+    await replace(good.replace('c1', 'c1 \\stacato'))
+    const old = vscode.commands.executeCommand<CompileResult>('lily.compile', document.uri)
+    await new Promise(resolve => setTimeout(resolve, 150))
+    const started = Date.now()
+    await replace(HEADER + pages(2))
+    await old
+    assert.deepStrictEqual(vscode.languages.getDiagnostics(document.uri), [])
+    await rendersPages(preview, 2)
+    assert.deepStrictEqual(vscode.languages.getDiagnostics(document.uri), [])
+    console.log('live-preview edit-to-render (queued after incomplete score):', Date.now() - started, 'ms', preview.latency)
+    await vscode.commands.executeCommand('workbench.action.files.revert')
+  })
+
+  test('LilyPond: Compile previews a dirty file without saving', async () => {
     // No delay: a refresh scheduled by the command's save would start at once
     // and supersede the command's run.
     await config().update('preview.refreshDelay', 0, target)
@@ -122,9 +173,10 @@ suite('refresh on save', () => {
     assert.ok(await vscode.workspace.applyEdit(edit))
     const result = await vscode.commands.executeCommand<CompileResult>('lily.compile')
 
-    assert.strictEqual(document.isDirty, false)
+    assert.strictEqual(document.isDirty, true)
     assert.strictEqual(result.cancelled, false)
     assert.strictEqual(api.autoPreview.pending, 0)
     assert.strictEqual(await preview.whenRendered(), 2)
+    await vscode.commands.executeCommand('workbench.action.files.revert')
   })
 })

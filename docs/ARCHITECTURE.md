@@ -91,7 +91,7 @@ changed.
 | G1 | No preview command or button. The user compiles, finds the PDF in the explorer, picks "LilyPond PDF Preview" from *Open With…*, and drags it into a side column. | Preview is a generic custom editor for any `*.pdf`, decoupled from compile. | One command opens a webview panel `ViewColumn.Beside`; it owns its compile. (D4) |
 | G2 | Refresh reloads the whole document through pdf.js; all pages are rendered eagerly for point-and-click; scroll is restored by hand. | PDF needs a JS renderer; links only exist for rendered pages. | SVG is DOM: swap page nodes, keep scroll, links are plain `<a>` elements. (D1) |
 | G3 | Two compilers run per edit/save cycle with separate kill logic, channels and arg handling. | Lint and compile are separate modules. | One compile service; diagnostics are a by-product of the preview compile. (D3) |
-| G4 | **[verified]** On LilyPond 2.26 the lint run prints `warning: ignoring option -dbackend="null"`, performs a *full* compile per keystroke burst, and leaves `-.pdf` in the user's folder. | `backend=null` was removed upstream; extension unmaintained since 2021. | No as-you-type compiles; never write into the source tree. (D3, D5) |
+| G4 | **[verified]** On LilyPond 2.26 the lint run prints `warning: ignoring option -dbackend="null"`, performs a *full* compile per keystroke burst, and leaves `-.pdf` in the user's folder. | `backend=null` was removed upstream; extension unmaintained since 2021. | Coalesced unsaved snapshot compiles; never write into the source tree. (D25, D5) |
 | G5 | Build artefacts (`.pdf`, `.midi`, `-.tmp`) litter the source directory. | `cwd`-relative default output. | Per-run temp directory; explicit export commands. (D5) |
 | G6 | Diagnostics squiggle from column 0 to the error column, and appear only from the lint path — a failed *save* compile shows nothing in the editor. | `new Range(line, 0, line, col)`; compile path only writes to a channel. | Token-width ranges with correct column conversion, from the same run that feeds the preview. (D6) |
 | G7 | "IntelliSense" is a flat snippet list frozen at v2.22: no context (`\new` vs `\override`), no hover, 1415 entries including `!` and `%`. | Scraped once from HTML docs. | Data generated from the *installed* LilyPond; context-aware providers. (D8) |
@@ -115,9 +115,9 @@ One extension, one compile pipeline, consumers that subscribe to its results.
 
 ```
                          ┌────────────────────────────────────┐
-  save / command ──────▶ │ CompileService  (no vscode import)  │
-                         │  locate binary → spawn --svg → tmp  │
-                         │  cancel stale run → collect result  │
+  edit / save / command ▶ │ CompileService  (no vscode import)  │
+                         │  snapshot → guarded classic SVG → tmp  │
+                         │  finish running → newest pending revision  │
                          └──────────────┬─────────────────────┘
                                         │ CompileResult
         ┌───────────────┬───────────────┼────────────────┬──────────────┐
@@ -160,13 +160,16 @@ src/
     locate.ts           setting → PATH → well-known install dirs
     compiler.ts         CompileService: spawn, temp dir, cancellation, page ordering
     rootFile.ts         \include graph → root resolution
+    snapshot.ts         immutable editor texts, include rewriting, source-path/column mapping
+    accelerator.ts      verified glyph cache, private warm parent, lifecycle and fallback
   config.ts             typed, uncached access to the `lily.*` settings
   diagnostics/
     parse.ts            stderr → LyDiagnostic[], column → character, token span (no vscode)
     publish.ts          CompileReporter: Problems, output channel, status bar item
   preview/
     panel.ts            PreviewManager / PreviewPanel, html + CSP, message protocol (types-only vscode)
-    autoPreview.ts      AutoPreview: saves → debounced compiles of the previewed roots (no vscode)
+    autoPreview.ts      bounded edit/save debounce of previewed roots (no vscode)
+    liveQueue.ts        one running and one replaceable pending revision per root
     pointAndClick.ts    textedit link parser and index, CHAR ↔ character (no vscode)
   midi/
     player.ts           the custom editor for .mid/.midi files, html + CSP (types-only vscode)
@@ -179,6 +182,7 @@ media/                  preview.js + preview.css for the webview (no framework, 
                         midi.js: SMF parser, Web Audio synthesizer, player (D24); player.js + player.css
 syntaxes/               lilypond.tmLanguage.json (authored here)
 snippets/
+runtime/                guarded glyph-cache.scm and isolated worker.scm (D25)
 data/                   completions.json, generated and committed (D21)
 scripts/                gen-completions.mjs: data extraction from the installed lilypond
 tools/lily-check/       headless checker for agents, bundled to dist/lily-check.js (D22, no vscode)
@@ -229,8 +233,14 @@ Facts the implementation must respect, all **[verified]**:
   them; that is LilyPond's behaviour and we do not work around it.
 - `\midi {}` in the source yields `<base>.midi` in the same directory at no
   extra cost. The preview plays it (D24).
-- The source must be compiled **from disk**. Feeding stdin makes every
-  location read `-:line:col` and every link point at `-`.
+- LilyPond reads a file. For unsaved previews this is a private snapshot of the
+  root and literal include closure, with SVG paths/columns normalized to real
+  documents. Raw stderr is parsed first, then diagnostics are mapped through the
+  snapshot. Feeding score text through stdin would lose these locations (D25).
+- Supported previews use a hash-guarded glyph cache. On Unix a warm parent forks
+  before font initialization; each request gets a fresh child. Unsupported
+  versions/configurations and failures fall back to ordinary spawning. Explicit
+  exports and the headless checker remain ordinary disk compiles (D25).
 
 ### 3.4 Preview webview
 
@@ -242,8 +252,9 @@ Facts the implementation must respect, all **[verified]**:
 - Strict CSP: `default-src 'none'`; scripts by nonce only; styles from
   `webview.cspSource`; no `unsafe-inline` script. Inline SVG therefore cannot
   execute anything a score might smuggle in.
-- Refresh replaces page nodes in place and restores `scrollTop` as a fraction
-  of page height, so zoom + position survive recompiles.
+- Refresh reuses unchanged pages by normalized SVG hash, including their link
+  indexes, and sanitizes/replaces only changed pages. Scroll anchoring and zoom
+  survive recompiles.
   `retainContextWhenHidden` is not needed; state is small and re-sent.
 - LilyPond's SVG carries an inline `<style>` (`tspan { white-space: pre; }`)
   and `style="color:inherit;"` on every link **[verified, 2.26]**. The CSP
@@ -284,12 +295,14 @@ Consequences:
 
 ### 3.6 What triggers a compile
 
-Save of a file that an open preview compiles — its root or anything the root
-`\include`s — debounced and switchable (D18), the explicit recompile command,
-and opening the preview. Never a keystroke. A full compile of a trivial score costs
-~0.4 s here and real scores take seconds; running that per edit is what made
-the original feel heavy, and with `backend=null` gone there is no cheap
-syntax-only mode to fall back on.
+Edits and saves affecting an open preview's root/include closure, the explicit
+compile/refresh commands, and opening a preview. The default debounce is 150 ms,
+with a 750 ms maximum wait during sustained typing (or the configured delay if
+longer). One running request completes and is consumed before the newest pending
+request starts. Diagnostics are published only while the captured editor
+versions and compile settings still match; a displayed older revision is marked
+as updating. The preview commands never save buffers. D25 supersedes the
+original save-only/cancel-on-every-request rules.
 
 ## 4. Handoff to implementation
 
@@ -299,10 +312,10 @@ and snippets (D14), and has the compile service (D15): `src/compile/` plus
 `lily.compile.extraArgs`. Compile results reach the user through
 `src/diagnostics/` (D16). `src/extension.ts` owns the one `CompileService`
 (disposed in `deactivate()`) and the one `CompileReporter`. `lily.compile`
-(a `Uri` argument, the active preview's root or the active editor; saves a dirty
-document first; resolves with the `CompileResult`, or `undefined` when nothing
+(a `Uri` argument, the active preview's root or the active editor; captures unsaved
+root/include buffers; resolves with the `CompileResult`, or `undefined` when nothing
 ran) and `lily.showOutput` report through them. `lily.preview.openToSide` opens the preview (D17),
-and the one save listener refreshes open previews (D18). Score and source are
+and edit/save listeners refresh open previews (D25). Score and source are
 linked both ways (D19): a click on a note ends in `revealSource()`, and the
 selection and active-editor listeners feed `previews.followCursor()`. All
 commands are registered in `src/commands.ts`; menus, keybindings, the webview

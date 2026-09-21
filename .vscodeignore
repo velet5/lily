@@ -16,9 +16,17 @@
 
 # Webview assets and icons, grammar, snippets, IntelliSense data (D21).
 !media/**
+!runtime/*.scm
 !syntaxes/lilypond.tmLanguage.json
 !snippets/lilypond.json
 !data/completions.json
 
 # README screenshots: relative links are not rewritten, so they must ship.
 !docs/images/*.png
+
+# Preview implementation notes linked from the README.
+!docs/LIVE-PREVIEW-IMPLEMENTATION.md
+!docs/LIVE-PREVIEW-RESEARCH.md
+!docs/DECISIONS.md
+!docs/research/live-preview/implementation-results.json
+!docs/research/live-preview/implementation-editor-results.json
