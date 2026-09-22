@@ -17,6 +17,7 @@
 # Webview assets and icons, grammar, snippets, IntelliSense data (D21).
 !media/**
 !runtime/*.scm
+!runtime/timing.ly
 !syntaxes/lilypond.tmLanguage.json
 !snippets/lilypond.json
 !data/completions.json

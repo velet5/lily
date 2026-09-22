@@ -1154,3 +1154,87 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
 - **Packaging.** `runtime/*.scm` is explicitly allowed into the VSIX. The release
   test checks both files and asserts that the packaged preview actually used
   the warm engine, so a silent fallback cannot mask a missing resource.
+
+---
+
+## D26 — Playback position: the notes as they play
+
+**Status:** accepted · **Refines:** D19, D24, D25 · **Supersedes** the
+"no highlighting of the notes as they play" line of D24
+
+- **Decision.** While the preview plays, the elements that sound are marked,
+  a bar slides through the system at the pace of the music, the toolbar shows
+  the bar number and the pane scrolls to the system being played. The map
+  from the MIDI to the page comes from lilypond itself: `runtime/timing.ly`,
+  passed to every preview compile as `-dinclude-settings`, is parsed before
+  the score, and its top-level `\midi` block adds a Scheme performer to the
+  `Score` context of every `\midi` block of the score.
+- **The performer.** It listens to `rhythmic-event` on `ly:context-events-below`
+  of the Score, so it hears every note, rest, skip and syllable of every voice.
+  For each event with an input location it records the `textedit:` link that
+  the SVG backend writes for the grob the event causes, spelled the same way
+  (`grob-cause` in `output-svg.scm`: absolute path, `ly:string-percent-encode`,
+  `CHAR`, `COLUMN + 1`), the moment of the performance as main and grace part
+  in whole notes, and the written length (a syllable's is 0: it lasts to the
+  next moment). At every time step where `currentBarNumber` changes it records
+  the bar's start (`now − measurePosition`, so a pickup gives bar 1 a positive
+  start and nothing before it). `finalize` writes `<output-name>.timing.json`
+  into the output directory, which lilypond has changed to: a JSON array with
+  one entry per `\midi` performance, in the order the `.midi` files are
+  written. Everything is wrapped in `catch`; an error loses the map, never the
+  compile. `ly:duration-length` is used where `ly:duration->moment` (2.25+) is
+  missing.
+- **Why a performer.** The `.midi` file is made from the performance's
+  timeline, which differs from the layout's under `\unfoldRepeats`; a
+  performer sees that timeline, and the origin links are the same on both
+  sides. *Rejected:* an engraver writing moments into `output-attributes`
+  (notation moments, wrong under `\unfoldRepeats`); matching MIDI notes to
+  noteheads by order (chords, ties, rests and voices break it);
+  `event-listener.ly` (no origins).
+- **Host.** `CompileResult.timing` names the map when a preview compile with a
+  runtime directory produced one; exports and the CLI (no runtime directory)
+  get none. `orderOutputs` orders the MIDI files as lilypond wrote them
+  (`<base>`, `-1`, `-2`, …), so entry *n* of the map is file *n*, and the
+  snapshot's link rewrite (`SourceSnapshot.links`, D25) is applied to the map
+  as to the pages. `PreviewPanel` reads the entry of the file it plays and
+  posts `{ type: 'midi', data, timing }`; the message is re-sent when the map
+  changes although the bytes did not (an edit that moved the notes' source
+  positions), and `timing: null` without a map. The webview reports `timed`
+  in `{ type: 'playback' }`: whether it found the map's notes on its pages.
+- **Time.** `momentTime(midi, at, grace)` in `media/midi.js` converts a moment
+  through the file's tempo map: lilypond writes a quarter as `division` ticks,
+  so a whole is `division × 4`, and a grace note plays at 11/48 of its written
+  length ahead of its note **[measured on 2.26 with 4th, 8th, 16th and 32nd
+  graces at two tempi]**.
+- **Webview.** The timeline is built on the first draw and dropped by every
+  render; an element's box is cached per page node as fractions of the page,
+  which survive zoom, so a reused page (D25) is not measured again. An href
+  drawn as often as it is played (`\repeat unfold`, a variable used twice) is
+  paired up in order; drawn once, it is that place every time (a repeat
+  unfolded in the MIDI only); anything else takes the place on the system
+  playing then. A *moment* is the events that begin together: its x is the
+  leftmost centre of their elements, its extent their union. A *system* ends
+  where the next moment lies on another page or more than 1 % of the page
+  width to the left; its band is the union of its moments plus a margin. The
+  cursor interpolates between a moment and the next of the same system and
+  waits at a system's last. Sounding events (begun, not ended; a prefix
+  maximum of ends bounds the search) get the class `playing`; the `.playhead`
+  div lives inside the page it is on (`.page` is `position: relative`) and is
+  placed through the CSSOM. Colours: `--vscode-charts-orange`, `#d9480f` on
+  paper. The bar label uses the bar starts, counting evenly through bars in
+  which nothing began. The view is scrolled to the cursor (D19's reveal) when
+  the system changes, on play and after a seek; never while the slider is
+  dragged. Everything is cleared when stopped and kept when paused.
+- **Not done.** No click-to-seek ("play from here"); no position in the
+  standalone player (no pages); a user `-dinclude-settings` in `extraArgs`
+  replaces ours and `-dno-point-and-click` leaves nothing to find, both
+  silently without a playhead; cross-staff and polymetric scores were not
+  surveyed.
+- **Verified.** `test/compile/compiler.test.ts` compiles the sample score as
+  a snapshot and checks every event's link is on a page and names the real
+  file; `test/preview/panel.test.ts` covers the protocol and the pure
+  functions; `test/commands.test.ts` sees `timed` from the real webview; a
+  headless Chrome harness with the real scripts and the sample score (not
+  kept) showed, at a seek to 2 s, *bar 2*, the playhead through the d2, its
+  syllable and the bass note on page 1, and at 9 s *bar 5* on page 2 with the
+  pane scrolled to it.

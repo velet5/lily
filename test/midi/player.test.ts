@@ -165,8 +165,8 @@ describe('MidiPlayerProvider', () => {
       { type: 'playback', action: 'toggle' },
       { type: 'playback', action: 'stop' },
     ])
-    fake.fromWebview({ type: 'playback', state: 'paused', position: 2, duration: 15, blocked: false })
-    assert.deepStrictEqual(player.playback, { state: 'paused', position: 2, duration: 15, blocked: false })
+    fake.fromWebview({ type: 'playback', state: 'paused', position: 2, duration: 15, blocked: false, timed: false })
+    assert.deepStrictEqual(player.playback, { state: 'paused', position: 2, duration: 15, blocked: false, timed: false })
   })
 
   test('a closed player is forgotten, stops watching and posts nothing more', async () => {

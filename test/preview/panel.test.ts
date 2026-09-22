@@ -218,7 +218,7 @@ describe('PreviewPanel', () => {
     assert.deepStrictEqual(fake.take(), [
       { type: 'colors', colors: 'paper' },
       renderMessage(1, ['<svg>one</svg>']),
-      { type: 'midi', data: null },
+      { type: 'midi', data: null, timing: null },
       { type: 'status', busy: false, note: undefined },
     ])
   })
@@ -316,7 +316,7 @@ describe('PreviewPanel', () => {
     const run = result({ pages: [pageFiles[0]], midi: [midiFile, path.join(dir, 'song-1.midi')] })
     await preview.follow(Promise.resolve(run))
     assert.deepStrictEqual(fake.take().slice(1, 3), [
-      { type: 'midi', data },
+      { type: 'midi', data, timing: null },
       renderMessage(1, ['<svg>one</svg>']),
     ])
     assert.strictEqual(preview.hasMidi, true)
@@ -326,7 +326,46 @@ describe('PreviewPanel', () => {
     assert.ok(!fake.take().some((message) => message.type === 'midi'))
 
     fake.fromWebview({ type: 'ready' })
-    assert.deepStrictEqual(fake.take()[2], { type: 'midi', data })
+    assert.deepStrictEqual(fake.take()[2], { type: 'midi', data, timing: null })
+  })
+
+  test('the playback map goes with the MIDI: the entry of the file played, again when it changes', async () => {
+    const { fake, preview } = create()
+    const midiFile = path.join(dir, 'mapped.midi')
+    await fs.writeFile(midiFile, 'MThd-mapped')
+    const data = Buffer.from('MThd-mapped').toString('base64')
+    const mapFile = path.join(dir, 'mapped.timing.json')
+    const first = { events: [{ href: 'textedit:///s.ly:1:0:1', at: 0, grace: 0, length: 0.25 }], bars: [{ at: 0, number: 1 }] }
+    const second = { events: [], bars: [] }
+    await fs.writeFile(mapFile, JSON.stringify([first, second]))
+
+    // Two \score blocks with \midi: the first file is played, with the first entry.
+    const midi = [midiFile, path.join(dir, 'mapped-1.midi')]
+    await preview.follow(Promise.resolve(result({ pages: [pageFiles[0]], midi, timing: mapFile })))
+    assert.deepStrictEqual(fake.take()[1], { type: 'midi', data, timing: first })
+    fake.fromWebview({ type: 'ready' })
+    assert.deepStrictEqual(fake.take()[2], { type: 'midi', data, timing: first })
+
+    // The same map again is not re-sent; the same music with the notes elsewhere is.
+    await preview.follow(Promise.resolve(result({ pages: [pageFiles[0]], midi, timing: mapFile })))
+    assert.ok(!fake.take().some((message) => message.type === 'midi'))
+    const moved = { ...first, events: [{ ...first.events[0], href: 'textedit:///s.ly:2:0:1' }] }
+    await fs.writeFile(mapFile, JSON.stringify([moved]))
+    await preview.follow(Promise.resolve(result({ pages: [pageFiles[0]], midi, timing: mapFile })))
+    assert.deepStrictEqual(fake.take()[1], { type: 'midi', data, timing: moved })
+
+    // A map that is not one, or none, leaves the music without a playhead.
+    await fs.writeFile(mapFile, '{"events": "no"}')
+    await preview.follow(Promise.resolve(result({ pages: [pageFiles[0]], midi, timing: mapFile })))
+    assert.deepStrictEqual(fake.take()[1], { type: 'midi', data, timing: null })
+    await fs.writeFile(mapFile, JSON.stringify([moved]))
+    await preview.follow(Promise.resolve(result({ pages: [pageFiles[0]], midi, timing: mapFile })))
+    fake.take()
+    await fs.writeFile(mapFile, 'not json')
+    await preview.follow(Promise.resolve(result({ pages: [pageFiles[0]], midi, timing: mapFile })))
+    const posted = fake.take()
+    assert.deepStrictEqual(posted[1], { type: 'midi', data, timing: null }, 'an unreadable map costs the playhead')
+    assert.strictEqual(posted[2].type, 'render', 'and never the pages')
   })
 
   test('a failed run keeps the MIDI; a good one without \\midi takes it away', async () => {
@@ -341,7 +380,7 @@ describe('PreviewPanel', () => {
     assert.strictEqual(preview.hasMidi, true)
 
     await preview.follow(Promise.resolve(result({ pages: [pageFiles[0]] })))
-    assert.deepStrictEqual(fake.take()[1], { type: 'midi', data: null })
+    assert.deepStrictEqual(fake.take()[1], { type: 'midi', data: null, timing: null })
     assert.strictEqual(preview.hasMidi, false)
   })
 
@@ -351,7 +390,7 @@ describe('PreviewPanel', () => {
     await fs.writeFile(midiFile, 'MThd-only')
     await preview.follow(Promise.resolve(result({ midi: [midiFile] })))
     assert.deepStrictEqual(fake.take().slice(1), [
-      { type: 'midi', data: Buffer.from('MThd-only').toString('base64') },
+      { type: 'midi', data: Buffer.from('MThd-only').toString('base64'), timing: null },
       { type: 'status', busy: false, note: 'LilyPond produced no pages.' },
     ])
   })
@@ -380,10 +419,10 @@ describe('PreviewPanel', () => {
   test('remembers what the player reports, whatever the webview sends', () => {
     const { fake, preview } = create()
     assert.strictEqual(preview.playback, undefined)
-    fake.fromWebview({ type: 'playback', state: 'playing', position: 1.5, duration: 15, blocked: false })
-    assert.deepStrictEqual(preview.playback, { state: 'playing', position: 1.5, duration: 15, blocked: false })
-    fake.fromWebview({ type: 'playback', state: 'loud', position: 'x', blocked: 1 } as never)
-    assert.deepStrictEqual(preview.playback, { state: 'stopped', position: 0, duration: 0, blocked: false })
+    fake.fromWebview({ type: 'playback', state: 'playing', position: 1.5, duration: 15, blocked: false, timed: true })
+    assert.deepStrictEqual(preview.playback, { state: 'playing', position: 1.5, duration: 15, blocked: false, timed: true })
+    fake.fromWebview({ type: 'playback', state: 'loud', position: 'x', blocked: 1, timed: 'yes' } as never)
+    assert.deepStrictEqual(preview.playback, { state: 'stopped', position: 0, duration: 0, blocked: false, timed: false })
   })
 
   test('zoom, page turns and colours are forwarded to the webview', () => {
@@ -777,5 +816,67 @@ describe('media/preview.js', () => {
     assert.strictEqual(script.scrollToShow(-105, 10, 600), -400)
     // Cut off by the edge counts as outside.
     assert.strictEqual(script.scrollToShow(595, 10, 600), 300)
+  })
+})
+
+describe('preview.js: the playhead (DECISIONS D26)', () => {
+  interface Moment { page: number; x: number; top: number; bottom: number; time: number; system?: number }
+  interface Playhead {
+    systemsOf(moments: Moment[]): Array<{ page: number; top: number; bottom: number; first: number; last: number }>
+    cursorAt(moments: Moment[], time: number): { index: number; x: number } | undefined
+    barAt(bars: Array<{ time: number; number: number }>, time: number): number | undefined
+    endsOf(events: Array<{ time: number; end: number }>): number[]
+    soundingAt(events: Array<{ time: number; end: number }>, ends: number[], time: number): number[]
+  }
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const playhead: Playhead = require(path.resolve(__dirname, '../../../media/preview.js'))
+  const moment = (page: number, x: number, time: number, top = 0.1, bottom = 0.2): Moment => ({ page, x, time, top, bottom })
+
+  test('a system ends where the music jumps back to the left, or the page turns', () => {
+    const moments = [
+      moment(0, 0.1, 0), moment(0, 0.5, 1, 0.05, 0.15), moment(0, 0.9, 2),
+      moment(0, 0.1, 3, 0.4, 0.5), moment(0, 0.6, 4, 0.45, 0.55),
+      moment(1, 0.1, 5), moment(1, 0.101, 6), // a chord's second in a new system is not a jump
+    ]
+    const systems = playhead.systemsOf(moments)
+    assert.deepStrictEqual(moments.map((m) => m.system), [0, 0, 0, 1, 1, 2, 2])
+    assert.deepStrictEqual(systems.map(({ page, first, last }) => [page, first, last]), [[0, 0, 2], [0, 3, 4], [1, 5, 6]])
+    // Around the notes, with room above and below.
+    assert.ok(systems[0].top < 0.05 && systems[0].bottom > 0.2)
+    assert.ok(systems[1].top < 0.4 && systems[1].top > 0.3 && systems[1].bottom > 0.55)
+  })
+
+  test('the cursor slides towards the next moment of its system and waits at the last', () => {
+    const moments = [moment(0, 0.2, 0), moment(0, 0.6, 2), moment(0, 0.1, 3)]
+    playhead.systemsOf(moments)
+    assert.strictEqual(playhead.cursorAt(moments, -1), undefined)
+    assert.deepStrictEqual(playhead.cursorAt(moments, 0), { index: 0, x: 0.2 })
+    assert.deepStrictEqual(playhead.cursorAt(moments, 1), { index: 0, x: 0.4 })
+    assert.deepStrictEqual(playhead.cursorAt(moments, 2.5), { index: 1, x: 0.6 })
+    assert.deepStrictEqual(playhead.cursorAt(moments, 10), { index: 2, x: 0.1 })
+  })
+
+  test('the bar is the last one begun; bars nothing began in are counted evenly', () => {
+    const bars = [{ time: 1, number: 1 }, { time: 3, number: 2 }, { time: 9, number: 5 }, { time: 11, number: 6 }]
+    assert.strictEqual(playhead.barAt(bars, 0.5), undefined) // an upbeat
+    assert.strictEqual(playhead.barAt(bars, 1), 1)
+    assert.strictEqual(playhead.barAt(bars, 2.9), 1)
+    assert.strictEqual(playhead.barAt(bars, 3), 2)
+    assert.strictEqual(playhead.barAt(bars, 5), 3)
+    assert.strictEqual(playhead.barAt(bars, 7), 4)
+    assert.strictEqual(playhead.barAt(bars, 12), 6)
+  })
+
+  test('what sounds has begun and not ended, a long note under short ones included', () => {
+    const events = [
+      { time: 0, end: 4 }, { time: 0, end: 1 }, { time: 1, end: 2 }, { time: 2, end: 2 }, { time: 2, end: 3 }, { time: 5, end: 6 },
+    ]
+    const ends = playhead.endsOf(events)
+    assert.deepStrictEqual(ends, [4, 4, 4, 4, 4, 6])
+    assert.deepStrictEqual(playhead.soundingAt(events, ends, 0), [0, 1])
+    assert.deepStrictEqual(playhead.soundingAt(events, ends, 1.5), [0, 2])
+    assert.deepStrictEqual(playhead.soundingAt(events, ends, 2), [0, 4])
+    assert.deepStrictEqual(playhead.soundingAt(events, ends, 4.5), [])
+    assert.deepStrictEqual(playhead.soundingAt(events, ends, 5), [5])
   })
 })

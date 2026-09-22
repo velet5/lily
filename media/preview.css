@@ -35,6 +35,11 @@ body {
   margin-bottom: 0;
 }
 
+/* The playhead is placed inside the page it is on (DECISIONS D26). */
+.page {
+  position: relative;
+}
+
 body[data-colors='paper'] .page {
   color: #000;
   background: #fff;
@@ -83,6 +88,35 @@ body[data-colors='paper'] .page {
   stroke: currentColor;
   stroke-width: 2px;
   vector-effect: non-scaling-stroke;
+}
+
+/* Playback (DECISIONS D26): preview.js gives what sounds now `playing` and slides
+   a bar through the system at the pace of the music. */
+.page {
+  --lily-playing: var(--vscode-charts-orange, #e0912a);
+}
+
+body[data-colors='paper'] .page {
+  --lily-playing: #d9480f;
+}
+
+.page a.playing {
+  color: var(--lily-playing);
+}
+
+.page a.playing path {
+  stroke: currentColor;
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+}
+
+.playhead {
+  position: absolute;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--lily-playing) 40%, transparent);
+  pointer-events: none;
 }
 
 .page-error {
@@ -234,12 +268,18 @@ body[data-colors='paper'] .page {
   cursor: default;
 }
 
-#midi-time {
+#midi-time,
+#midi-bar {
   font-variant-numeric: tabular-nums;
 }
 
-#midi-time:not(:empty) {
+#midi-time:not(:empty),
+#midi-bar:not(:empty) {
   margin: 0 4px;
+}
+
+#midi-bar {
+  color: var(--vscode-descriptionForeground);
 }
 
 /* What is dispensable goes first: the slider, then the time. */
@@ -250,7 +290,8 @@ body[data-colors='paper'] .page {
 }
 
 @media (max-width: 540px) {
-  #midi-time {
+  #midi-time,
+  #midi-bar {
     display: none;
   }
 }

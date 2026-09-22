@@ -31,8 +31,14 @@ export interface CompileResult {
   exitCode: number | null
   /** Absolute SVG paths in page order. */
   pages: string[]
-  /** Absolute paths of any MIDI files the score produced. */
+  /** Absolute paths of any MIDI files the score produced, in the order lilypond wrote them. */
   midi: string[]
+  /**
+   * Absolute path of the playback map that `runtime/timing.ly` wrote (D26): a
+   * JSON array with one entry per file of `midi`. Only in preview compiles
+   * with a runtime directory, and only when the score has a `\midi` block.
+   */
+  timing?: string
   stdout: string
   /** Raw and unmodified; messages are forced to English (see `compileEnv`). */
   stderr: string
@@ -93,6 +99,7 @@ const EXPORTS: Record<ExportFormat, { formatArgs: string[]; pattern: RegExp }> =
 
 export class CompileService {
   private readonly tmpRoot: string
+  private readonly runtimeDir: string | undefined
   private readonly accelerator: Accelerator
   /** In-flight run per root file; at most one each. */
   private readonly live = new Map<string, Run>()
@@ -101,6 +108,7 @@ export class CompileService {
 
   constructor(options: CompileServiceOptions = {}) {
     this.tmpRoot = options.tmpRoot ?? os.tmpdir()
+    this.runtimeDir = options.runtimeDir
     this.accelerator = new Accelerator(options.runtimeDir)
   }
 
@@ -118,7 +126,11 @@ export class CompileService {
   compile(request: CompileRequest): Promise<CompileResult> {
     return this.run(request, {
       key: runKey(path.resolve(request.rootFile)),
-      formatArgs: ['--svg', '-dpoint-and-click'],
+      formatArgs: [
+        '--svg', '-dpoint-and-click',
+        // Where every note of the MIDI is on the page (D26); an export has no use for it.
+        ...(this.runtimeDir ? [`-dinclude-settings=${path.join(this.runtimeDir, 'timing.ly')}`] : []),
+      ],
       keep: true,
     })
   }
@@ -266,10 +278,11 @@ export class CompileService {
       // `finally` nothing yields, so a superseded or disposed run is never kept.
       if (run.cancelled) return result({ ...exit, cancelled: true })
       const absolute = (name: string) => path.join(run.outputDir!, name)
+      const timing = produced.includes(`${base}.timing.json`) ? absolute(`${base}.timing.json`) : undefined
       if (snapshot) {
-        for (const name of orderPages(produced, base)) {
-          const file = absolute(name)
-          await fs.writeFile(file, snapshot.svg(await fs.readFile(file, 'utf8')))
+        // The map links to the snapshot's files just as the pages do.
+        for (const file of [...orderPages(produced, base).map(absolute), ...(timing ? [timing] : [])]) {
+          await fs.writeFile(file, snapshot.links(await fs.readFile(file, 'utf8')))
         }
       }
       if (run.cancelled) return result({ ...exit, cancelled: true })
@@ -279,7 +292,8 @@ export class CompileService {
         ...exit,
         ok: exit.exitCode === 0,
         pages: orderPages(produced, base).map(absolute),
-        midi: produced.filter((name) => /\.midi?$/i.test(name)).sort().map(absolute),
+        midi: orderOutputs(produced, base, /\.midi?$/i).map(absolute),
+        ...(timing ? { timing } : {}),
       })
     } finally {
       if (this.live.get(key) === run) this.live.delete(key)
@@ -371,14 +385,23 @@ export class CompileService {
  * add other stems. Numbers sort numerically, so `-10` follows `-9`.
  */
 export function orderPages(fileNames: readonly string[], base: string): string[] {
+  return orderOutputs(fileNames, base, /\.svg$/i)
+}
+
+/**
+ * The files of one run with an `extension`, in the order lilypond wrote them:
+ * `<base>`, then `<base>-1`, `<base>-2`, …, then other stems. MIDI files are
+ * named like pages, one per `\midi` block (ARCHITECTURE §3.3).
+ */
+export function orderOutputs(fileNames: readonly string[], base: string, extension: RegExp): string[] {
   const collator = new Intl.Collator('en', { numeric: true })
   const foreign = (name: string) => (name.startsWith(base) ? 0 : 1)
   const suffix = (name: string) => {
-    const stem = name.slice(0, -'.svg'.length)
+    const stem = name.replace(extension, '')
     return foreign(name) ? stem : stem.slice(base.length)
   }
   return fileNames
-    .filter((name) => name.toLowerCase().endsWith('.svg'))
+    .filter((name) => extension.test(name))
     .sort((a, b) => foreign(a) - foreign(b) || collator.compare(suffix(a), suffix(b)))
 }
 

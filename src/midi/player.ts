@@ -142,6 +142,8 @@ export class MidiPlayerPanel {
         position: Number(message.position) || 0,
         duration: Number(message.duration) || 0,
         blocked: message.blocked === true,
+        // A file of its own has no pages to show the notes on.
+        timed: false,
       }
     }
   }

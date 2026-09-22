@@ -79,6 +79,7 @@ suite('release smoke pass on the packaged extension', () => {
       'media/player.css',
       'runtime/glyph-cache.scm',
       'runtime/worker.scm',
+      'runtime/timing.ly',
       'media/icons/preview.svg',
       'media/icons/preview-dark.svg',
     ]) {

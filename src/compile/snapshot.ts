@@ -90,9 +90,13 @@ export class SourceSnapshot {
     return { ...d, file: loc.file, line: loc.line, ...(d.column === undefined ? {} : { column: loc.column }) }
   }
 
-  /** Normalize before hashing: temporary paths never become page identities. */
-  svg(svg: string): string {
-    return svg.replace(/textedit:\/\/([^"<>]+):(\d+):(\d+):(\d+)/g, (link, encoded: string, line: string, char: string, column: string) => {
+  /**
+   * Rewrites the textedit links of `text` (an SVG page, or the playback map of
+   * D26) to the real files. Normalize before hashing: temporary paths never
+   * become page identities.
+   */
+  links(text: string): string {
+    return text.replace(/textedit:\/\/([^"<>]+):(\d+):(\d+):(\d+)/g, (link, encoded: string, line: string, char: string, column: string) => {
       let file: string
       try { file = decodeURIComponent(encoded) } catch { return link }
       const source = this.files.get(path.normalize(file))

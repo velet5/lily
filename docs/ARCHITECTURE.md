@@ -138,7 +138,8 @@ interface CompileResult {
   cancelled: boolean          // superseded by a newer run
   exitCode: number | null
   pages: string[]             // absolute SVG paths, in page order
-  midi: string[]              // any .midi files produced
+  midi: string[]              // any .midi files produced, in the order lilypond wrote them
+  timing?: string             // the playback map of runtime/timing.ly, one entry per midi file (D26)
   stdout: string
   stderr: string              // raw, unmodified, always English (D15)
   outputDir?: string          // the run's temp directory; gone when cancelled
@@ -182,7 +183,8 @@ media/                  preview.js + preview.css for the webview (no framework, 
                         midi.js: SMF parser, Web Audio synthesizer, player (D24); player.js + player.css
 syntaxes/               lilypond.tmLanguage.json (authored here)
 snippets/
-runtime/                guarded glyph-cache.scm and isolated worker.scm (D25)
+runtime/                guarded glyph-cache.scm and isolated worker.scm (D25); timing.ly, the
+                        performer that maps the MIDI to the page for the playhead (D26)
 data/                   completions.json, generated and committed (D21)
 scripts/                gen-completions.mjs: data extraction from the installed lilypond
 tools/lily-check/       headless checker for agents, bundled to dist/lily-check.js (D22, no vscode)
@@ -204,11 +206,16 @@ lets it be unit-tested without an extension host.
 ### 3.3 Compile invocation
 
 ```
-lilypond --loglevel=WARNING --svg -dpoint-and-click <extra args> \
+lilypond --loglevel=WARNING --svg -dpoint-and-click \
+         -dinclude-settings=<extension>/runtime/timing.ly <extra args> \
          -o <tmp>/<run-id>/<basename>  <root file>
 cwd = dirname(root file)      # so relative \include keeps working
 env = process.env + LANGUAGE=en
 ```
+
+`-dinclude-settings` is only passed by a service with a runtime directory
+(the extension's); it parses the file before the score, and its `\midi` block
+adds the performer that writes `<basename>.timing.json` beside the pages (D26).
 
 Facts the implementation must respect, all **[verified]**:
 

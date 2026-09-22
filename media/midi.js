@@ -87,6 +87,19 @@
     return entry.seconds + ((tick - entry.tick) * entry.tempo) / division / 1e6
   }
 
+  // lilypond plays a grace note at this fraction of its written length, ahead
+  // of the note it belongs to [measured on 2.26 with 4th, 8th, 16th and 32nd graces].
+  const GRACE_FRACTION = 11 / 48
+
+  /**
+   * When a moment of the score is heard: `at` whole notes from the start, plus
+   * `grace` whole notes of grace time (0 or negative), through the tempo map of
+   * `midi`. lilypond writes a quarter as `division` ticks (DECISIONS D26).
+   */
+  function momentTime(midi, at, grace = 0) {
+    return secondsAt(midi.tempos, midi.division, (at + grace * GRACE_FRACTION) * midi.division * 4)
+  }
+
   /**
    * Parses `bytes` (a Uint8Array) into what the player needs: `notes` sorted by
    * `time`, each carrying the state of its channel when it began — program,
@@ -203,6 +216,8 @@
       notes,
       /** Seconds to the end of the last track, which lilypond puts at the final bar line. */
       duration: Math.max(seconds(lastTick), lastNote),
+      /** The tempo map, for momentTime. */
+      tempos: map,
     }
   }
 
@@ -629,7 +644,7 @@
 
   const api = {
     parseMidi, instrumentName, trackInstruments, voiceOf, drumOf, frequencyOf,
-    firstNoteFrom, formatTime, Synth, Player,
+    firstNoteFrom, formatTime, momentTime, Synth, Player,
   }
   if (typeof module === 'object') module.exports = api
   else globalThis.LilyMidi = api

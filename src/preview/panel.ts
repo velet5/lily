@@ -29,8 +29,9 @@ export type HostMessage =
   | { type: 'page'; action: PageAction }
   /** The links to mark as the cursor's; `reveal` scrolls the first one into view. */
   | { type: 'highlight'; hrefs: string[]; reveal: boolean }
-  /** What the score sounds like: a MIDI file as base64, or null when it has none (D24). */
-  | { type: 'midi'; data: string | null }
+  /** What the score sounds like: a MIDI file as base64, or null when it has none (D24),
+   * and where its notes are on the pages, when the compile could tell (D26). */
+  | { type: 'midi'; data: string | null; timing: PlaybackTiming | null }
   | { type: 'playback'; action: PlaybackAction }
 
 /** Webview → host. */
@@ -72,6 +73,32 @@ export interface PreviewPlayback {
   duration: number
   /** Play was asked for, and the webview may not make sound before a click in it. */
   blocked: boolean
+  /** The webview found the notes of the playback map on its pages, so it shows where it plays (D26). */
+  timed: boolean
+}
+
+/**
+ * Where the notes of a MIDI file are on the pages (D26), as `runtime/timing.ly`
+ * writes it: every rhythmic event of the performance with the `textedit:` link
+ * of the element it produced, and the bar starts. Moments are whole notes.
+ */
+export interface PlaybackTiming {
+  events: TimedEvent[]
+  bars: TimedBar[]
+}
+
+export interface TimedEvent {
+  href: string
+  /** When the event begins in the performance; `grace` is the grace part, 0 or negative. */
+  at: number
+  grace: number
+  /** Its written length, in grace time for a grace note. */
+  length: number
+}
+
+export interface TimedBar {
+  at: number
+  number: number
 }
 
 /** Where the editor's cursor is, in the editor's own terms. */
@@ -152,6 +179,7 @@ export function previewHtml(options: PreviewHtmlOptions): string {
 <button id="midi-stop" type="button" title="Stop" aria-label="Stop" disabled>&#x25A0;&#xFE0E;</button>
 <input id="midi-seek" type="range" min="0" max="1000" value="0" aria-label="Playback position" disabled>
 <span id="midi-time"></span>
+<span id="midi-bar"></span>
 </span>
 <span class="spacer"></span>
 <span class="group">
@@ -164,6 +192,22 @@ export function previewHtml(options: PreviewHtmlOptions): string {
 </body>
 </html>
 `
+}
+
+/**
+ * Entry `index` of the playback map lilypond wrote (D26), which pairs with the
+ * MIDI file of the same index; undefined when the file is not what
+ * `runtime/timing.ly` writes.
+ */
+async function readTiming(file: string, index: number): Promise<PlaybackTiming | undefined> {
+  const parsed: unknown = JSON.parse(await fs.readFile(file, 'utf8'))
+  const entry = Array.isArray(parsed) ? (parsed[index] as Partial<PlaybackTiming> | undefined) : undefined
+  if (!entry || !Array.isArray(entry.events) || !Array.isArray(entry.bars)) return undefined
+  return { events: entry.events, bars: entry.bars }
+}
+
+function sameTiming(a: PlaybackTiming | undefined, b: PlaybackTiming | undefined): boolean {
+  return a === b || (a !== undefined && b !== undefined && JSON.stringify(a) === JSON.stringify(b))
 }
 
 function attribute(value: string): string {
@@ -211,8 +255,9 @@ export class PreviewPanel {
   private marking = false
   private marked = 0
   private shown: PreviewView | undefined
-  /** The MIDI file of the run on screen, as base64 (D24). */
+  /** The MIDI file of the run on screen, as base64 (D24), and where its notes are (D26). */
   private midi: string | undefined
+  private timing: PlaybackTiming | undefined
   private player: PreviewPlayback | undefined
   /** play() found the webview hidden; it starts once it is back. */
   private playWhenReady = false
@@ -375,15 +420,18 @@ export class PreviewPanel {
     const update = ++this.latestUpdate
     let pages: string[]
     let midi: string | undefined
+    let timing: PlaybackTiming | undefined
+    // Several \score blocks with \midi write several files; the first is the one heard.
+    const [first] = result.midi
     try {
       // Now: the run's directory is deleted when the next one completes (D15).
       pages = await Promise.all(result.pages.map((page) => fs.readFile(page, 'utf8')))
-      // Several \score blocks with \midi write several files; the first is the one heard.
-      const [first] = result.midi
       if (first !== undefined) midi = await fs.readFile(first, 'base64')
     } catch {
       return
     }
+    // A map that cannot be read only costs the playhead, never the pages.
+    if (first !== undefined && result.timing) timing = await readTiming(result.timing, 0).catch(() => undefined)
     const hashes = pages.map(page => createHash('sha256').update(page).digest('hex'))
     const indexes = new Map<string, LinkIndex>()
     for (let i = 0; i < pages.length; i++) {
@@ -394,9 +442,10 @@ export class PreviewPanel {
     if (update !== this.latestUpdate || this.disposed) return
 
     // A failed run that wrote no MIDI keeps the previous one, as it keeps the pages.
-    if ((midi !== undefined || result.ok) && midi !== this.midi) {
+    if ((midi !== undefined || result.ok) && (midi !== this.midi || !sameTiming(timing, this.timing))) {
       this.midi = midi
-      this.post({ type: 'midi', data: midi ?? null })
+      this.timing = timing
+      this.post({ type: 'midi', data: midi ?? null, timing: timing ?? null })
     }
     if (pages.length > 0) {
       this.pages = pages
@@ -429,7 +478,7 @@ export class PreviewPanel {
         // Sent on every (re)load: a hidden webview is destroyed, not retained.
         this.post({ type: 'colors', colors: this.colors })
         if (this.pages) this.post({ type: 'render', revision: this.revision, pages: this.pages, hashes: this.hashes })
-        this.post({ type: 'midi', data: this.midi ?? null })
+        this.post({ type: 'midi', data: this.midi ?? null, timing: this.timing ?? null })
         this.postStatus()
         if (this.playWhenReady) this.post({ type: 'playback', action: 'play' })
         this.playWhenReady = false
@@ -473,6 +522,7 @@ export class PreviewPanel {
           position: Number(message.position) || 0,
           duration: Number(message.duration) || 0,
           blocked: message.blocked === true,
+          timed: message.timed === true,
         }
         break
       case 'command':

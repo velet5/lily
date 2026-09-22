@@ -50,6 +50,7 @@ interface LilyMidi {
   frequencyOf(key: number, detune?: number): number
   firstNoteFrom(notes: Array<{ time: number }>, time: number): number
   formatTime(seconds: number): string
+  momentTime(midi: Midi, at: number, grace?: number): number
   Player: new (options: { createContext: () => unknown; onChange?: () => void }) => Player
 }
 
@@ -113,6 +114,23 @@ describe('parseMidi', () => {
       ],
     )
     assert.strictEqual(parsed.duration, 2)
+  })
+
+  test('a moment of the score is heard through the tempo map; a grace note shortly before its note', () => {
+    const parsed = midi.parseMidi(
+      file(480, [
+        track(tempo(0, 120), tempo(960, 60)),
+        track([0, 0x90, 60, 100], [480, 0x80, 60, 0], [480, 0x90, 62, 100], [480, 0x80, 62, 0]),
+      ]),
+    )
+    // Two crotchets at 120, then one at 60 (DECISIONS D26).
+    assert.deepStrictEqual([0, 0.25, 0.5, 0.75].map((at) => midi.momentTime(parsed, at)), [0, 0.5, 1, 2])
+    // A grace quaver takes 11/48 of its half second.
+    const grace = midi.momentTime(parsed, 0.5, -1 / 8)
+    assert.ok(Math.abs(grace - (1 - (0.25 * 11) / 48)) < 1e-9, String(grace))
+    // Bar 2 of the 3/4 sample at 96 to the crotchet begins where its bass note ends.
+    const sample = midi.parseMidi(fs.readFileSync(path.join(root, 'test/fixtures/sample.midi')))
+    assert.strictEqual(midi.momentTime(sample, 0.75), 1.875)
   })
 
   test('running status, and a note-on of velocity 0 as the note-off', () => {

@@ -55,6 +55,13 @@ instruments (`midiInstrument`), drums, dynamics, tempo changes and pedalling
 are all followed, well enough to check rhythm and harmony; there is no
 SoundFont and nothing to install.
 
+As it plays, the notes that sound are marked, a bar slides along the system at
+the pace of the music, the toolbar shows the bar number, and the preview
+scrolls to the system being played. The position comes from the compile
+itself (every note of the MIDI is mapped to its place on the page), so repeats,
+grace notes, tuplets and tempo changes are followed exactly; a score compiled
+with `-dno-point-and-click` has no map.
+
 An exported `.midi` file, or any other, opens in a player of its own when you
 click it in the Explorer, with its tracks and instruments listed. The
 notification after **Export MIDI** offers *Play*.

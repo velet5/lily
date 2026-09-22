@@ -3,7 +3,7 @@ import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { after, before, describe, test, type TestContext } from 'node:test'
-import { CompileService, orderPages } from '../../src/compile/compiler'
+import { CompileService, orderOutputs, orderPages } from '../../src/compile/compiler'
 import { LilyPondNotFoundError, locateLilyPond } from '../../src/compile/locate'
 
 // Runs under `node --test` from out/unit/compile/ (npm run test:unit).
@@ -117,6 +117,17 @@ describe('orderPages', () => {
     ])
   })
 
+  test('MIDI files are ordered as lilypond wrote them: the plain name first, then -1, -2, …', () => {
+    const produced = ['score-2.midi', 'score-1.midi', 'score.svg', 'score.midi', 'score-10.midi', 'score-alto.midi']
+    assert.deepEqual(orderOutputs(produced, 'score', /\.midi?$/i), [
+      'score.midi',
+      'score-1.midi',
+      'score-2.midi',
+      'score-10.midi',
+      'score-alto.midi',
+    ])
+  })
+
   test('keeps a base name that itself ends in a number intact', () => {
     assert.deepEqual(orderPages(['etude-2-2.svg', 'etude-2-1.svg'], 'etude-2'), [
       'etude-2-1.svg',
@@ -191,6 +202,44 @@ describe('CompileService', () => {
     assert.equal(result.ok, true, result.stderr)
     const svg = await fs.readFile(result.pages[0], 'utf8')
     assert.ok(svg.includes(`textedit://${path.join(fixtures, 'melody.ily')}:`))
+  })
+
+  test('a preview compile with the runtime maps every note of the MIDI to its link on the pages', async (t) => {
+    if (!needsLilyPond(t)) return
+    const mapped = new CompileService({ tmpRoot: scratch, runtimeDir: path.resolve('runtime') })
+    try {
+      const score = path.resolve('test/e2e/workspace/score.ly')
+      // A dirty buffer makes it a snapshot compile, whose links must name the real file.
+      const buffers = new Map([[score, await fs.readFile(score, 'utf8')]])
+      const result = await mapped.compile({ rootFile: score, buffers, acceleration: 'off' })
+      assert.equal(result.ok, true, result.stderr)
+      assert.equal(result.midi.length, 1)
+      assert.ok(result.timing, 'no playback map was written')
+      const [map] = JSON.parse(await fs.readFile(result.timing, 'utf8')) as Array<{
+        events: Array<{ href: string; at: number; grace: number; length: number }>
+        bars: Array<{ at: number; number: number }>
+      }>
+      const pages = await Promise.all(result.pages.map((page) => fs.readFile(page, 'utf8')))
+      // Two staves and the lyrics, eight bars of 3/4; every event is drawn somewhere.
+      assert.ok(map.events.length > 30, String(map.events.length))
+      for (const event of map.events) {
+        assert.ok(pages.some((page) => page.includes(`xlink:href="${event.href}"`)), `${event.href} is not on a page`)
+        assert.ok(event.href.includes(encodeURIComponent(score).replace(/%2F/g, '/')), event.href)
+      }
+      // Notes and rests have their written length; a syllable has none of its own.
+      const lengths = map.events.map((event) => event.length)
+      assert.ok(lengths.includes(0.25) && lengths.includes(0.75) && lengths.includes(0), lengths.join())
+      assert.deepEqual(map.bars.slice(0, 3), [{ at: 0, number: 1 }, { at: 0.75, number: 2 }, { at: 1.5, number: 3 }])
+      assert.equal(map.events[0].at, 0)
+      // An export needs no map, and the CLI's service, without a runtime, gets none.
+      const exported = await mapped.export({ rootFile: score, format: 'midi', targetDir: path.join(scratch, 'mapped') })
+      assert.equal(exported.timing, undefined)
+      assert.deepEqual(await fs.readdir(path.join(scratch, 'mapped')), ['score.midi'])
+      const plain = await service.compile({ rootFile: score })
+      assert.equal(plain.timing, undefined)
+    } finally {
+      await mapped.dispose()
+    }
   })
 
   test('returns several pages in order, plus MIDI', async (t) => {

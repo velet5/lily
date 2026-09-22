@@ -15,6 +15,10 @@
   MIDI instruments, drums, dynamics, tempo changes and the sustain pedal.
   <kbd>Space</kbd> in the preview plays or pauses. **Play or Pause MIDI** and
   **Stop MIDI** in the Command Palette and the `…` menus.
+- **Playback position.** While the score plays, the notes that sound are
+  marked, a bar slides along the system, the toolbar shows the bar number and
+  the preview scrolls to keep up. The compile maps every note of the MIDI to
+  its place on the page, so repeats, grace notes and tempo changes are followed.
 - **MIDI player** for `.mid` and `.midi` files: click one in the Explorer to
   see its tracks and instruments and play it. **Export MIDI** now offers *Play*.
 
