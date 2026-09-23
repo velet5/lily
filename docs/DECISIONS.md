@@ -1238,3 +1238,39 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   kept) showed, at a seek to 2 s, *bar 2*, the playhead through the d2, its
   syllable and the bass note on page 1, and at 9 s *bar 5* on page 2 with the
   pane scrolled to it.
+
+---
+
+## D27 — The preview follows the focused score
+
+**Status:** accepted · **Refines:** D4, D10, D17
+
+- **Decision.** When a `.ly` file gets the focus, the open preview turns to
+  its score in the same tab: title, pages, MIDI and cursor mark are replaced,
+  and it compiles. With several editors open, the preview shows the file that
+  has, or last had, the focus. `lily.preview.followEditor` (default `true`)
+  turns it off.
+- **Why.** Opening one preview per score and arranging the tabs by hand is
+  what D4 set out to avoid; moving between the scores of a project is the
+  common case, and one preview column is what the layout has room for.
+- **What does not turn it.** An `.ily` or any other extension (a part is not a
+  score, and D10 already finds its root); a file that a previewed root
+  `\include`s, found with `rootsIncluding` without D25's conservative
+  fallback, so a root with a computed include still lets the preview turn; a
+  file that is not on disk; the preview itself getting the focus.
+- **Several previews.** D4's one panel per root stays: a file that has a
+  preview of its own keeps it. `PreviewManager` keeps its panels in the order
+  they were last opened, revealed, retargeted or had their file focused; the
+  last of them is the one that turns. The others stay where they are.
+- **Retargeting.** `PreviewPanel.retarget()` changes `rootFile` and the title,
+  drops everything of the old score and posts `{ type: 'clear' }` (the webview
+  empties the pages and forgets the saved scroll place, but keeps the zoom)
+  and an empty `midi`. A generation counter makes a run of the old root that
+  ends afterwards show nothing; the host cancels that root's pending refresh
+  and queued compile and releases its build directory, as when a panel
+  closes. A webview hidden while it turned is sent `clear` again on `ready`,
+  since its saved place belongs to the old score.
+- **Verified** by `test/preview/panel.test.ts` (the manager's order, the late
+  run, the hidden webview) and `test/preview.test.ts` (a real switch from
+  `pages.ly` to `simple.ly` redraws one page in the same tab; `melody.ily`
+  leaves it).

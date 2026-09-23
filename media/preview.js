@@ -471,6 +471,20 @@
     }))
   }
 
+  /** Another score is coming (D27): nothing of this one, nor its place, is kept. The zoom is. */
+  function clear() {
+    pagesEl.replaceChildren()
+    pageHashes = []
+    indexLinks()
+    state.anchor = null
+    state.x = 0.5
+    vscode.setState(state)
+    window.scrollTo(0, 0)
+    timeline = null
+    showStatus()
+    showPage()
+  }
+
   function showStatus() {
     progressEl.hidden = !status.busy
     const hasPages = pagesEl.children.length > 0
@@ -765,6 +779,9 @@
     switch (data.type) {
       case 'render':
         render(data)
+        break
+      case 'clear':
+        clear()
         break
       case 'status':
         status = data

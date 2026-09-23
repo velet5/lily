@@ -553,6 +553,7 @@ describe('PreviewManager', () => {
     const fakes: FakePanel[] = []
     const titles: string[] = []
     const closed: string[] = []
+    const retargeted: Array<[string, string]> = []
     const revealed: Array<[SourceLocation, string]> = []
     const requested: Array<[string, string]> = []
     const manager = new PreviewManager({
@@ -564,10 +565,11 @@ describe('PreviewManager', () => {
         return fakes.at(-1)!.asPanel
       },
       onDidClose: (rootFile) => closed.push(rootFile),
+      onDidRetarget: (previous, preview) => retargeted.push([previous, preview.rootFile]),
       revealSource: (location, preview) => revealed.push([location, preview.rootFile]),
       runToolbarCommand: (command, preview) => requested.push([command, preview.rootFile]),
     })
-    return { manager, fakes, titles, closed, revealed, requested }
+    return { manager, fakes, titles, closed, retargeted, revealed, requested }
   }
   const song = path.resolve('/scores/song.ly')
 
@@ -618,6 +620,77 @@ describe('PreviewManager', () => {
     assert.strictEqual(manager.get(song), undefined)
     assert.deepStrictEqual(closed, [song])
     assert.strictEqual(manager.open(song).created, true)
+  })
+
+  describe('following the editor (D27)', () => {
+    const other = path.resolve('/scores/other.ly')
+    const third = path.resolve('/scores/third.ly')
+
+    test('the preview turns to the new score in the same tab', () => {
+      const { manager, fakes, retargeted } = create()
+      const { preview } = manager.open(song)
+      fakes[0].take()
+
+      assert.strictEqual(manager.retarget(other), preview)
+      assert.strictEqual(preview.rootFile, other)
+      assert.strictEqual(manager.get(other), preview)
+      assert.strictEqual(manager.get(song), undefined)
+      assert.deepStrictEqual(manager.roots(), [other])
+      assert.strictEqual((fakes[0] as unknown as { title: string }).title, 'Preview other.ly')
+      assert.deepStrictEqual(retargeted, [[song, other]])
+      assert.strictEqual(fakes.length, 1, 'no new panel')
+      assert.deepStrictEqual(fakes[0].take().map((message) => message.type), ['clear', 'midi', 'status'])
+    })
+
+    test('a score with a preview of its own keeps it, and that one follows from then on', () => {
+      const { manager } = create()
+      const first = manager.open(song).preview
+      const second = manager.open(other).preview
+      assert.strictEqual(manager.retarget(song), undefined)
+      assert.strictEqual(first.rootFile, song)
+      // The last one in use turns; the other stays.
+      assert.strictEqual(manager.retarget(third), first)
+      assert.strictEqual(second.rootFile, other)
+      assert.deepStrictEqual(manager.roots().sort(), [other, third].sort())
+    })
+
+    test('nothing to turn without a preview', () => {
+      assert.strictEqual(create().manager.retarget(song), undefined)
+    })
+
+    test('a retargeted panel closes under its new root', () => {
+      const { manager, fakes, closed } = create()
+      manager.open(song)
+      manager.retarget(other)
+      fakes[0].dispose()
+      assert.deepStrictEqual(closed, [other])
+      assert.deepStrictEqual(manager.roots(), [])
+    })
+
+    test('a run of the old score that ends afterwards shows nothing', async () => {
+      const { manager, fakes } = create()
+      const { preview } = manager.open(song)
+      let finish: (value: CompileResult) => void = () => {}
+      const followed = preview.follow(new Promise((resolve) => (finish = resolve)))
+      manager.retarget(other)
+      fakes[0].take()
+      finish(result({ pages: ['/does/not/matter.svg'] }))
+      await followed
+      assert.deepStrictEqual(fakes[0].take().map((message) => message.type), ['status'])
+      assert.strictEqual(preview.hasPages, false)
+    })
+
+    test('a webview hidden while it turned forgets its place when it comes back', () => {
+      const { manager, fakes } = create()
+      manager.open(song)
+      fakes[0].visible = false
+      manager.retarget(other)
+      fakes[0].take()
+      fakes[0].fromWebview({ type: 'ready' })
+      assert.strictEqual(fakes[0].take()[0].type, 'clear')
+      fakes[0].fromWebview({ type: 'ready' })
+      assert.notStrictEqual(fakes[0].take()[0].type, 'clear')
+    })
   })
 
   describe('point-and-click', () => {

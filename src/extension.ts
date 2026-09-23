@@ -23,6 +23,8 @@ export interface LilyApi {
   autoPreview: AutoPreview
   /** What a click on a note does: shows `location` in an editor outside `preview`'s column. */
   revealSource(location: SourceLocation, preview?: PreviewPanel): Promise<void>
+  /** What a change of the active editor does to the previews; resolves once any compile it started has. */
+  followEditor(editor: vscode.TextEditor | undefined): Promise<void>
 }
 
 /** One per extension host (D3). */
@@ -56,14 +58,20 @@ export function activate(context: vscode.ExtensionContext): LilyApi {
       return panel
     },
     onDidClose: (rootFile) => {
-      autoPreview.cancel(rootFile)
-      queue.cancel(rootFile)
-      void compiler.release(rootFile)
+      release(rootFile)
       setPreviewOpen(previews.roots().length > 0)
     },
+    onDidRetarget: (previous) => release(previous),
     revealSource: (location, preview) => void revealSource(location, preview),
     runToolbarCommand,
   })
+
+  /** What a root no longer previewed held: its pending refresh, queued compile and build directory. */
+  const release = (rootFile: string): void => {
+    autoPreview.cancel(rootFile)
+    queue.cancel(rootFile)
+    void compiler.release(rootFile)
+  }
 
   /** Score → code (D7, D19): the cursor goes to `location`, in the pane that has the code. */
   const revealSource = async (location: SourceLocation, preview?: PreviewPanel): Promise<void> => {
@@ -105,6 +113,31 @@ export function activate(context: vscode.ExtensionContext): LilyApi {
   const followCursor = (editor: vscode.TextEditor | undefined): void => {
     const cursor = cursorOf(editor)
     if (cursor && getPreviewSettings().followCursor) previews.followCursor(cursor)
+  }
+
+  let editorRequests = 0
+  /**
+   * The preview turns to the `.ly` file the editor shows (D27), unless a
+   * previewed score includes it: then that score is still what is being edited.
+   */
+  const followEditor = async (editor: vscode.TextEditor | undefined): Promise<void> => {
+    const document = editor?.document
+    if (document?.languageId !== 'lilypond' || document.uri.scheme !== 'file') return
+    const file = document.uri.fsPath
+    if (path.extname(file).toLowerCase() !== '.ly' || !getPreviewSettings().followEditor) return
+    const request = ++editorRequests
+    const roots = previews.roots()
+    if (roots.length === 0) return
+    // A file with a preview of its own only becomes the one that follows.
+    const including = previews.get(file) ? [] : await rootsIncluding(file, roots, (rootFile) => ({
+      buffers: buffers(),
+      includeDirs: includeDirsFromArgs(getCompileSettings(vscode.Uri.file(rootFile)).extraArgs, path.dirname(rootFile)),
+    })).catch(() => roots)
+    // Another editor got the focus meanwhile.
+    if (request !== editorRequests || including.length > 0) return
+    if (!previews.retarget(file)) return
+    followCursor(vscode.window.activeTextEditor)
+    await compileRoot(file)
   }
 
   const buffers = () => new Map(vscode.workspace.textDocuments
@@ -213,7 +246,10 @@ export function activate(context: vscode.ExtensionContext): LilyApi {
       if (document.uri.scheme === 'file') void autoPreview.documentSaved(document.uri.fsPath)
     }),
     vscode.window.onDidChangeTextEditorSelection((event) => followCursor(event.textEditor)),
-    vscode.window.onDidChangeActiveTextEditor(followCursor),
+    vscode.window.onDidChangeActiveTextEditor((editor) => {
+      followCursor(editor)
+      void followEditor(editor)
+    }),
     vscode.workspace.onDidChangeConfiguration((event) => {
       if (['lily.lilypond.path', 'lily.compile.extraArgs', 'lily.preview.acceleration'].some(key => event.affectsConfiguration(key))) {
         for (const root of previews.roots()) void compileRoot(root)
@@ -229,7 +265,7 @@ export function activate(context: vscode.ExtensionContext): LilyApi {
       }
     }),
   )
-  return { previews, midiPlayers, autoPreview, revealSource }
+  return { previews, midiPlayers, autoPreview, revealSource, followEditor }
 }
 
 /** The column in which `uri` already has a tab, visible or not. */

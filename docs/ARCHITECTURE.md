@@ -324,7 +324,8 @@ root/include buffers; resolves with the `CompileResult`, or `undefined` when not
 ran) and `lily.showOutput` report through them. `lily.preview.openToSide` opens the preview (D17),
 and edit/save listeners refresh open previews (D25). Score and source are
 linked both ways (D19): a click on a note ends in `revealSource()`, and the
-selection and active-editor listeners feed `previews.followCursor()`. All
+selection and active-editor listeners feed `previews.followCursor()`; the
+active-editor listener also turns the preview to a newly focused score (D27). All
 commands are registered in `src/commands.ts`; menus, keybindings, the webview
 toolbar and PDF/MIDI export are described in D20. An export is a run of its own
 (`CompileService.export()`), reported by the reporter but never shown in the

@@ -31,10 +31,10 @@ suite('compile settings', () => {
   })
 
   test('the preview follows the theme and the cursor unless told otherwise', async () => {
-    assert.deepStrictEqual(getPreviewSettings(), { colors: 'theme', followCursor: true })
+    assert.deepStrictEqual(getPreviewSettings(), { colors: 'theme', followCursor: true, followEditor: true })
     await config().update('preview.colors', 'paper', target)
     await config().update('preview.followCursor', false, target)
-    assert.deepStrictEqual(getPreviewSettings(), { colors: 'paper', followCursor: false })
+    assert.deepStrictEqual(getPreviewSettings(), { colors: 'paper', followCursor: false, followEditor: true })
   })
 
   test('the preview refreshes on save unless told otherwise', async () => {

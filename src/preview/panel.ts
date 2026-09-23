@@ -33,6 +33,8 @@ export type HostMessage =
    * and where its notes are on the pages, when the compile could tell (D26). */
   | { type: 'midi'; data: string | null; timing: PlaybackTiming | null }
   | { type: 'playback'; action: PlaybackAction }
+  /** The panel now shows another score: drop the pages and the place saved in them. */
+  | { type: 'clear' }
 
 /** Webview → host. */
 export type WebviewMessage =
@@ -261,10 +263,14 @@ export class PreviewPanel {
   private player: PreviewPlayback | undefined
   /** play() found the webview hidden; it starts once it is back. */
   private playWhenReady = false
+  /** retarget() found the webview hidden, and its saved place is that of the old score. */
+  private clearWhenReady = false
+  /** Counts retarget()s; a run followed before one has nothing to show. */
+  private generation = 0
   private readonly subscriptions: vscode.Disposable[]
 
   constructor(
-    readonly rootFile: string,
+    private root: string,
     private readonly panel: vscode.WebviewPanel,
     private readonly options: PreviewPanelOptions,
   ) {
@@ -283,6 +289,11 @@ export class PreviewPanel {
       styleUri: webview.asWebviewUri(options.assets.style).toString(),
       colors: options.colors,
     })
+  }
+
+  /** The score shown; retarget() changes it. */
+  get rootFile(): string {
+    return this.root
   }
 
   get hasPages(): boolean {
@@ -331,6 +342,7 @@ export class PreviewPanel {
    */
   async follow(run: Promise<CompileResult | undefined>): Promise<void> {
     if (this.updateStarted === 0) this.updateStarted = Date.now()
+    const generation = this.generation
     this.pending++
     this.postStatus()
     let result: CompileResult | undefined
@@ -339,7 +351,7 @@ export class PreviewPanel {
     } finally {
       this.pending--
     }
-    await this.update(result)
+    if (generation === this.generation) await this.update(result)
     this.postStatus()
   }
 
@@ -398,6 +410,40 @@ export class PreviewPanel {
     if (hrefs.length === 0 && !this.marking) return
     this.marking = hrefs.length > 0
     this.post({ type: 'highlight', hrefs, reveal })
+  }
+
+  /**
+   * Shows the score of `rootFile` from now on, in the same tab: everything of
+   * the old one goes, and the caller compiles the new one.
+   */
+  retarget(rootFile: string, title: string): void {
+    this.root = path.resolve(rootFile)
+    this.panel.title = title
+    this.generation++
+    // An update() reading the old run's files must not land either.
+    this.latestUpdate++
+    // Nothing drawn yet counts as the latest revision.
+    this.revision++
+    this.pages = undefined
+    this.hashes = []
+    this.pageIndexes = new Map()
+    this.links = LinkIndex.empty
+    this.cursor = undefined
+    this.clicked = undefined
+    this.marking = false
+    this.marked = 0
+    this.midi = undefined
+    this.timing = undefined
+    this.player = undefined
+    this.playWhenReady = false
+    this.note = undefined
+    this.latency = undefined
+    this.updateStarted = 0
+    // A hidden webview is destroyed; the one that comes back restores its saved place.
+    this.clearWhenReady = !this.panel.visible
+    this.post({ type: 'clear' })
+    this.post({ type: 'midi', data: null, timing: null })
+    this.postStatus()
   }
 
   dispose(): void {
@@ -476,6 +522,8 @@ export class PreviewPanel {
     switch (message.type) {
       case 'ready':
         // Sent on every (re)load: a hidden webview is destroyed, not retained.
+        if (this.clearWhenReady) this.post({ type: 'clear' })
+        this.clearWhenReady = false
         this.post({ type: 'colors', colors: this.colors })
         if (this.pages) this.post({ type: 'render', revision: this.revision, pages: this.pages, hashes: this.hashes })
         this.post({ type: 'midi', data: this.midi ?? null, timing: this.timing ?? null })
@@ -549,6 +597,8 @@ export interface PreviewHost {
   /** Creates the panel beside the editor without taking the focus. */
   createPanel(title: string): vscode.WebviewPanel
   onDidClose?(rootFile: string): void
+  /** `preview` stopped showing `previous`, which needs no compile any more. */
+  onDidRetarget?(previous: string, preview: PreviewPanel): void
   /** Shows `location` in an editor; `preview` is where the click happened. */
   revealSource?(location: SourceLocation, preview: PreviewPanel): void
   /** Carries out what a button of `preview`'s toolbar asked for. */
@@ -560,6 +610,7 @@ export const CURSOR_DELAY_MS = 100
 
 /** One panel per root file (D4). */
 export class PreviewManager {
+  /** In the order they were last opened, revealed, retargeted or had their file focused. */
   private readonly panels = new Map<string, PreviewPanel>()
   private cursorTimer: NodeJS.Timeout | undefined
   private cursorRequests = 0
@@ -568,28 +619,50 @@ export class PreviewManager {
 
   /** Creates the preview of `rootFile`, or reveals the one that exists. */
   open(rootFile: string): { preview: PreviewPanel; created: boolean } {
-    const key = panelKey(rootFile)
-    const existing = this.panels.get(key)
+    const existing = this.get(rootFile)
     if (existing) {
+      this.touch(existing)
       existing.reveal()
       return { preview: existing, created: false }
     }
     const preview = new PreviewPanel(
       path.resolve(rootFile),
-      this.host.createPanel(`Preview ${path.basename(rootFile)}`),
+      this.host.createPanel(previewTitle(rootFile)),
       {
         assets: this.host.assets,
         colors: this.host.colors(),
         onDidDispose: () => {
-          this.panels.delete(key)
+          // The key changes with retarget().
+          this.panels.delete(panelKey(preview.rootFile))
           this.host.onDidClose?.(preview.rootFile)
         },
         onDidClickSource: (location) => this.host.revealSource?.(location, preview),
         onDidRequestCommand: (command) => this.host.runToolbarCommand?.(command, preview),
       },
     )
-    this.panels.set(key, preview)
+    this.panels.set(panelKey(rootFile), preview)
     return { preview, created: true }
+  }
+
+  /**
+   * The editor now shows `file`, a score of its own (D27). A preview it has is
+   * the one to follow from now on; otherwise the preview that was last in use
+   * turns to it, and is returned so the caller compiles it.
+   */
+  retarget(file: string): PreviewPanel | undefined {
+    const own = this.get(file)
+    if (own) {
+      this.touch(own)
+      return undefined
+    }
+    const preview = [...this.panels.values()].at(-1)
+    if (!preview) return undefined
+    const previous = preview.rootFile
+    this.panels.delete(panelKey(previous))
+    preview.retarget(file, previewTitle(file))
+    this.panels.set(panelKey(file), preview)
+    this.host.onDidRetarget?.(previous, preview)
+    return preview
   }
 
   get(rootFile: string): PreviewPanel | undefined {
@@ -642,10 +715,21 @@ export class PreviewManager {
     for (const preview of this.panels.values()) preview.showCursor(location)
   }
 
+  /** Makes `preview` the one retarget() turns. */
+  private touch(preview: PreviewPanel): void {
+    const key = panelKey(preview.rootFile)
+    this.panels.delete(key)
+    this.panels.set(key, preview)
+  }
+
   dispose(): void {
     clearTimeout(this.cursorTimer)
     for (const preview of [...this.panels.values()]) preview.dispose()
   }
+}
+
+function previewTitle(rootFile: string): string {
+  return `Preview ${path.basename(rootFile)}`
 }
 
 function panelKey(rootFile: string): string {

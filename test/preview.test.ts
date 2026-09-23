@@ -86,8 +86,33 @@ suite('side-by-side preview', () => {
     assert.strictEqual(previewTabs().length, 2, 'one panel per root file')
   })
 
+  test('the preview turns to the .ly file the editor shows (D27)', async () => {
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors')
+    const pages = fixture('pages.ly')
+    const simple = fixture('simple.ly')
+    await vscode.window.showTextDocument(pages, { viewColumn: vscode.ViewColumn.One })
+    await openPreview()
+    const preview = api.previews.get(pages.fsPath)
+    assert.strictEqual(await preview?.whenRendered(), 2)
+
+    const editor = await vscode.window.showTextDocument(simple, { viewColumn: vscode.ViewColumn.One })
+    // The listener runs too; this call waits for the compile it starts.
+    await api.followEditor(editor)
+    assert.strictEqual(api.previews.get(simple.fsPath), preview)
+    assert.strictEqual(api.previews.get(pages.fsPath), undefined)
+    assert.strictEqual(await preview?.whenRendered(), 1)
+    assert.deepStrictEqual(previewTabs().map((tab) => tab.label), ['Preview simple.ly'])
+
+    // An include of the score on screen leaves it there.
+    const melody = await vscode.window.showTextDocument(fixture('melody.ily'), { viewColumn: vscode.ViewColumn.One })
+    await api.followEditor(melody)
+    assert.strictEqual(preview?.rootFile, simple.fsPath)
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors')
+  })
+
   test('a closed preview is forgotten', async () => {
     const uri = fixture('pages.ly')
+    await openPreview(uri)
     const tab = previewTabs().find((candidate) => candidate.label === 'Preview pages.ly')
     assert.ok(tab)
     await vscode.window.tabGroups.close(tab)

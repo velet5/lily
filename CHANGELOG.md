@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **The preview follows the editor.** Switching to another `.ly` file turns the
+  open preview to its score, in the same tab; editing an `\include` of the
+  score on screen does not. `lily.preview.followEditor` turns it off.
+
 - **Faster unsaved previews.** Guarded classic SVG glyph caching and an isolated
   warm parent on supported LilyPond 2.26.0 installations; ordinary fallback.
   Unsaved root/include snapshots preserve source navigation and diagnostic

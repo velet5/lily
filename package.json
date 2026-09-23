@@ -383,6 +383,12 @@
           "scope": "window",
           "markdownDescription": "Highlight in an open preview the note the cursor is on, and scroll to it. Clicking a note in the preview always goes to its place in the source."
         },
+        "lily.preview.followEditor": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "markdownDescription": "When another `.ly` file gets the focus, show its score in the open preview. A file that a previewed score `\\include`s, or that has a preview of its own, leaves the previews as they are."
+        },
         "lily.preview.refreshOnSave": {
           "type": "boolean",
           "default": true,

@@ -39,6 +39,9 @@ compiling needs it, and says so when it is missing.
   never saved automatically. Unchanged pages retain their DOM and navigation index.
 - **Click a note** to jump to the place in the source that wrote it. **Move the
   cursor**, and the note it is on is marked in the score and scrolled into view.
+- **The preview follows the editor.** Switch to another `.ly` file and the open
+  preview shows its score, in the same tab. A file that the score on screen
+  `\include`s leaves it where it is.
 - A toolbar in the preview: refresh, previous and next page, zoom out, fit to
   width, zoom in, play, and export to PDF or MIDI.
 - Nothing is written next to your sources. Compiles happen in a temporary
@@ -154,6 +157,7 @@ files remain unsaved; save them explicitly before exporting their changes. MIDI 
 | `lily.compile.extraArgs` | `[]` | Extra arguments for every `lilypond` run, one per item, for example `--include=/path/to/library` or `-dno-point-and-click`. Can be set per folder. |
 | `lily.preview.colors` | `"theme"` | `theme`: the score in the editor's foreground colour on its background. `paper`: black on white pages, whatever the theme. |
 | `lily.preview.followCursor` | `true` | Mark the note the cursor is on in an open preview, and scroll to it. Clicking a note always goes to its source. |
+| `lily.preview.followEditor` | `true` | When another `.ly` file gets the focus, show its score in the open preview. Includes of the score on screen, and files with a preview of their own, leave it alone. |
 | `lily.preview.refreshOnSave` | `true` | Enable automatic preview refreshes. When off, use **Compile** or **Refresh Preview**. |
 | `lily.preview.refreshOnChange` | `true` | Also refresh unsaved edits. Turn off for save-only refreshes. Requires `refreshOnSave`. |
 | `lily.preview.acceleration` | `"auto"` | Guarded glyph cache plus isolated warm compiler on supported macOS/Linux installations. `"cache"` starts a fresh process; `"off"` uses ordinary compilation. |

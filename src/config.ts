@@ -32,6 +32,8 @@ export interface PreviewSettings {
   colors: PreviewColors
   /** `lily.preview.followCursor`: highlight in the score what the cursor is on. */
   followCursor: boolean
+  /** `lily.preview.followEditor`: the preview turns to the `.ly` file the editor shows. */
+  followEditor: boolean
 }
 
 export function getPreviewSettings(): PreviewSettings {
@@ -39,6 +41,7 @@ export function getPreviewSettings(): PreviewSettings {
   return {
     colors: config.get<unknown>('preview.colors') === 'paper' ? 'paper' : 'theme',
     followCursor: config.get<unknown>('preview.followCursor') !== false,
+    followEditor: config.get<unknown>('preview.followEditor') !== false,
   }
 }
 
