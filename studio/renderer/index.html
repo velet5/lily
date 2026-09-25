@@ -30,12 +30,19 @@
         <header class="pane-header"><span class="pane-title">Editor</span></header>
         <div class="pane-body placeholder">No score open</div>
       </section>
-      <section class="pane preview" data-pane="preview" aria-label="Preview">
+      <section class="pane preview" data-pane="preview" data-mode="svg" aria-label="Preview">
         <header class="pane-header">
           <span class="pane-title">Preview</span>
+          <span class="preview-tabs" role="tablist" aria-label="Preview format"></span>
           <span class="pane-actions"></span>
         </header>
-        <div class="pane-body placeholder">The score appears here</div>
+        <!-- The SVG pages (D32) and the PDF (D33), one shown at a time. -->
+        <div class="preview-view" data-view="svg">
+          <div class="pane-body placeholder">The score appears here</div>
+        </div>
+        <div class="preview-view" data-view="pdf" hidden>
+          <div class="pane-body"></div>
+        </div>
       </section>
       <footer class="status" data-pane="status" role="status"></footer>
     </main>

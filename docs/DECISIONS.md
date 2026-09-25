@@ -1486,3 +1486,46 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   character leads to that note (skipped without lilypond). `npm run
   test:smoke` waits for the page in the window, clicks the note `d` and sees
   the editor's cursor on its line.
+
+## D33 — Lily Studio: the PDF tab and Export PDF
+
+**Status:** proposed · **Refines:** D5, D31, D32
+
+- **The switch.** The preview pane's header has an SVG/PDF switch. SVG is the
+  pane of D32 and stays the default; PDF shows the same score (the one of the
+  last finished compile) as the PDF lilypond writes, and has Export PDF in
+  the header in place of the zoom buttons. The PDF is fitted to the pane's
+  width and redrawn when the pane resizes; it has no zoom and no links, as a
+  PDF made for handing on carries no point-and-click (D5's export flags).
+- **A separate compile.** The PDF comes from its own run, `CompileService.export`
+  with `format: 'pdf'` (`--pdf -dno-point-and-click`), into a private
+  directory under the OS temp directory that is deleted once the bytes are
+  read, so nothing is written next to the score. It is its own slot in
+  `CompileService`, so it neither cancels nor is cancelled by the SVG compile.
+  It runs only while the PDF tab is shown: a finished compile marks the PDF
+  out of date, and showing the tab compiles it.
+- **Main process.** `StudioCompiler.pdf(rootFile)` (`studio/src/main/compileService.ts`)
+  keeps each score's PDF that engraved, or the run in flight, until the score
+  compiles again; one with errors is shown, with a note, but not kept. The
+  bytes go to the renderer as a `PdfOutcome` (`studio:compile-pdf`), one entry
+  per book, named as lilypond names them; the root file passes the `Access`
+  check first.
+- **Export PDF.** `studio:export-pdf` writes the kept PDF, or compiles it
+  first when the score changed since, into the score's directory, replacing a
+  file of the same name, and the status line names the files. A PDF with
+  errors is refused and nothing is written. This is the only way a PDF
+  reaches the user's folder.
+- **pdf.js.** `pdfjs-dist` 5 is bundled into `app.js` and its worker into
+  `dist/renderer/pdf.worker.js` by `studio/esbuild.mjs`, loaded as a classic
+  worker through `GlobalWorkerOptions.workerPort` (the CSP's `worker-src
+  'self'` allows it). Documents are opened from the bytes, with `useWasm:
+  false`, so nothing is fetched; LilyPond's PDFs embed their fonts. Pages are
+  drawn on canvases at the device pixel ratio (`studio/src/renderer/pdfView.ts`).
+- **Verified.** `npm run test:unit` in `studio/` (`test/pdfExport.test.ts`): the
+  private directory is gone and the score's folder untouched after a PDF
+  compile, the PDF is kept until the next compile, a PDF with errors is shown
+  and not kept, a missing lilypond is reported, Export PDF writes next to the
+  score without compiling again, compiles again after a change, refuses a
+  score with errors, and one real compile and export (skipped without
+  lilypond). `npm run test:smoke` switches to PDF, waits for a drawn canvas,
+  checks no PDF was written, presses Export PDF and finds `smoke.pdf`.

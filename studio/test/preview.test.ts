@@ -68,6 +68,7 @@ describe('StudioCompiler: the pages for the preview', () => {
           rootFile: request.rootFile, ok: true, cancelled: false, exitCode: 0, pages, midi: [],
           stdout: '', stderr: '', outputDir: undefined, durationMs: 1,
         }),
+        export: () => Promise.reject(new Error('no export here')),
         dispose: async () => {},
       },
       candidates: async () => [],

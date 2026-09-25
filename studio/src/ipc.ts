@@ -18,6 +18,10 @@ export const Channel = {
   compile: 'studio:compile',
   /** A click in the preview: where a `textedit:` link points (D32). */
   revealSource: 'studio:reveal-source',
+  /** The PDF of a score for the PDF tab, compiled into the temp directory (D33). */
+  compilePdf: 'studio:compile-pdf',
+  /** Export PDF: writes that PDF next to the score (D33). */
+  exportPdf: 'studio:export-pdf',
 } as const
 
 /** A folder was opened, or a file whose folder becomes the open folder. */
@@ -52,6 +56,21 @@ export interface CompileOutcome {
   midi: string[]
   durationMs: number
   /** Why lilypond did not run, or the end of its output when it failed without a parsable error. */
+  message?: string
+}
+
+/**
+ * A score's PDF for the PDF tab (D33). `failed`: lilypond reported errors, and
+ * `files` holds whatever it still wrote. `no-lilypond` and `error`: it did not
+ * run, and `message` says why.
+ */
+export interface PdfOutcome {
+  state: 'ok' | 'failed' | 'no-lilypond' | 'error'
+  rootFile: string
+  /** The PDFs lilypond wrote, one per book, named as it names them. */
+  files: { name: string; data: Uint8Array }[]
+  errorCount: number
+  durationMs: number
   message?: string
 }
 

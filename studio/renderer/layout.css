@@ -405,6 +405,60 @@ button:focus-visible,
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
+/* The SVG/PDF switch and the view it shows (DECISIONS D33). */
+.preview-view {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-tabs {
+  display: flex;
+  margin-right: 8px;
+}
+
+.preview-tabs button {
+  padding: 0 8px;
+  border-radius: 0;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.preview-tabs button:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.preview-tabs button:last-child {
+  border-left: 0;
+  border-radius: 0 4px 4px 0;
+}
+
+.preview-tabs button[aria-selected='true'] {
+  background: var(--selected);
+  color: var(--fg);
+}
+
+.pdf-pages {
+  padding: 16px; /* PADDING in pdfView.ts */
+}
+
+.pdf-pages:empty {
+  display: none;
+}
+
+.pdf-page {
+  display: block;
+  margin: 0 auto 16px;
+  background: #fff;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+}
+
+.pdf-page:last-child {
+  margin-bottom: 0;
+}
+
 .preview .pane-actions button {
   min-width: 28px;
   padding: 0 6px;

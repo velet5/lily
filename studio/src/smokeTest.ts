@@ -1,7 +1,7 @@
 // `npm test` in studio/: starts the real window hidden on a scratch folder and
 // drives it once — layout, Monaco, the file list, highlighting, an edit, the
 // unsaved marker, a save, the compile it starts, its pages in the preview
-// and a click on a note there, and an error marked —
+// and a click on a note there, the PDF tab and Export PDF, and an error marked —
 // then prints a JSON report and exits 0 or 1.
 import type { BrowserWindow } from 'electron'
 import * as fs from 'node:fs/promises'
@@ -129,6 +129,21 @@ export async function runSmokeTest(window: BrowserWindow, smoke: SmokeFolder): P
       const text = (line?.textContent ?? '').replace(/\\u00a0/g, ' ')
       return text.includes('c4 d e f') ? text : ''
     })()`)
+
+    // The PDF tab draws the PDF with pdf.js; nothing is written next to the
+    // score until Export PDF, which writes smoke.pdf there (D33).
+    await run(`document.querySelector('.preview-tabs [data-view="pdf"]').click()`)
+    compile.pdfPages = await until<number>('the PDF pages', `(() => {
+      const canvas = document.querySelector('[data-view="pdf"] canvas.pdf-page')
+      return canvas && canvas.width > 0 && !document.querySelector('[data-view="svg"].preview-view').offsetParent ? document.querySelectorAll('canvas.pdf-page').length : 0
+    })()`, 30_000)
+    const before = await fs.readdir(smoke.folder)
+    if (before.some((name) => name.endsWith('.pdf'))) problems.push(`a PDF was written before Export PDF: ${before.join(', ')}`)
+    await run(`[...document.querySelectorAll('[data-pane="preview"] button')].find((b) => b.textContent === 'Export PDF').click()`)
+    compile.exported = await until<string>('Export PDF to report', `(() => { const t = document.querySelector('.status-message').textContent; return t.startsWith('Exported') ? t : '' })()`, 30_000)
+    const pdf = await fs.readFile(path.join(smoke.folder, 'smoke.pdf')).catch(() => undefined)
+    if (pdf?.subarray(0, 5).toString() !== '%PDF-') problems.push('Export PDF did not write smoke.pdf next to the score')
+    await run(`document.querySelector('.preview-tabs [data-view="svg"]').click()`)
 
     // A misspelt command is marked in the editor and turns the status red.
     await run(`document.querySelector('.monaco-editor .native-edit-context, .monaco-editor textarea').focus()`)

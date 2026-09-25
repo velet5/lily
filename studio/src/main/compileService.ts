@@ -1,18 +1,19 @@
 // Compile on save for Lily Studio's main process (DECISIONS D31): finds the
 // score a saved file belongs to, compiles it with the extension's
 // CompileService and parses lilypond's stderr with its parser. main.ts sends
-// the events to the renderer. No `electron` here, so the tests run it under
-// plain Node.
+// the events to the renderer. The PDF tab's compile and Export PDF are here
+// too (D33). No `electron` here, so the tests run it under plain Node.
 import * as fs from 'node:fs/promises'
+import * as os from 'node:os'
 import * as path from 'node:path'
 import type { CompileResult, CompileService } from '../../../src/compile/compiler'
 import { LilyPondNotFoundError } from '../../../src/compile/locate'
 import { rootsIncluding } from '../../../src/compile/rootFile'
 import { parseStderr } from '../../../src/diagnostics/parse'
-import type { CompileEvent, CompileOutcome } from '../ipc'
+import type { CompileEvent, CompileOutcome, PdfOutcome } from '../ipc'
 
 /** The part of CompileService used here; tests pass a stand-in. */
-export type Compiler = Pick<CompileService, 'compile' | 'dispose'>
+export type Compiler = Pick<CompileService, 'compile' | 'export' | 'dispose'>
 
 export interface StudioCompilerOptions {
   compiler: Compiler
@@ -21,6 +22,8 @@ export interface StudioCompilerOptions {
   emit(event: CompileEvent): void
   /** Like `lily.lilypond.path`; empty means PATH, then well-known directories. */
   lilypondPath?: string
+  /** Parent of the PDF compiles' private directories. Defaults to the OS temp dir. */
+  tmpRoot?: string
 }
 
 /** Lines of stderr kept for a run that failed without a parsable error. */
@@ -29,6 +32,11 @@ const TAIL_LINES = 12
 export class StudioCompiler {
   /** The score compiled last; preferred when an include belongs to several. */
   private current: string | undefined
+  /**
+   * The PDF of each score since its last compile, or the PDF compile running
+   * for it; a compile of the score drops it, as the sources changed.
+   */
+  private readonly pdfs = new Map<string, Promise<PdfOutcome | undefined>>()
 
   constructor(private readonly options: StudioCompilerOptions) {}
 
@@ -63,6 +71,7 @@ export class StudioCompiler {
 
   async compile(rootFile: string): Promise<CompileOutcome | undefined> {
     this.current = rootFile
+    this.pdfs.delete(rootFile)
     this.options.emit({ kind: 'started', rootFile })
     let outcome: CompileOutcome
     try {
@@ -82,6 +91,69 @@ export class StudioCompiler {
     }
     this.options.emit({ kind: 'finished', outcome })
     return outcome
+  }
+
+  /**
+   * The PDF of `rootFile` for the PDF tab: compiled once more with `--pdf` into
+   * a private directory that is deleted at once, so nothing is written next to
+   * the score. Kept until the score compiles again. Resolves undefined when a
+   * newer PDF compile of the score took over.
+   */
+  pdf(rootFile: string): Promise<PdfOutcome | undefined> {
+    const kept = this.pdfs.get(rootFile)
+    if (kept) return kept
+    const pending = this.compilePdf(rootFile)
+    this.pdfs.set(rootFile, pending)
+    // Only a PDF that engraved is kept; anything else is tried again when asked.
+    void pending.then((outcome) => {
+      if (outcome?.state !== 'ok' && this.pdfs.get(rootFile) === pending) this.pdfs.delete(rootFile)
+    })
+    return pending
+  }
+
+  /**
+   * Export PDF: writes the PDF of `rootFile` into the score's directory,
+   * replacing files of the same name, and resolves with their paths. Only
+   * when asked, and only a PDF that engraved without errors.
+   */
+  async exportPdf(rootFile: string): Promise<string[]> {
+    let outcome = await this.pdf(rootFile)
+    // Superseded by a PDF compile of newer sources: wait for that one.
+    if (!outcome) outcome = await this.pdf(rootFile)
+    if (!outcome) throw new Error('The PDF was not engraved; try again.')
+    if (outcome.state !== 'ok' || outcome.files.length === 0) {
+      throw new Error(outcome.message ?? 'The score has errors, so there is no PDF to export. Fix them first.')
+    }
+    const dir = path.dirname(rootFile)
+    const written = outcome.files.map((file) => path.join(dir, file.name))
+    await Promise.all(outcome.files.map((file, i) => fs.writeFile(written[i], file.data)))
+    return written
+  }
+
+  private async compilePdf(rootFile: string): Promise<PdfOutcome | undefined> {
+    let targetDir: string | undefined
+    try {
+      targetDir = await fs.mkdtemp(path.join(this.options.tmpRoot ?? os.tmpdir(), 'lily-studio-pdf-'))
+      const result = await this.options.compiler.export({
+        rootFile,
+        lilypondPath: this.options.lilypondPath,
+        acceleration: 'off',
+        format: 'pdf',
+        targetDir,
+      })
+      if (result.cancelled) return undefined
+      const files = await Promise.all(
+        result.exported.map(async (file) => ({ name: path.basename(file), data: new Uint8Array(await fs.readFile(file)) })),
+      )
+      const { state, errorCount, message } = fromResult(result)
+      return { state: state === 'ok' ? 'ok' : 'failed', rootFile, files, errorCount, durationMs: result.durationMs, ...(message ? { message } : {}) }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      const state = error instanceof LilyPondNotFoundError ? 'no-lilypond' : 'error'
+      return { state, rootFile, files: [], errorCount: 0, durationMs: 0, message }
+    } finally {
+      if (targetDir) await fs.rm(targetDir, { recursive: true, force: true })
+    }
   }
 
   dispose(): Promise<void> {

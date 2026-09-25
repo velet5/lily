@@ -1,6 +1,6 @@
 // Lily Studio's main process: one window with the fixed layout of
 // renderer/index.html (DECISIONS D28), the file access behind it (D29) and
-// compile on save (D31). Later steps add the playback service here and reach
+// compile on save (D31), and the PDF tab's compile and export (D33). Later steps add the playback service here and reach
 // the renderer only through preload.ts.
 import { app, BrowserWindow, dialog, ipcMain, Menu, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
 import * as path from 'node:path'
@@ -180,6 +180,16 @@ function registerIpc(): void {
     if (!location) return undefined
     // A note from a file the studio may not open (lilypond's own ly/ files) goes nowhere.
     return { ...location, file: access.check(location.file) }
+  })
+
+  ipcMain.handle(Channel.compilePdf, async (event, rootFile: unknown) => {
+    owner(event)
+    return compiler.pdf(access.check(rootFile))
+  })
+
+  ipcMain.handle(Channel.exportPdf, async (event, rootFile: unknown) => {
+    owner(event)
+    return compiler.exportPdf(access.check(rootFile))
   })
 
   ipcMain.on(Channel.setDirty, (event, value: unknown) => {

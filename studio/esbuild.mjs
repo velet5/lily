@@ -2,7 +2,8 @@
 // into dist/preload.js (DECISIONS D28), and the renderer script with Monaco
 // and Monaco's worker into dist/renderer/ (D29). renderer/index.html and
 // layout.css are loaded as they are. The renderer carries the extension's
-// grammar, language configuration and Oniguruma's WebAssembly inline (D30).
+// grammar, language configuration and Oniguruma's WebAssembly inline (D30),
+// and pdf.js, whose worker is bundled beside it (D33).
 //
 //   node esbuild.mjs                one-off development build
 //   node esbuild.mjs --watch        rebuild on change
@@ -66,7 +67,8 @@ const builds = [
   },
   {
     ...shared,
-    entryPoints: { 'editor.worker': 'monaco-editor/editor/editor.worker' },
+    // pdf.js's worker for the PDF tab (D33), loaded as a classic worker.
+    entryPoints: { 'editor.worker': 'monaco-editor/editor/editor.worker', 'pdf.worker': 'pdfjs-dist/build/pdf.worker.mjs' },
     outdir: 'dist/renderer',
     format: 'iife',
     platform: 'browser',

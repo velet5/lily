@@ -3,7 +3,7 @@
 // (src/ipc.ts); later steps add the playback calls here.
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FolderListing } from './files'
-import { Channel, type Command, type CompileEvent, type Opened, type SourceLocation } from './ipc'
+import { Channel, type Command, type CompileEvent, type Opened, type PdfOutcome, type SourceLocation } from './ipc'
 import { TEMPLATES, type TemplateId } from './templates'
 
 const studio = {
@@ -27,6 +27,13 @@ const studio = {
    * one. Rejects when the file is not one the studio may open.
    */
   revealSource: (href: string): Promise<SourceLocation | undefined> => ipcRenderer.invoke(Channel.revealSource, href),
+  /**
+   * The PDF of the score `rootFile`, compiled into the temp directory (D33);
+   * undefined when a newer PDF compile of it took over.
+   */
+  compilePdf: (rootFile: string): Promise<PdfOutcome | undefined> => ipcRenderer.invoke(Channel.compilePdf, rootFile),
+  /** Writes the PDF of `rootFile` next to it; resolves with the files written. */
+  exportPdf: (rootFile: string): Promise<string[]> => ipcRenderer.invoke(Channel.exportPdf, rootFile),
   /** Runs `listener` for each menu command; returns a function that removes it. */
   onCommand(listener: (command: Command) => void): () => void {
     const handler = (_event: unknown, command: Command) => listener(command)

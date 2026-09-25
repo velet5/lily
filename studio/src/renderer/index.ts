@@ -6,6 +6,7 @@ import type { TemplateId } from '../templates'
 import { compileStatus, DiagnosticStore } from './diagnostics'
 import { ScoreEditor } from './editor'
 import { button, FileList } from './files'
+import { PdfView } from './pdfView'
 import { ScorePreview } from './preview'
 
 declare global {
@@ -65,12 +66,47 @@ const editor = new ScoreEditor({
   diagnostics: (file) => diagnostics.for(file),
 })
 
+// The preview pane: the SVG pages (D32) or the PDF (D33), switched in its header.
 const previewPane = pane('preview')
+const view = (name: 'svg' | 'pdf') => previewPane.querySelector<HTMLElement>(`[data-view="${name}"]`)!
+const viewActions = (name: 'svg' | 'pdf') => {
+  const actions = document.createElement('span')
+  actions.className = 'pane-actions'
+  actions.dataset.view = name
+  previewPane.querySelector('.pane-header > .pane-actions')!.append(actions)
+  return actions
+}
 const preview = new ScorePreview({
-  body: previewPane.querySelector<HTMLElement>('.pane-body')!,
-  actions: previewPane.querySelector<HTMLElement>('.pane-actions')!,
+  body: view('svg').querySelector<HTMLElement>('.pane-body')!,
+  actions: viewActions('svg'),
   onReveal: (href) => void revealSource(href),
 })
+const pdfView = new PdfView({
+  body: view('pdf').querySelector<HTMLElement>('.pane-body')!,
+  actions: viewActions('pdf'),
+  compilePdf: (rootFile) => studio.compilePdf(rootFile),
+  exportPdf: (rootFile) => studio.exportPdf(rootFile),
+  onExported: (written) => status(`Exported ${written.map((file) => file.split(/[\\/]/).pop()).join(', ')} next to the score`),
+  onError: report,
+})
+const tabs = (['svg', 'pdf'] as const).map((name) => {
+  const tab = button(name.toUpperCase(), () => showView(name))
+  tab.setAttribute('role', 'tab')
+  tab.dataset.view = name
+  tab.title = name === 'svg' ? 'The score as you edit it: click a note to find it in the source' : 'The score as a PDF, ready to print or export'
+  return tab
+})
+previewPane.querySelector('.preview-tabs')!.append(...tabs)
+
+function showView(name: 'svg' | 'pdf'): void {
+  previewPane.dataset.mode = name
+  for (const tab of tabs) tab.setAttribute('aria-selected', String(tab.dataset.view === name))
+  for (const element of previewPane.querySelectorAll<HTMLElement>('[data-view]:not([role="tab"])')) {
+    element.hidden = element.dataset.view !== name
+  }
+  pdfView.show(name === 'pdf')
+}
+showView('svg')
 
 const files = new FileList({
   body: filesPane.querySelector<HTMLElement>('.pane-body')!,
@@ -205,6 +241,7 @@ templateMenu.addEventListener('keydown', (event) => {
 studio.onCompile((event) => {
   compiled(event)
   preview.compiled(event)
+  pdfView.compiled(event)
 })
 
 studio.onCommand((command) => {

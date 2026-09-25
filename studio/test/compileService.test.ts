@@ -60,6 +60,7 @@ function setup(answer: (request: CompileRequest) => Partial<CompileResult> | Err
       if (partial instanceof Error) throw partial
       return result(request, partial)
     },
+    export: () => Promise.reject(new Error('no export here')),
     dispose: async () => {},
   }
   const studio = new StudioCompiler({
