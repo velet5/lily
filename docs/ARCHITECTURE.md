@@ -165,7 +165,8 @@ src/
     accelerator.ts      verified glyph cache, private warm parent, lifecycle and fallback
   config.ts             typed, uncached access to the `lily.*` settings
   diagnostics/
-    parse.ts            stderr → LyDiagnostic[], column → character, token span (no vscode)
+    parse.ts            stderr → LyDiagnostic[] (no vscode)
+    span.ts             column → character, token span (no vscode, no Node)
     publish.ts          CompileReporter: Problems, output channel, status bar item
   preview/
     panel.ts            PreviewManager / PreviewPanel, html + CSP, message protocol (types-only vscode)
@@ -199,7 +200,7 @@ test/                   *.test.ts: extension-host tests; */*.test.ts: node:test 
 .github/workflows/      ci.yml: types, lint, grammar, unit, host tests, release pass, VSIX artifact
 ```
 
-Rule: nothing under `src/compile/` or `tools/`, nor `src/diagnostics/parse.ts`, may import `vscode`. That is what lets the
+Rule: nothing under `src/compile/` or `tools/`, nor `src/diagnostics/parse.ts` and `span.ts`, may import `vscode`. That is what lets the
 CLI and MCP server reuse the exact code path the editor uses, and
 lets it be unit-tested without an extension host.
 

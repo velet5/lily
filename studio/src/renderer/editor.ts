@@ -3,9 +3,14 @@
 // from the version last written, so undoing back to it clears the mark.
 import * as monaco from 'monaco-editor/editor'
 import 'monaco-editor/features/register.all'
+import type { LyDiagnostic } from '../../../src/diagnostics/parse'
+import { columnToCharacter } from '../../../src/diagnostics/span'
+import { toMarkers } from './diagnostics'
 import { DARK_THEME, LIGHT_THEME, languageConfiguration, loadGrammar, theme, tokensProvider } from './grammar'
 
 export const LANGUAGE_ID = 'lilypond'
+/** Owner of the compile's markers (D31). */
+const MARKER_OWNER = 'lilypond'
 
 monaco.languages.register({ id: LANGUAGE_ID, extensions: ['.ly', '.ily', '.lyi'], aliases: ['LilyPond'] })
 monaco.languages.setLanguageConfiguration(LANGUAGE_ID, languageConfiguration())
@@ -25,6 +30,8 @@ export interface ScoreEditorOptions {
   save(file: string, text: string): Promise<void>
   /** After an edit, a save, or a switch to another file. */
   onChange(): void
+  /** The last compile's diagnostics in `file`; marked when it opens. */
+  diagnostics(file: string): LyDiagnostic[]
 }
 
 export class ScoreEditor {
@@ -76,6 +83,7 @@ export class ScoreEditor {
       doc = { model, savedVersion: model.getAlternativeVersionId(), viewState: null }
       model.onDidChangeContent(() => this.options.onChange())
       this.documents.set(file, doc)
+      this.mark(file)
     }
     if (this.current === file) return
     const previous = this.current && this.documents.get(this.current)
@@ -85,6 +93,37 @@ export class ScoreEditor {
     if (doc.viewState) this.editor.restoreViewState(doc.viewState)
     this.editor.focus()
     this.options.onChange()
+  }
+
+  /**
+   * Marks the last compile's diagnostics in `file`, if it is open. Monaco moves
+   * the marks along with later edits until the next compile replaces them.
+   */
+  mark(file: string): void {
+    const model = this.documents.get(file)?.model
+    if (!model) return
+    const markers = toMarkers(this.options.diagnostics(file), (line) => model.getLineContent(line), model.getLineCount())
+    monaco.editor.setModelMarkers(
+      model,
+      MARKER_OWNER,
+      markers.map((marker) => ({
+        ...marker,
+        severity: marker.severity === 'error' ? monaco.MarkerSeverity.Error : monaco.MarkerSeverity.Warning,
+        source: 'LilyPond',
+      })),
+    )
+  }
+
+  /** Puts the cursor of the shown file where a diagnostic points (1-based, lilypond's column). */
+  reveal(line: number, column?: number): void {
+    const model = this.editor.getModel()
+    if (!model) return
+    const lineNumber = Math.min(line, model.getLineCount())
+    const character = column === undefined ? 0 : columnToCharacter(model.getLineContent(lineNumber), column)
+    const position = { lineNumber, column: character + 1 }
+    this.editor.setPosition(position)
+    this.editor.revealPositionInCenterIfOutsideViewport(position)
+    this.editor.focus()
   }
 
   /** Writes `file` (the one shown by default). Rejects when the write fails. */

@@ -121,6 +121,51 @@ body {
   font-size: 12px;
 }
 
+/* Messages on the left, the last compile on the right (DECISIONS D31). */
+.status-message,
+.status-compile {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-compile {
+  margin-left: auto;
+  padding: 0 8px;
+  height: 18px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: default;
+}
+
+.status-compile::before {
+  display: inline-block;
+  width: 1.2em;
+}
+
+.status-compile[data-tone='ok']::before { content: '✓'; }
+.status-compile[data-tone='busy']::before { content: '…'; }
+.status-compile[data-tone='warning']::before { content: '⚠'; }
+.status-compile[data-tone='error']::before { content: '✕'; }
+
+.status-compile[data-tone='warning'],
+.status-compile[data-tone='error'] {
+  cursor: pointer;
+}
+
+.status-compile[data-tone='error'] {
+  background: #c72e2e;
+}
+
+.status-compile[data-tone='warning']:hover,
+.status-compile[data-tone='error']:hover {
+  text-decoration: underline;
+}
+
 [hidden] {
   display: none !important;
 }

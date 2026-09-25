@@ -1400,3 +1400,51 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   Scheme across lines) and checks the themes and the converted configuration;
   `npm run test:smoke` checks in the window that a brace, the version string
   and a duration are drawn in three different colours.
+
+## D31 — Lily Studio: compile on save, markers and the status line
+
+**Status:** proposed · **Refines:** D6, D10, D16, D28
+
+- **When.** Writing a file through `saveFile` compiles, in the main process,
+  after the write has succeeded; the save itself does not wait. Nothing
+  compiles on open or while typing (live preview comes later). Save All
+  compiles once per file saved; a newer compile of the same score kills the
+  older one (`CompileService`), whose result is dropped.
+- **Which score.** `studio/src/main/compileService.ts` (`StudioCompiler`, no
+  `electron`): a `.ly` file is its own score. An `.ily`/`.lyi` belongs to the
+  scores whose `\include` chains reach it (`rootsIncluding`, D18): the score
+  compiled last first, then the open folder's `.ly` files in list order; the
+  first match is compiled. When none reaches it, nothing runs and the status
+  line says so. D10's “ask once” is left out.
+- **How.** The extension's `CompileService` with its defaults, SVG output and
+  point-and-click, `acceleration: 'off'` (the warm engines need the
+  extension's `runtime/`); lilypond is found as in the extension, or through
+  `$LILYPOND_PATH`. stderr goes through `parseStderr`. The kept pages live
+  in the OS temp directory until the next compile of that score or quit
+  (`dispose` on `will-quit`).
+- **IPC.** Main → renderer on `studio:compile`: `{ kind: 'started', rootFile }`
+  and `{ kind: 'finished', outcome }`, where `CompileOutcome` (`src/ipc.ts`)
+  has `state` (`ok`, `failed`, `no-root`, `no-lilypond`, `error`), the parsed
+  diagnostics, their counts, `pages`, `midi` and, when lilypond did not run
+  or failed without a parsable error, a `message` (the last 12 lines of
+  stderr in the second case).
+- **Markers.** `studio/src/renderer/diagnostics.ts` keeps each score's last
+  diagnostics by file, so a newer compile of one score replaces only its own,
+  and turns them into Monaco markers (owner `lilypond`) over
+  `diagnosticSpan`'s token, on the model's current text; a file opened later
+  is marked when it opens. The column and span functions moved from
+  `src/diagnostics/parse.ts` to `src/diagnostics/span.ts`, which imports no
+  Node module, because the renderer bundle cannot resolve `node:path`;
+  `parse.ts` re-exports them, so no caller changed.
+- **Status line.** Messages stay on the left; the right side shows the last
+  compile in words: “Engraving score.ly…”, “score.ly: engraved in 0.8 s”,
+  “score.ly: engraved with 1 warning”, “score.ly: 2 errors” (red),
+  “LilyPond is not installed”. Clicking it on errors or warnings opens the
+  file of the first error (else warning) and puts the cursor there.
+- **Verified.** `npm run test:unit` in `studio/`: root resolution, parsing,
+  cancelled and failed starts against a stand-in `CompileService`, and one
+  real compile of a score whose include has a misspelt command (skipped
+  without lilypond); markers, the store and the status texts. `npm run
+  test:smoke` saves in the window, waits for the status, types `\stacato` on a
+  line of its own, saves, and sees the red status and an error squiggle.
+

@@ -1,6 +1,7 @@
 // `npm test` in studio/: starts the real window hidden on a scratch folder and
 // drives it once — layout, Monaco, the file list, highlighting, an edit, the
-// unsaved marker and a save — then prints a JSON report and exits 0 or 1.
+// unsaved marker, a save, and the compile it starts with an error marked —
+// then prints a JSON report and exits 0 or 1.
 import type { BrowserWindow } from 'electron'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
@@ -105,8 +106,25 @@ export async function runSmokeTest(window: BrowserWindow, smoke: SmokeFolder): P
   const saved = await fs.readFile(smoke.score, 'utf8')
   if (!saved.includes('% smoke ')) problems.push(`the saved file is ${JSON.stringify(saved)}`)
 
+  // The save compiled the score (D31); the status line says how it went.
+  const tone = `document.querySelector('.status-compile:not([hidden])')?.dataset.tone`
+  const firstTone = await until<string>('the compile status', `(() => { const t = ${tone}; return t && t !== 'busy' ? t : '' })()`, 30_000)
+  const compile: Record<string, unknown> = { firstTone }
+  if (firstTone === 'error' && (await run<string>(`document.querySelector('.status-compile').textContent`)).includes('not installed')) {
+    compile.skipped = 'lilypond is not installed'
+  } else {
+    // A misspelt command is marked in the editor and turns the status red.
+    await run(`document.querySelector('.monaco-editor .native-edit-context, .monaco-editor textarea').focus()`)
+    // On a line of its own: the cursor is still in the `% smoke` comment.
+    window.webContents.insertText('\n\\stacato ')
+    window.webContents.send(Channel.command, 'save')
+    compile.errorTone = await until<string>('an error status', `(() => { const t = ${tone}; return t === 'error' ? t : '' })()`, 30_000)
+    compile.squiggle = await until<boolean>('an error marker in the editor', `!!document.querySelector('.monaco-editor .squiggly-error')`)
+    compile.status = await run<string>(`document.querySelector('.status-compile').textContent`)
+  }
+
   await fs.rm(smoke.folder, { recursive: true, force: true })
   const ok = problems.length === 0
-  console.log(JSON.stringify({ ok, problems, ...layout, listed, monaco: !!shown, colours, saved }, null, 2))
+  console.log(JSON.stringify({ ok, problems, ...layout, listed, monaco: !!shown, colours, saved, compile }, null, 2))
   return ok ? 0 : 1
 }

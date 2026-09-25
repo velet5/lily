@@ -121,7 +121,9 @@ npm run test:e2e        # packages the VSIX and runs a sample score through it
 ```
 
 - Nothing under `src/compile/`, `src/intellisense/` (except `provider.ts`),
-  `src/diagnostics/parse.ts` or `tools/` may import `vscode`.
+  `src/diagnostics/parse.ts`, `src/diagnostics/span.ts` or `tools/` may import
+  `vscode`; `span.ts` imports nothing from Node either (Lily Studio's renderer
+  uses it).
 - A file or directory that is needed at run time must be let into the VSIX in
   `.vscodeignore`; only `npm run test:e2e` notices when it is not.
 - `data/completions.json` is generated (`npm run gen:completions`); do not edit it.

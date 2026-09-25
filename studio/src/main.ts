@@ -1,11 +1,13 @@
 // Lily Studio's main process: one window with the fixed layout of
-// renderer/index.html (DECISIONS D28), and the file access behind it (D29).
-// Later steps add the compile and playback services here and reach the
-// renderer only through preload.ts.
+// renderer/index.html (DECISIONS D28), the file access behind it (D29) and
+// compile on save (D31). Later steps add the playback service here and reach
+// the renderer only through preload.ts.
 import { app, BrowserWindow, dialog, ipcMain, Menu, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
 import * as path from 'node:path'
+import { CompileService } from '../../src/compile/compiler'
 import { Access, createFromTemplate, isInside, isScoreFile, listFolder, readScore, unusedName, writeScore, SCORE_EXTENSIONS } from './files'
 import { Channel, type Command, type Opened } from './ipc'
+import { StudioCompiler } from './main/compileService'
 import { prepareSmokeTest, runSmokeTest } from './smokeTest'
 import { TEMPLATES, type TemplateId } from './templates'
 
@@ -13,6 +15,12 @@ import { TEMPLATES, type TemplateId } from './templates'
 const smokeTest = process.argv.includes('--smoke-test')
 
 const access = new Access()
+const compiler = new StudioCompiler({
+  compiler: new CompileService(),
+  candidates: async () => (access.folder === undefined ? [] : (await listFolder(access.folder)).files.map((f) => f.path)),
+  emit: (event) => mainWindow?.webContents.send(Channel.compile, event),
+  lilypondPath: process.env.LILYPOND_PATH,
+})
 /** Whether the renderer reports unsaved changes; guards closing the window. */
 let dirty = false
 let mainWindow: BrowserWindow | undefined
@@ -137,10 +145,13 @@ function registerIpc(): void {
     return text
   })
 
-  ipcMain.handle(Channel.saveFile, (event, file: unknown, text: unknown) => {
+  ipcMain.handle(Channel.saveFile, async (event, file: unknown, text: unknown) => {
     owner(event)
     if (typeof text !== 'string') throw new Error('Expected the text to save.')
-    return writeScore(access.check(file), text)
+    const allowed = access.check(file)
+    await writeScore(allowed, text)
+    // The save is done; the compile reports on Channel.compile when it ends.
+    void compiler.saved(allowed)
   })
 
   ipcMain.handle(Channel.newScore, async (event, template: unknown) => {
@@ -243,4 +254,13 @@ if (!app.requestSingleInstanceLock()) {
 
   // The studio is its one window; closing it ends the application, on macOS too.
   app.on('window-all-closed', () => app.quit())
+
+  // Stop lilypond and delete the pages in the temp directory before exiting.
+  let disposed = false
+  app.on('will-quit', (event) => {
+    if (disposed) return
+    event.preventDefault()
+    disposed = true
+    void compiler.dispose().finally(() => app.quit())
+  })
 }

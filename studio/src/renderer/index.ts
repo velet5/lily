@@ -1,8 +1,9 @@
 // The renderer's entry point, bundled into dist/renderer/app.js: connects the
 // file list, the editor and the status line to `window.studio` (preload.ts).
-import type { Opened } from '../ipc'
+import type { CompileEvent, Opened } from '../ipc'
 import type { StudioApi } from '../preload'
 import type { TemplateId } from '../templates'
+import { compileStatus, DiagnosticStore } from './diagnostics'
 import { ScoreEditor } from './editor'
 import { button, FileList } from './files'
 
@@ -23,9 +24,17 @@ const pane = (name: string) => document.querySelector<HTMLElement>(`[data-pane="
 const editorPane = pane('editor')
 const filesPane = pane('files')
 const statusLine = pane('status')
+// The status line: messages on the left, the last compile on the right (D31).
+const statusMessage = document.createElement('span')
+statusMessage.className = 'status-message'
+const compileButton = document.createElement('button')
+compileButton.className = 'status-compile'
+compileButton.type = 'button'
+compileButton.hidden = true
+statusLine.replaceChildren(statusMessage, compileButton)
 
 function status(message: string): void {
-  statusLine.textContent = message
+  statusMessage.textContent = message
 }
 
 function report(error: unknown): void {
@@ -47,10 +56,12 @@ monacoHost.className = 'monaco-host'
 monacoHost.hidden = true
 editorBody.append(emptyEditor, monacoHost)
 
+const diagnostics = new DiagnosticStore()
 const editor = new ScoreEditor({
   container: monacoHost,
   save: (file, text) => studio.saveFile(file, text),
   onChange: refreshMarkers,
+  diagnostics: (file) => diagnostics.for(file),
 })
 
 const files = new FileList({
@@ -61,13 +72,41 @@ const files = new FileList({
   onNewScore: () => showTemplates(),
 })
 
+/** A path as the file list shows it, else its name. */
+function displayName(file: string): string {
+  return files.folder?.files.find((f) => f.path === file)?.relative ?? file.split(/[\\/]/).pop() ?? file
+}
+
+/** The score whose compile the status line shows; a click goes to its first problem. */
+let shownRoot: string | undefined
+
+function compiled(event: CompileEvent): void {
+  if (event.kind === 'finished') {
+    for (const file of diagnostics.update(event.outcome)) editor.mark(file)
+  }
+  const { text, tone, detail } = compileStatus(event, displayName)
+  shownRoot = event.kind === 'started' ? event.rootFile : event.outcome.rootFile
+  compileButton.hidden = false
+  compileButton.textContent = text
+  compileButton.dataset.tone = tone
+  compileButton.title = detail ?? (tone === 'error' || tone === 'warning' ? 'Show the first problem' : '')
+}
+
+async function showFirstProblem(): Promise<void> {
+  const problem = shownRoot && diagnostics.first(shownRoot)
+  if (!problem) return
+  await open(problem.file)
+  if (editor.file === problem.file) editor.reveal(problem.line, problem.column)
+}
+
+compileButton.addEventListener('click', () => void showFirstProblem())
+
 /** Unsaved-change marks: the file list, the editor header, the window. */
 function refreshMarkers(): void {
   const dirty = editor.dirtyFiles()
   files.setDirty(dirty)
   const file = editor.file
-  const relative = file && files.folder?.files.find((f) => f.path === file)?.relative
-  const name = relative ?? file?.split(/[\\/]/).pop()
+  const name = file && displayName(file)
   const unsaved = !!file && editor.isDirty(file)
   editorTitle.textContent = name ?? 'Editor'
   editorPane.dataset.file = file ?? ''
@@ -142,6 +181,8 @@ templateMenu.addEventListener('focusout', (event) => {
 templateMenu.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') templateMenu.hidden = true
 })
+
+studio.onCompile(compiled)
 
 studio.onCommand((command) => {
   switch (command) {

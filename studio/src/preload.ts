@@ -1,9 +1,9 @@
 // The only bridge between the sandboxed renderer and the main process
 // (DECISIONS D28). It exposes `window.studio`, one named IPC channel per call
-// (src/ipc.ts); later steps add the compile and playback calls here.
+// (src/ipc.ts); later steps add the playback calls here.
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FolderListing } from './files'
-import { Channel, type Command, type Opened } from './ipc'
+import { Channel, type Command, type CompileEvent, type Opened } from './ipc'
 import { TEMPLATES, type TemplateId } from './templates'
 
 const studio = {
@@ -27,6 +27,12 @@ const studio = {
     const handler = (_event: unknown, command: Command) => listener(command)
     ipcRenderer.on(Channel.command, handler)
     return () => ipcRenderer.removeListener(Channel.command, handler)
+  },
+  /** Runs `listener` when a compile starts or ends; saving a file starts one (D31). */
+  onCompile(listener: (event: CompileEvent) => void): () => void {
+    const handler = (_event: unknown, compile: CompileEvent) => listener(compile)
+    ipcRenderer.on(Channel.compile, handler)
+    return () => ipcRenderer.removeListener(Channel.compile, handler)
   },
 }
 
