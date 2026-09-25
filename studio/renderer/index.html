@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; font-src 'self'"
+    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Lily Studio</title>
+    <link rel="stylesheet" href="layout.css" />
+  </head>
+  <body>
+    <!-- The fixed layout of DECISIONS D28: files | editor | preview, a status
+         line below. The panes are filled by later steps. -->
+    <main class="studio">
+      <nav class="pane files" data-pane="files" aria-label="Files">
+        <header class="pane-header">Files</header>
+        <div class="pane-body placeholder">No folder open</div>
+      </nav>
+      <section class="pane editor" data-pane="editor" aria-label="Editor">
+        <header class="pane-header">Editor</header>
+        <div class="pane-body placeholder">No score open</div>
+      </section>
+      <section class="pane preview" data-pane="preview" aria-label="Preview">
+        <header class="pane-header">Preview</header>
+        <div class="pane-body placeholder">The score appears here</div>
+      </section>
+      <footer class="status" data-pane="status" role="status"></footer>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "name": "lily-studio",
+  "productName": "Lily Studio",
+  "description": "A small desktop studio for LilyPond scores: files, editor and preview in one fixed window.",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "start": "node esbuild.mjs && electron .",
+    "check-types": "tsc --noEmit -p .",
+    "test": "node esbuild.mjs && electron . --smoke-test"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "electron": "^44.4.5",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}

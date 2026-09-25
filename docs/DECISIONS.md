@@ -1274,3 +1274,46 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   run, the hidden webview) and `test/preview.test.ts` (a real switch from
   `pages.ly` to `simple.ly` redraws one page in the same tab; `melody.ily`
   leaves it).
+
+---
+
+## D28 — Lily Studio: an Electron shell with a fixed layout
+
+**Status:** proposed · **Refines:** D1, D12
+
+- **Decision.** Lily Studio, an editor for LilyPond scores aimed at people who
+  do not program, is a separate Electron application in `studio/`, with its
+  own `package.json`, lock file and `node_modules`. It is not a fork or a
+  build of VS Code, and it does not host the extension. It opens one window
+  whose layout is fixed: a 240 px file list on the left, the editor and the
+  preview sharing the rest in equal halves, a status line along the bottom.
+  Panes cannot be moved, resized, hidden, split or tabbed.
+- **Why not VS Code itself.** A stripped-down Code-OSS build or
+  `vscode-web` brings the workbench (activity bar, panels, settings, the
+  extension host) that the studio exists to leave out, and keeping a fork up to
+  date costs more than the whole studio. What the studio needs from VS Code is
+  the editor, which ships separately as Monaco, and the TextMate grammar, which
+  `vscode-textmate` reads. Everything else is the extension's own code: the
+  vscode-free modules under `src/compile/`, `src/diagnostics/parse.ts` and
+  `src/preview/` (the rule of AGENTS.md is what makes them reusable here), and
+  the webview scripts in `media/`.
+- **Processes.** `src/main.ts` is the main process; later steps put file
+  access, compiling and watching there. The renderer (`renderer/`) is
+  sandboxed, with context isolation and no Node integration, and a CSP that
+  allows only its own files; it reaches the main process only through
+  `window.studio`, exposed by `src/preload.ts`, one named IPC channel per
+  call. It never navigates or opens windows. A second launch focuses the
+  existing window, and closing the window quits, on macOS too.
+- **Build.** `studio/esbuild.mjs` bundles `src/main.ts` and `src/preload.ts`
+  into `studio/dist/` as CommonJS with `electron` external; it may import from
+  the extension's `src/` by relative path. `renderer/` is loaded as written
+  until it needs a bundle. The root `tsconfig.json`, `.vscodeignore` and the
+  extension's tests do not see `studio/`; root `npm run lint` does.
+- **Verified.** `cd studio && npm install && npm test` builds and starts
+  Electron 44 with `--smoke-test`: the window loads hidden, the three panes
+  (`data-pane="files|editor|preview"`) are checked to be present, at least
+  100 px each and left to right, `window.studio` exists, and the process exits
+  0 or 1 with a JSON report. `npm run check-types` in `studio/` is clean.
+  macOS only; not in CI yet.
+- **Not done here.** Monaco, files, compiling, preview, PDF, watching, MIDI,
+  live preview and packaging are the following steps.
