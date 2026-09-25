@@ -13,8 +13,9 @@
     "test:unit": "node esbuild.mjs --tests && node --test \"out/test/*.test.js\"",
     "test:smoke": "node esbuild.mjs && electron . --smoke-test",
     "test": "npm run test:unit && npm run test:smoke",
-    "dist": "node esbuild.mjs --production && electron-builder --mac dmg",
-    "test:e2e": "npm run dist && node esbuild.mjs --e2e && node --test \"out/test/e2e/*.test.js\""
+    "dist": "node esbuild.mjs --production && APPLE_KEYCHAIN_PROFILE=lily-notary electron-builder --mac dmg && APPLE_KEYCHAIN_PROFILE=lily-notary node scripts/notarize-dmg.mjs",
+    "test:e2e": "npm run dist && node esbuild.mjs --e2e && node --test \"out/test/e2e/*.test.js\"",
+    "dist:local": "node esbuild.mjs --production && electron-builder --mac dmg -c.mac.identity=- -c.mac.hardenedRuntime=false -c.mac.notarize=false -c.dmg.sign=false"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

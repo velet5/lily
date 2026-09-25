@@ -1725,3 +1725,33 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   checks the Applications link, copies the app out, verifies its signature
   and the unpacked runtime, and runs the installed app's smoke test with the
   Finder's bare PATH.
+
+---
+
+## D38 — Lily Studio: Developer ID signing and notarization
+
+**Status:** proposed · **Refines:** D37
+
+- **Signing.** `npm run dist` in `studio/` signs with the Developer ID
+  Application certificate of team KTSS95TY2K, named in
+  `electron-builder.yml`. The hardened runtime is on, since Apple notarizes
+  nothing else. `build/entitlements.mac.plist` allows V8's JIT and
+  executable memory, for JavaScript and the grammar's WebAssembly. lilypond
+  is a separate, separately signed process and needs no entitlement.
+- **Notarization.** The app and the DMG around it are each uploaded to
+  Apple and stapled. electron-builder does the app, `scripts/notarize-dmg.mjs`
+  the DMG, which is signed for this (`dmg.sign`). Both read the
+  `notarytool store-credentials` profile named in `APPLE_KEYCHAIN_PROFILE`
+  (`lily-notary`, set by the script), so no Apple ID or password is in
+  the repository or the environment. A downloaded DMG and the app from it
+  open without a warning, offline too.
+- **Bundle ID.** `io.github.velet5.lily-studio`, a name the author controls,
+  in place of D37's `org.lilypond.lily-studio`. `userData` follows the
+  product name and does not move.
+- **Without the certificate.** `npm run dist:local` builds as D37 did:
+  ad-hoc, no hardened runtime, not notarized.
+- **Verified.** `npm run test:e2e` also checks the Developer ID authority,
+  the hardened runtime, the stapled ticket (`stapler validate`) and
+  `spctl --assess` reporting “Notarized Developer ID”. It skips these for a
+  `dist:local` build. The installed app's smoke test passes with the
+  hardened runtime on: compiles, the warm lilypond worker, PDF and playback.

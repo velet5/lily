@@ -62,7 +62,19 @@ describe('the macOS package', { skip: process.platform !== 'darwin' && 'the DMG 
       await fs.access(path.join(resources, 'app.asar.unpacked', 'dist', 'runtime', name))
     }
     const plist = await fs.readFile(path.join(installed, 'Contents', 'Info.plist'), 'utf8')
-    assert.match(plist, /<string>org\.lilypond\.lily-studio<\/string>/)
+    assert.match(plist, /<string>io\.github\.velet5\.lily-studio<\/string>/)
+  })
+
+  test('Gatekeeper accepts the app as notarized (D38)', async (t) => {
+    assert.ok(installed, 'installed by the test before')
+    // codesign -d prints to stderr.
+    const { stderr } = await run('codesign', ['-dv', '--verbose=2', installed])
+    if (!/Authority=Developer ID Application/.test(stderr)) return t.skip('built by `npm run dist:local`, not signed with a Developer ID')
+    assert.match(stderr, /flags=0x10000\(runtime\)/, 'the hardened runtime is on')
+    // The ticket is stapled, so a Mac offline accepts it too.
+    await run('xcrun', ['stapler', 'validate', installed])
+    const assessed = await run('spctl', ['--assess', '--type', 'execute', '--verbose=2', installed])
+    assert.match(assessed.stderr, /source=Notarized Developer ID/)
   })
 
   test('the installed app launches and passes its smoke test', { timeout: 120_000 }, async () => {

@@ -231,13 +231,19 @@ cd studio
 npm install
 npm start              # run from the sources
 npm test               # unit tests, then the window's smoke test
-npm run dist           # release/Lily Studio-<version>-<arch>.dmg
+npm run dist           # release/Lily Studio-<version>-<arch>.dmg, signed and notarized
+npm run dist:local     # the same DMG, ad-hoc signed, for a Mac without the certificate
 npm run test:e2e       # build the DMG, install the app from it, launch it
 ```
 
-Open the DMG and drag Lily Studio to Applications. The app is not notarized:
-on another Mac, open it the first time with right-click › Open (or *System
-Settings › Privacy & Security › Open Anyway*).
+Open the DMG and drag Lily Studio to Applications. The app is signed with a
+Developer ID and notarized by Apple, so it opens without a warning. A
+`dist:local` build is not: on another Mac, open it the first time with
+right-click › Open.
+
+`npm run dist` needs the Developer ID Application certificate in the login
+keychain and a notarization profile named `lily-notary`, stored once with
+`xcrun notarytool store-credentials lily-notary --apple-id <id> --team-id <team>`.
 
 ## Development
 
