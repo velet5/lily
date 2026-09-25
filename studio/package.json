@@ -10,12 +10,15 @@
     "build": "node esbuild.mjs",
     "start": "node esbuild.mjs && electron .",
     "check-types": "tsc --noEmit -p .",
-    "test": "node esbuild.mjs && electron . --smoke-test"
+    "test:unit": "node esbuild.mjs --tests && node --test \"out/test/*.test.js\"",
+    "test:smoke": "node esbuild.mjs && electron . --smoke-test",
+    "test": "npm run test:unit && npm run test:smoke"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "electron": "^44.4.5",
     "esbuild": "^0.28.2",
+    "monaco-editor": "^0.57.0",
     "typescript": "^7.0.2"
   }
 }

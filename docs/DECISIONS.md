@@ -1317,3 +1317,51 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   macOS only; not in CI yet.
 - **Not done here.** Monaco, files, compiling, preview, PDF, watching, MIDI,
   live preview and packaging are the following steps.
+
+---
+
+## D29 — Lily Studio: Monaco, the file list and file access
+
+**Status:** proposed · **Refines:** D28
+
+- **Editor.** The editor pane is Monaco 0.57 (`monaco-editor/editor` with
+  `features/register.all`, no bundled languages), created by
+  `studio/src/renderer/editor.ts`. Each opened file keeps its own model under
+  `Uri.file(path)` with language id `lilypond` (the grammar comes in the next
+  step), so unsaved edits survive switching files. A file is unsaved while its
+  model's alternative version id differs from the one last written; undoing
+  back to the saved text clears the mark. The theme follows the system.
+- **Renderer bundle.** `studio/esbuild.mjs` now also bundles
+  `src/renderer/index.ts` into `dist/renderer/app.js` (a classic IIFE script,
+  Monaco's CSS as `app.css`, the codicon font as a file) and Monaco's worker
+  into `dist/renderer/editor.worker.js`, which `MonacoEnvironment.getWorker`
+  starts from `file://`. The CSP gains `worker-src 'self'` and
+  `style-src 'unsafe-inline'`, because Monaco inserts `<style>` elements;
+  scripts stay `'self'` only.
+- **File access.** Paths reach the main process only through `window.studio`
+  (`studio/src/ipc.ts` names the channels). `studio/src/files.ts` holds an
+  `Access` that allows the folder opened with a dialog and single files picked
+  in one; every read and write is checked against it, so the renderer cannot
+  name an arbitrary path. Only `.ly`, `.ily` and `.lyi` files are listed,
+  read or written. The list descends at most four directories, skips hidden
+  entries, `node_modules`, `out` and `dist`, and stops at 500 files. Files are
+  written as UTF-8 exactly as the editor holds them.
+- **New scores.** File › New Score… (and the New button) offers the templates
+  of `studio/src/templates.ts` — Melody, Song with Lyrics, Piano — then a save
+  dialog that proposes `Untitled.ly` (or `Untitled 2.ly` …) in the open folder.
+  A score saved elsewhere makes its own folder the open one. Each template
+  compiles with LilyPond 2.24 without warnings; a test checks that.
+- **Unsaved changes.** Marked with `●` after the name in the file list and the
+  editor header, and with the macOS close-button dot (`setDocumentEdited`).
+  Closing the window with unsaved changes asks Save / Don't Save / Cancel;
+  Save saves every unsaved file and closes only when all writes succeeded.
+- **Menu.** The application menu has only File (New Score, Open Score, Open
+  Folder, Save, Save All, Close), Edit (the standard roles, so copy, paste and
+  undo reach Monaco) and Window. Menu items send a command to the renderer,
+  which calls the same IPC as its buttons.
+- **Verified.** In `studio/`: `npm run test:unit` (listing, access checks,
+  tree rows, templates compiled with lilypond when installed) and
+  `npm run test:smoke`, which opens a scratch folder in the hidden window,
+  checks the file list, opens a score in Monaco, types into it, sees both
+  unsaved marks, saves through the menu command and reads the file back.
+  `npm test` runs both.
