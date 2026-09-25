@@ -12,16 +12,23 @@
     "check-types": "tsc --noEmit -p .",
     "test:unit": "node esbuild.mjs --tests && node --test \"out/test/*.test.js\"",
     "test:smoke": "node esbuild.mjs && electron . --smoke-test",
-    "test": "npm run test:unit && npm run test:smoke"
+    "test": "npm run test:unit && npm run test:smoke",
+    "dist": "node esbuild.mjs --production && electron-builder --mac dmg",
+    "test:e2e": "npm run dist && node esbuild.mjs --e2e && node --test \"out/test/e2e/*.test.js\""
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
     "electron": "^44.4.5",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "monaco-editor": "^0.57.0",
     "pdfjs-dist": "^5.7.284",
     "typescript": "^7.0.2",
     "vscode-oniguruma": "^2.0.1",
     "vscode-textmate": "^9.3.2"
+  },
+  "author": {
+    "name": "Oleg Arshinskii",
+    "email": "velet592@gmail.com"
   }
 }

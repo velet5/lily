@@ -25,8 +25,11 @@ export interface StudioCompilerOptions {
   /** The `.ly` files that may include a saved `.ily`: the open folder's. */
   candidates(): Promise<string[]>
   emit(event: CompileEvent): void
-  /** Like `lily.lilypond.path`; empty means PATH, then well-known directories. */
-  lilypondPath?: string
+  /**
+   * Like `lily.lilypond.path`; empty means PATH, then well-known directories.
+   * A function is asked on every compile: the setup may change it (D37).
+   */
+  lilypondPath?: string | (() => string | undefined)
   /** Parent of the PDF compiles' private directories. Defaults to the OS temp dir. */
   tmpRoot?: string
   /**
@@ -111,7 +114,7 @@ export class StudioCompiler {
     try {
       const result = await this.options.compiler.compile({
         rootFile,
-        lilypondPath: this.options.lilypondPath,
+        lilypondPath: this.lilypondPath(),
         ...(buffers?.size ? { buffers } : {}),
         acceleration: this.options.acceleration ?? 'off',
       })
@@ -170,7 +173,7 @@ export class StudioCompiler {
       targetDir = await fs.mkdtemp(path.join(this.options.tmpRoot ?? os.tmpdir(), 'lily-studio-pdf-'))
       const result = await this.options.compiler.export({
         rootFile,
-        lilypondPath: this.options.lilypondPath,
+        lilypondPath: this.lilypondPath(),
         acceleration: 'off',
         format: 'pdf',
         targetDir,
@@ -188,6 +191,11 @@ export class StudioCompiler {
     } finally {
       if (targetDir) await fs.rm(targetDir, { recursive: true, force: true })
     }
+  }
+
+  private lilypondPath(): string | undefined {
+    const configured = this.options.lilypondPath
+    return typeof configured === 'function' ? configured() : configured
   }
 
   dispose(): Promise<void> {

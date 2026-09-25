@@ -1,14 +1,16 @@
 // The renderer's entry point, bundled into dist/renderer/app.js: connects the
-// file list, the editor and the status line to `window.studio` (preload.ts).
+// file list, the editor and the status line to `window.studio` (preload.ts),
+// with the welcome screen and LilyPond's setup (D37).
 import type { CompileEvent, FileChange, Opened } from '../ipc'
 import type { StudioApi } from '../preload'
 import type { TemplateId } from '../templates'
-import { compileStatus, DiagnosticStore } from './diagnostics'
+import { compileStatus, DiagnosticStore, problemSummary } from './diagnostics'
 import { ScoreEditor } from './editor'
 import { button, FileList } from './files'
 import { PdfView } from './pdfView'
 import { ScorePlayer } from './player'
 import { ScorePreview } from './preview'
+import { Welcome } from './welcome'
 
 declare global {
   interface Window {
@@ -80,13 +82,27 @@ const editorBody = editorPane.querySelector<HTMLElement>('.pane-body')!
 const editorTitle = editorPane.querySelector<HTMLElement>('.pane-title')!
 editorBody.classList.remove('placeholder')
 editorBody.replaceChildren()
-const emptyEditor = document.createElement('div')
-emptyEditor.className = 'editor-empty placeholder'
-emptyEditor.textContent = 'Choose a score on the left, or create a new one.'
 const monacoHost = document.createElement('div')
 monacoHost.className = 'monaco-host'
 monacoHost.hidden = true
-editorBody.append(emptyEditor, monacoHost)
+editorBody.append(monacoHost)
+
+// Shown while no score is open (D37); Help › Welcome shows it again.
+const welcome = new Welcome({
+  host: editorBody,
+  studio,
+  onSample: () => void run(studio.openSample()),
+  onNewScore: () => showTemplates(),
+  onOpenFile: () => void run(studio.openFile()),
+  onOpenFolder: () => void run(studio.openFolder()),
+  onBack: () => showEditor(),
+})
+
+function showEditor(): void {
+  if (!editor.file) return
+  welcome.hide()
+  monacoHost.hidden = false
+}
 
 const diagnostics = new DiagnosticStore()
 const editor = new ScoreEditor({
@@ -147,6 +163,40 @@ const tabs = (['svg', 'pdf'] as const).map((name) => {
 })
 previewPane.querySelector('.preview-tabs')!.append(...tabs)
 
+// What went wrong in the last compile, in plain words, above the score (D37).
+const banner = document.createElement('button')
+banner.type = 'button'
+banner.className = 'problem-banner'
+banner.hidden = true
+const bannerHeading = document.createElement('strong')
+const bannerText = document.createElement('span')
+banner.append(bannerHeading, bannerText)
+previewPane.querySelector('.pane-header')!.after(banner)
+let bannerAction: (() => void) | undefined
+banner.addEventListener('click', () => bannerAction?.())
+
+function showBanner(event: CompileEvent): void {
+  if (event.kind === 'started') return
+  const outcome = event.outcome
+  if (outcome.state === 'no-root') return
+  if (outcome.state === 'no-lilypond') {
+    banner.hidden = false
+    banner.dataset.tone = 'error'
+    bannerHeading.textContent = 'LilyPond is needed to engrave the score'
+    bannerText.textContent = 'Click here to set it up. It takes a few minutes, once.'
+    bannerAction = () => welcome.openSetup()
+    return
+  }
+  const summary = problemSummary(outcome, displayName)
+  banner.hidden = !summary
+  if (!summary) return
+  banner.dataset.tone = summary.tone
+  bannerHeading.textContent = summary.heading
+  bannerText.textContent = summary.text
+  banner.title = 'Show it in the editor'
+  bannerAction = () => void showProblem(summary.diagnostic)
+}
+
 function showView(name: 'svg' | 'pdf'): void {
   previewPane.dataset.mode = name
   for (const tab of tabs) tab.setAttribute('aria-selected', String(tab.dataset.view === name))
@@ -181,19 +231,22 @@ function compiled(event: CompileEvent): void {
   const { text, tone, detail } = compileStatus(event, displayName)
   shownRoot = event.kind === 'started' ? event.rootFile : event.outcome.rootFile
   compileButton.hidden = false
+  compileButton.dataset.state = event.kind === 'started' ? 'busy' : event.outcome.state
   compileButton.textContent = text
   compileButton.dataset.tone = tone
   compileButton.title = detail ?? (tone === 'error' || tone === 'warning' ? 'Show the first problem' : '')
 }
 
-async function showFirstProblem(): Promise<void> {
-  const problem = shownRoot && diagnostics.first(shownRoot)
-  if (!problem) return
+async function showProblem(problem: { file: string; line: number; column?: number }): Promise<void> {
   await open(problem.file)
   if (editor.file === problem.file) editor.reveal(problem.line, problem.column)
 }
 
-compileButton.addEventListener('click', () => void showFirstProblem())
+compileButton.addEventListener('click', () => {
+  if (compileButton.dataset.state === 'no-lilypond') return welcome.openSetup()
+  const problem = shownRoot && diagnostics.first(shownRoot)
+  if (problem) void showProblem(problem)
+})
 
 /** A click on a note in the preview: its place in the source, opened in the editor (D32). */
 async function revealSource(href: string): Promise<void> {
@@ -224,7 +277,7 @@ function refreshMarkers(): void {
 async function open(file: string): Promise<void> {
   try {
     const text = editor.isOpen(file) ? undefined : await studio.readFile(file)
-    emptyEditor.hidden = true
+    welcome.hide()
     monacoHost.hidden = false
     editor.show(file, text)
     files.setActive(file)
@@ -290,6 +343,7 @@ templateMenu.addEventListener('keydown', (event) => {
 
 studio.onCompile((event) => {
   compiled(event)
+  showBanner(event)
   preview.compiled(event)
   player.compiled(event)
   pdfView.compiled(event)
@@ -339,8 +393,17 @@ studio.onCommand((command) => {
       return void save(false)
     case 'save-all':
       return void save(true)
+    case 'welcome':
+      monacoHost.hidden = true
+      return welcome.show(!!editor.file)
+    case 'setup-lilypond':
+      return welcome.openSetup()
   }
 })
+
+welcome.show(false)
+// First run, and every run after it: when LilyPond cannot be found, the setup opens.
+void welcome.check(true).catch(report)
 
 // A folder the main process already has (the smoke test's) is shown at once.
 void studio.listFolder().then((listing) => {

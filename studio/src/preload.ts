@@ -3,7 +3,17 @@
 // (src/ipc.ts).
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FolderListing } from './files'
-import { Channel, type Command, type CompileEvent, type FileChange, type Opened, type PdfOutcome, type SourceLocation } from './ipc'
+import {
+  Channel,
+  type Command,
+  type CompileEvent,
+  type FileChange,
+  type LilyPondStatus,
+  type Opened,
+  type PdfOutcome,
+  type SetupLink,
+  type SourceLocation,
+} from './ipc'
 import { TEMPLATES, type TemplateId } from './templates'
 
 const studio = {
@@ -46,6 +56,14 @@ const studio = {
   edited: (file: string, text: string | null): void => ipcRenderer.send(Channel.edited, file, text),
   /** Turns live preview on or off. */
   setLive: (on: boolean): void => ipcRenderer.send(Channel.setLive, on),
+  /** Looks for LilyPond and asks it for its version (D37). */
+  lilypondStatus: (): Promise<LilyPondStatus> => ipcRenderer.invoke(Channel.lilypondStatus),
+  /** Asks where LilyPond is; undefined when the dialog was cancelled. */
+  chooseLilyPond: (): Promise<LilyPondStatus | undefined> => ipcRenderer.invoke(Channel.chooseLilyPond),
+  /** Opens a page of the setup in the browser. */
+  openLink: (link: SetupLink): Promise<void> => ipcRenderer.invoke(Channel.openLink, link),
+  /** Opens the sample score, writing it first when it is not there. */
+  openSample: (): Promise<Opened> => ipcRenderer.invoke(Channel.openSample),
   /** Runs `listener` for each menu command; returns a function that removes it. */
   onCommand(listener: (command: Command) => void): () => void {
     const handler = (_event: unknown, command: Command) => listener(command)

@@ -1,9 +1,11 @@
 // From compile outcomes to what the renderer shows (DECISIONS D31): markers for
 // Monaco, and the compile part of the status line. No Monaco and no DOM here,
-// so the tests run it under plain Node; editor.ts applies the markers.
+// so the tests run it under plain Node; editor.ts applies the markers. The
+// markers and the problem banner lead with plain words (plainLanguage.ts, D37).
 import type { LyDiagnostic } from '../../../src/diagnostics/parse'
 import { diagnosticSpan } from '../../../src/diagnostics/span'
 import type { CompileEvent, CompileOutcome } from '../ipc'
+import { explain, markerMessage } from './plainLanguage'
 
 /** Monaco's IMarkerData, with the severity by name; editor.ts maps it. */
 export interface Marker {
@@ -36,7 +38,7 @@ export function toMarkers(
       startColumn: span.start + 1,
       endLineNumber: line,
       endColumn: span.end + 1,
-      message: diagnostic.message,
+      message: markerMessage(diagnostic),
       severity: diagnostic.severity,
     }
   })
@@ -96,7 +98,7 @@ export function compileStatus(event: CompileEvent, name: (file: string) => strin
     case 'no-root':
       return { text: `Saved — no score includes ${score}`, tone: 'warning' }
     case 'no-lilypond':
-      return { text: 'LilyPond is not installed', tone: 'error', detail: outcome.message }
+      return { text: 'LilyPond is not installed', tone: 'error', detail: 'Click to set up LilyPond' }
     case 'error':
       return { text: 'LilyPond could not run', tone: 'error', detail: outcome.message }
     case 'ok':
@@ -114,5 +116,38 @@ export function compileStatus(event: CompileEvent, name: (file: string) => strin
         ? { text: `${score}: engraved with ${counts.join(', ')}`, tone: 'warning' }
         : { text: `${score}: engraved in ${seconds}`, tone: 'ok' }
     }
+  }
+}
+
+/** The banner over the preview after a compile with problems (D37). */
+export interface ProblemSummary {
+  tone: 'warning' | 'error'
+  /** “1 error in score.ly”. */
+  heading: string
+  /** Where the first problem is and what it means, in plain words. */
+  text: string
+  /** The first problem, which a click on the banner shows in the editor. */
+  diagnostic: LyDiagnostic
+}
+
+/**
+ * The first error of a finished compile, else its first warning, explained;
+ * undefined when there is nothing to explain.
+ */
+export function problemSummary(outcome: CompileOutcome, name: (file: string) => string): ProblemSummary | undefined {
+  const first = outcome.diagnostics.find((d) => d.severity === 'error') ?? outcome.diagnostics[0]
+  if (!first || (outcome.state !== 'ok' && outcome.state !== 'failed')) return undefined
+  const counts = [
+    outcome.errorCount ? plural(outcome.errorCount, 'error') : '',
+    outcome.warningCount ? plural(outcome.warningCount, 'warning') : '',
+  ].filter(Boolean)
+  const where = first.file === outcome.rootFile ? `Line ${first.line}` : `Line ${first.line} of ${name(first.file)}`
+  // Unknown messages are shown as LilyPond wrote them, first line only.
+  const what = explain(first) ?? `LilyPond says: ${first.message.split('\n')[0]}`
+  return {
+    tone: outcome.errorCount ? 'error' : 'warning',
+    heading: `${counts.join(', ')} in ${name(outcome.rootFile)}`,
+    text: `${where}: ${what}`,
+    diagnostic: first,
   }
 }

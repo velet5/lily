@@ -203,6 +203,42 @@ follow VS Code's own switches, which can be set per language:
   pane of its own, as **Open Preview to the Side** does.
 - Not included: MIDI input, and code formatting.
 
+## Lily Studio
+
+`studio/` holds Lily Studio, a small Mac app for LilyPond scores aimed at people
+who do not program: the files of a folder on the left, the text in the middle,
+the engraved score on the right, and nothing to configure. It shares the
+extension's compiler, error parser, grammar, preview and player, and needs
+LilyPond installed in the same way.
+
+- **First launch.** A welcome screen offers a sample score (Ode to Joy, saved
+  in *Documents › Lily Studio*), new scores from templates, and opening files.
+  If LilyPond cannot be found, a setup guide opens: download it, move it to
+  Applications, and show the studio where it is. *Help › Set Up LilyPond…*
+  brings it back.
+- **Editing.** Save with <kbd>⌘S</kbd>, or just type: the score follows as you
+  type (*Live preview* in the status line). Click a note to find it in the
+  text. The SVG/PDF switch shows the printable PDF, and *Export PDF* saves it
+  next to the score. ▶ plays the music and marks the notes as they sound.
+- **Mistakes** are underlined, and a note above the score explains the first
+  one in plain words, for example *“\stacato” is not a LilyPond command*.
+  Click it to go there.
+
+Build and install it:
+
+```sh
+cd studio
+npm install
+npm start              # run from the sources
+npm test               # unit tests, then the window's smoke test
+npm run dist           # release/Lily Studio-<version>-<arch>.dmg
+npm run test:e2e       # build the DMG, install the app from it, launch it
+```
+
+Open the DMG and drag Lily Studio to Applications. The app is not notarized:
+on another Mac, open it the first time with right-click › Open (or *System
+Settings › Privacy & Security › Open Anyway*).
+
 ## Development
 
 ```sh

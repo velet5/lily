@@ -19,3 +19,6 @@ test/e2e/workspace/sample.ly
 # OS files
 .DS_Store
 Thumbs.db
+
+# Lily Studio packages (npm run dist in studio/)
+release/

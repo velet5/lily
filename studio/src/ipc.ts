@@ -4,6 +4,7 @@ import type { LyDiagnostic } from '../../src/diagnostics/parse'
 import type { PlaybackTiming } from '../../src/preview/panel'
 import type { SourceLocation } from '../../src/preview/pointAndClick'
 import type { FolderListing } from './files'
+import type { LilyPondStatus, SetupLink } from './main/lilypondSetup'
 import type { FileChange } from './main/watcher'
 
 export const Channel = {
@@ -32,6 +33,14 @@ export const Channel = {
   edited: 'studio:edited',
   /** Live preview on or off, from the status line (D36). */
   setLive: 'studio:set-live',
+  /** Looks for LilyPond again and says whether it is ready (D37). */
+  lilypondStatus: 'studio:lilypond-status',
+  /** The setup's Choose LilyPond… dialog; keeps the choice when it is LilyPond (D37). */
+  chooseLilyPond: 'studio:choose-lilypond',
+  /** Opens one of the setup's SETUP_LINKS in the browser. */
+  openLink: 'studio:open-link',
+  /** Writes the sample score into Documents/Lily Studio, unless it is there, and opens it (D37). */
+  openSample: 'studio:open-sample',
 } as const
 
 /** A folder was opened, or a file whose folder becomes the open folder. */
@@ -42,7 +51,7 @@ export interface Opened {
 }
 
 /** Commands sent from the application menu to the renderer. */
-export type Command = 'new-score' | 'open-file' | 'open-folder' | 'save' | 'save-all'
+export type Command = 'new-score' | 'open-file' | 'open-folder' | 'save' | 'save-all' | 'welcome' | 'setup-lilypond'
 
 /**
  * How a compile ended (D31). `no-root`: a saved include that no score in the
@@ -92,4 +101,4 @@ export type CompileEvent =
   | { kind: 'started'; rootFile: string }
   | { kind: 'finished'; outcome: CompileOutcome }
 
-export type { FileChange, PlaybackTiming, SourceLocation }
+export type { FileChange, LilyPondStatus, PlaybackTiming, SetupLink, SourceLocation }

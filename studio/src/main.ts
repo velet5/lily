@@ -2,8 +2,10 @@
 // renderer/index.html (DECISIONS D28), the file access behind it (D29) and
 // compile on save (D31), the PDF tab's compile and export (D33), and the
 // watch on the files behind them (D34), and live preview of unsaved edits
-// (D36). They reach the renderer only through preload.ts.
-import { app, BrowserWindow, dialog, ipcMain, Menu, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
+// (D36), and LilyPond's setup and the sample score (D37). They reach the
+// renderer only through preload.ts.
+import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
+import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import { CompileService } from '../../src/compile/compiler'
 import { parseTextEdit } from '../../src/preview/pointAndClick'
@@ -11,18 +13,26 @@ import { Access, createFromTemplate, isInside, isScoreFile, listFolder, readScor
 import { Channel, type Command, type Opened } from './ipc'
 import { StudioCompiler } from './main/compileService'
 import { LiveCompile } from './main/liveCompile'
+import { choicePath, detectLilyPond, readSettings, searchPath, SETUP_LINKS, writeSettings, type LilyPondStatus, type Settings } from './main/lilypondSetup'
 import { ScoreWatcher } from './main/watcher'
 import { prepareSmokeTest, runSmokeTest } from './smokeTest'
-import { TEMPLATES, type TemplateId } from './templates'
+import { SAMPLE, TEMPLATES, type TemplateId } from './templates'
 
 /** Run by `npm test`: load the window hidden, drive it once, exit. */
 const smokeTest = process.argv.includes('--smoke-test')
 
 const access = new Access()
+/** userData/settings.json: the LilyPond chosen in the setup (D37). */
+let settings: Settings = {}
+const settingsFile = () => path.join(app.getPath('userData'), 'settings.json')
+// An app opened from the Finder has a bare PATH; lilypond's own helpers (gs) need more.
+process.env.PATH = searchPath(process.env.PATH)
 const compiler = new StudioCompiler({
   // runtime/, which esbuild.mjs copies beside this file: timing.ly maps the
-  // MIDI to the pages (D35), the rest speeds up compiles (D36).
-  compiler: new CompileService({ runtimeDir: path.join(__dirname, 'runtime') }),
+  // MIDI to the pages (D35), the rest speeds up compiles (D36). lilypond
+  // cannot read inside the app's asar archive, so the packaged app has it
+  // unpacked beside it (electron-builder.yml).
+  compiler: new CompileService({ runtimeDir: path.join(__dirname, 'runtime').replace(/app\.asar(?=[\\/])/, 'app.asar.unpacked') }),
   buffers: () => live.buffers(),
   acceleration: 'auto',
   candidates: async () => (access.folder === undefined ? [] : (await listFolder(access.folder)).files.map((f) => f.path)),
@@ -30,8 +40,9 @@ const compiler = new StudioCompiler({
     mainWindow?.webContents.send(Channel.compile, event)
     // A compile may have added or removed an include: watch the score as it is now.
     if (event.kind === 'finished' && event.outcome.state !== 'no-root') void watcher.watchScore(event.outcome.rootFile)
+    if (event.kind === 'finished') waitingForLilyPond = event.outcome.state === 'no-lilypond'
   },
-  lilypondPath: process.env.LILYPOND_PATH,
+  lilypondPath: () => settings.lilypondPath ?? process.env.LILYPOND_PATH,
 })
 /** Unsaved edits compile after a pause in typing, while the status line's switch is on (D36). */
 const live = new LiveCompile({ compiler })
@@ -47,6 +58,8 @@ const watcher = new ScoreWatcher({
     if (score && watcher.score) void compiler.compile(watcher.score)
   },
 })
+/** The last compile found no LilyPond; the setup compiles again once it is ready (D37). */
+let waitingForLilyPond = false
 /** Whether the renderer reports unsaved changes; guards closing the window. */
 let dirty = false
 let mainWindow: BrowserWindow | undefined
@@ -122,6 +135,14 @@ function sendCommand(command: Command): void {
 async function openFolder(folder: string, file?: string): Promise<Opened> {
   access.folder = path.resolve(folder)
   return { listing: await listFolder(access.folder), file }
+}
+
+/** Looks for LilyPond as a compile would, and puts its directory on PATH. */
+async function lilypondStatus(configuredPath = settings.lilypondPath ?? process.env.LILYPOND_PATH): Promise<LilyPondStatus> {
+  const status = await detectLilyPond({ configuredPath })
+  if (status.path) process.env.PATH = searchPath(process.env.PATH, path.dirname(status.path))
+  if (status.state === 'ready' && waitingForLilyPond && compiler.current) void compiler.compile(compiler.current)
+  return status
 }
 
 const scoreFilters = [{ name: 'LilyPond', extensions: SCORE_EXTENSIONS.map((e) => e.slice(1)) }]
@@ -236,6 +257,52 @@ function registerIpc(): void {
     return response === 0
   })
 
+  ipcMain.handle(Channel.lilypondStatus, async (event) => {
+    owner(event)
+    return lilypondStatus()
+  })
+
+  ipcMain.handle(Channel.chooseLilyPond, async (event) => {
+    const result = await dialog.showOpenDialog(owner(event), {
+      title: 'Choose LilyPond',
+      message: 'Choose the LilyPond folder you downloaded, or the lilypond program in its bin folder.',
+      buttonLabel: 'Choose',
+      properties: ['openFile', 'openDirectory'],
+      defaultPath: '/Applications',
+    })
+    const chosen = result.filePaths[0]
+    if (result.canceled || !chosen) return undefined
+    const configuredPath = choicePath(chosen)
+    const status = await lilypondStatus(configuredPath)
+    if (status.state === 'missing') {
+      return { ...status, message: `There is no LilyPond in ${chosen}. Choose the folder you downloaded from lilypond.org, or the lilypond program inside its bin folder.` }
+    }
+    // Kept even when too old or broken, so the message stays about this one.
+    settings = { ...settings, lilypondPath: configuredPath }
+    await writeSettings(settingsFile(), settings)
+    return status
+  })
+
+  ipcMain.handle(Channel.openLink, async (event, link: unknown) => {
+    owner(event)
+    // Only the setup's own pages; the renderer cannot name any other address.
+    if (typeof link !== 'string' || !Object.hasOwn(SETUP_LINKS, link)) throw new Error(`Unknown link: ${String(link)}`)
+    await shell.openExternal(SETUP_LINKS[link as keyof typeof SETUP_LINKS])
+  })
+
+  ipcMain.handle(Channel.openSample, async (event) => {
+    owner(event)
+    const folder = path.join(app.getPath('documents'), 'Lily Studio')
+    const file = path.join(folder, SAMPLE.name)
+    await fs.mkdir(folder, { recursive: true })
+    // An edited sample is the user's now: it is opened, never written over.
+    await fs.writeFile(file, SAMPLE.text, { flag: 'wx' }).catch((error: NodeJS.ErrnoException) => {
+      if (error.code !== 'EEXIST') throw error
+    })
+    access.allowFile(file)
+    return openFolder(folder, file)
+  })
+
   ipcMain.on(Channel.edited, (event, file: unknown, text: unknown) => {
     if (BrowserWindow.fromWebContents(event.sender) !== mainWindow) return
     if (typeof text !== 'string' && text !== null) return
@@ -287,6 +354,15 @@ function buildMenu(): Menu {
     },
     { role: 'editMenu' },
     { role: 'windowMenu' },
+    {
+      role: 'help',
+      submenu: [
+        { label: 'Welcome', click: () => sendCommand('welcome') },
+        { label: 'Set Up LilyPond…', click: () => sendCommand('setup-lilypond') },
+        { type: 'separator' },
+        { label: 'LilyPond Learning Manual', click: () => void shell.openExternal(SETUP_LINKS.learn) },
+      ],
+    },
   ]
   return Menu.buildFromTemplate(template)
 }
@@ -302,6 +378,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   void app.whenReady().then(async () => {
+    settings = await readSettings(settingsFile())
     registerIpc()
     Menu.setApplicationMenu(buildMenu())
     const smoke = smokeTest ? await prepareSmokeTest() : undefined

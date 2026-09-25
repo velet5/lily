@@ -320,7 +320,7 @@ button:focus-visible,
   overflow: hidden;
 }
 
-.editor-empty,
+.welcome,
 .monaco-host {
   position: absolute;
   inset: 0;
@@ -579,4 +579,183 @@ button:focus-visible,
 .transport-time {
   min-width: 78px;
   text-align: right;
+}
+
+/* Welcome screen, LilyPond setup and the problem banner (DECISIONS D37). */
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+button.primary:hover {
+  filter: brightness(1.08);
+}
+
+.welcome {
+  overflow: auto;
+  background: var(--bg);
+}
+
+.welcome[hidden] {
+  display: none;
+}
+
+.welcome-inner {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 40px 28px;
+}
+
+.welcome h1 {
+  margin: 0 0 6px;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.welcome-intro {
+  margin: 0 0 20px;
+  color: var(--fg-muted);
+  font-size: 14px;
+}
+
+.welcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.welcome-actions button,
+.welcome-lilypond button,
+.setup button {
+  padding: 6px 12px;
+}
+
+.welcome-back {
+  margin-bottom: 16px;
+}
+
+.welcome-lilypond {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  margin-bottom: 24px;
+  border: 1px solid var(--border);
+  border-left: 4px solid #2f9e44;
+  border-radius: 6px;
+}
+
+.welcome-lilypond span {
+  flex: 1;
+}
+
+.welcome-lilypond[data-state='checking'] {
+  border-left-color: var(--border);
+  color: var(--fg-muted);
+}
+
+.welcome-lilypond:is([data-state='missing'], [data-state='too-old'], [data-state='broken']) {
+  border-left-color: #c72e2e;
+}
+
+.welcome-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 12px;
+}
+
+.welcome-steps li {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 12px;
+}
+
+.welcome-steps span {
+  color: var(--fg-muted);
+}
+
+.setup {
+  width: min(520px, calc(100vw - 32px));
+  padding: 24px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+  user-select: text;
+}
+
+.setup::backdrop {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.setup h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.setup-status {
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--selected);
+}
+
+.setup[data-state='ready'] .setup-status {
+  background: rgba(47, 158, 68, 0.16);
+}
+
+.setup-steps {
+  display: grid;
+  gap: 10px;
+  padding-left: 20px;
+}
+
+.setup-steps li span {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.setup-note {
+  color: var(--fg-muted);
+}
+
+.setup-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.problem-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  margin: 0;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 0;
+  border-left: 4px solid #e8a317;
+  border-bottom: 1px solid var(--border);
+  background: rgba(232, 163, 23, 0.12);
+  text-align: left;
+  user-select: text;
+}
+
+.problem-banner[hidden] {
+  display: none;
+}
+
+.problem-banner[data-tone='error'] {
+  border-left-color: #c72e2e;
+  background: rgba(199, 46, 46, 0.1);
+}
+
+.problem-banner:hover {
+  background: rgba(199, 46, 46, 0.16);
 }

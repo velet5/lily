@@ -1671,3 +1671,57 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   reported in the real `.ily`. An unsaved note links to the real score. The
   disk is untouched. `npm run test:smoke` replaces the text without saving
   and sees 8 notes; switched off, the 4 on disk; on again, 8.
+
+---
+
+## D37 — Lily Studio: first run, plain words, and a macOS DMG
+
+**Status:** proposed · **Refines:** D9, D28, D31
+
+- **Welcome screen.** While no score is open, the editor pane shows
+  `studio/src/renderer/welcome.ts`: Open the Sample Score, New Score…,
+  Open Score…, Open Folder…, four first steps (write, see, listen, fix), and
+  whether LilyPond is ready. Help › Welcome shows it again over an open
+  score, with Back to the Score. The sample (`SAMPLE` in `templates.ts`, Ode
+  to Joy with words, chords and `\midi`) is written to
+  `~/Documents/Lily Studio/Ode to Joy.ly` with `wx`, so an edited copy is
+  opened, never replaced.
+- **LilyPond setup.** `studio/src/main/lilypondSetup.ts` (no `electron`)
+  finds lilypond with `locateLilyPond` (D9), runs `--version` and says
+  `ready`, `missing`, `too-old` (before 2.24.0, what the templates need) or
+  `broken`, each with a sentence for a non-programmer. Every launch checks;
+  when it is not ready, the setup dialog opens: download from lilypond.org,
+  move the folder to Applications, Choose LilyPond… (a folder, its `bin`, the
+  executable or an `.app`), Check Again, with Homebrew as a side note. A
+  choice that is lilypond is kept in `userData/settings.json` and wins over
+  `$LILYPOND_PATH`. The renderer can open only the two `SETUP_LINKS`. A
+  compile that found no LilyPond is repeated once a check finds it. The main
+  process adds Homebrew's and MacPorts' `bin` and lilypond's own directory to
+  `PATH`, since an app opened from the Finder has `/usr/bin:/bin:…` only.
+- **Plain words.** `studio/src/renderer/plainLanguage.ts` maps lilypond's
+  common messages (unknown command, not a note name, text among notes,
+  syntax errors, durations, missing includes, bar checks, slurs, ties,
+  hairpins, `\version`, wrong argument types) to what went wrong and what to
+  try. A marker leads with it and keeps “LilyPond says: …”. A banner above the
+  preview names the first error (else warning), its line and file and the
+  summary; a click shows it in the editor. Unknown messages are shown as
+  lilypond wrote them. “LilyPond is not installed” in the banner or the
+  status line opens the setup.
+- **Package.** `studio/electron-builder.yml`: `npm run dist` bundles with
+  `--production` and writes `release/Lily Studio-<version>-<arch>.dmg`, the
+  host's architecture only. Only `package.json`, `dist/` and `renderer/` are
+  packaged, without source maps. `dist/runtime/` is unpacked from the asar
+  archive, as lilypond reads it; `main.ts` rewrites `app.asar` to
+  `app.asar.unpacked` in that path. The app is ad-hoc signed (`identity: '-'`,
+  no hardened runtime), so another Mac opens it with right-click › Open.
+  Developer ID signing, notarization, an icon and a universal build are not
+  done.
+- **Verified.** `npm run test:unit` in `studio/` (`test/lilypondSetup.test.ts`,
+  `test/plainLanguage.test.ts`): each setup state, the chosen folder, the
+  version parse, PATH, the settings file, every rule against lilypond 2.26's
+  text, the banner, and the sample engraving with no diagnostics and MIDI.
+  `npm run test:smoke` sees the welcome screen with LilyPond found and the
+  error explained in the banner. `npm run test:e2e` builds the DMG, mounts it,
+  checks the Applications link, copies the app out, verifies its signature
+  and the unpacked runtime, and runs the installed app's smoke test with the
+  Finder's bare PATH.

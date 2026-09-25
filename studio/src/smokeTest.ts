@@ -4,7 +4,8 @@
 // and a click on a note there, the PDF tab and Export PDF, an error marked,
 // an edit by another program reloaded and compiled, its MIDI played with
 // the notes marked, and unsaved edits in the preview with live preview on —
-// then prints a JSON report and exits 0 or 1.
+// then prints a JSON report and exits 0 or 1. It starts on the welcome
+// screen, sees LilyPond looked for, and reads the error explained (D37).
 import type { BrowserWindow } from 'electron'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
@@ -68,6 +69,18 @@ export async function runSmokeTest(window: BrowserWindow, smoke: SmokeFolder): P
     if (pane.left <= right) problems.push(`pane ${pane.name} is not right of the one before`)
     right = pane.left
   })
+
+  // The welcome screen covers the editor until a score opens (D37), and says
+  // whether LilyPond was found. A setup opened for a missing LilyPond is closed,
+  // so the rest can run and report the compile as skipped.
+  const welcome = await until<{ sample: boolean; lilypond: string; state: string }>('the welcome screen to look for LilyPond', `(() => {
+    const screen = document.querySelector('[data-welcome]')
+    const lilypond = screen?.querySelector('.welcome-lilypond')
+    if (!screen || screen.hidden || !lilypond || lilypond.dataset.state === 'checking') return null
+    document.querySelector('dialog.setup[open]')?.close()
+    return { sample: !!screen.querySelector('[data-action="sample"]'), lilypond: lilypond.textContent, state: lilypond.dataset.state }
+  })()`)
+  if (welcome && !welcome.sample) problems.push('the welcome screen has no sample button')
 
   // The file list shows the two LilyPond files and not notes.txt.
   const listed = await until<string[]>(
@@ -155,6 +168,8 @@ export async function runSmokeTest(window: BrowserWindow, smoke: SmokeFolder): P
     compile.errorTone = await until<string>('an error status', `(() => { const t = ${tone}; return t === 'error' ? t : '' })()`, 30_000)
     compile.squiggle = await until<boolean>('an error marker in the editor', `!!document.querySelector('.monaco-editor .squiggly-error')`)
     compile.status = await run<string>(`document.querySelector('.status-compile').textContent`)
+    // The banner above the score says it in plain words (D37).
+    compile.banner = await until<string>('the problem explained above the score', `(() => { const b = document.querySelector('.problem-banner'); return b && !b.hidden && b.textContent.includes('is not a LilyPond command') ? b.textContent : '' })()`)
   }
 
   // Another program edits the saved score: the editor reloads it and the
@@ -224,6 +239,6 @@ export async function runSmokeTest(window: BrowserWindow, smoke: SmokeFolder): P
 
   await fs.rm(smoke.folder, { recursive: true, force: true })
   const ok = problems.length === 0
-  console.log(JSON.stringify({ ok, problems, ...layout, listed, monaco: !!shown, colours, saved, compile }, null, 2))
+  console.log(JSON.stringify({ ok, problems, ...layout, welcome, listed, monaco: !!shown, colours, saved, compile }, null, 2))
   return ok ? 0 : 1
 }

@@ -11,6 +11,7 @@
 //   node esbuild.mjs --watch        rebuild on change
 //   node esbuild.mjs --production   minified, no source maps
 //   node esbuild.mjs --tests        test/*.test.ts → out/test/, for node --test
+//   node esbuild.mjs --e2e          test/e2e/*.test.ts → out/test/e2e/, the packaged app's test (D37)
 import * as esbuild from 'esbuild'
 import { cpSync, mkdirSync, readdirSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
@@ -18,6 +19,7 @@ import { readFile } from 'node:fs/promises'
 const production = process.argv.includes('--production')
 const watch = process.argv.includes('--watch')
 const tests = process.argv.includes('--tests')
+const e2e = process.argv.includes('--e2e')
 
 /**
  * language-configuration.json has comments, which esbuild's JSON loader
@@ -91,7 +93,19 @@ if (tests) {
   })
 }
 
-if (!tests) {
+if (e2e) {
+  // Run by `npm run test:e2e` after `npm run dist`; it drives the DMG, not the sources.
+  builds.splice(0, builds.length, {
+    ...shared,
+    entryPoints: readdirSync('test/e2e')
+      .filter((name) => name.endsWith('.test.ts'))
+      .map((name) => `test/e2e/${name}`),
+    outdir: 'out/test/e2e',
+    logLevel: 'warning',
+  })
+}
+
+if (!tests && !e2e) {
   // timing.ly is passed to every compile as -dinclude-settings; the playback
   // map comes from it. worker.scm and glyph-cache.scm speed up compiles (D25).
   mkdirSync('dist/runtime', { recursive: true })

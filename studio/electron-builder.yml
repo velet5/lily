@@ -1,0 +1,36 @@
+# Lily Studio for macOS: `npm run dist` writes release/Lily Studio-<version>-<arch>.dmg
+# (DECISIONS D37). Everything the app runs is bundled into dist/ by
+# esbuild.mjs, so no node_modules are packaged.
+appId: org.lilypond.lily-studio
+productName: Lily Studio
+directories:
+  output: release
+  buildResources: build
+files:
+  - package.json
+  - dist/**/*
+  - renderer/**/*
+  - '!**/*.map'
+# lilypond reads runtime/timing.ly, worker.scm and glyph-cache.scm itself,
+# and cannot look inside the asar archive; main.ts points at the unpacked copy.
+asarUnpack:
+  - dist/runtime/**
+mac:
+  target:
+    - target: dmg
+  category: public.app-category.music
+  # Ad-hoc signed: runs on the Mac that built it, and elsewhere after
+  # right-click › Open. A Developer ID and notarization come with a release
+  # process, not with this step.
+  identity: '-'
+  hardenedRuntime: false
+dmg:
+  title: ${productName}
+  artifactName: ${productName}-${version}-${arch}.${ext}
+  contents:
+    - x: 140
+      y: 190
+    - x: 400
+      y: 190
+      type: link
+      path: /Applications
