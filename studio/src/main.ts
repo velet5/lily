@@ -137,9 +137,16 @@ async function openFolder(folder: string, file?: string): Promise<Opened> {
   return { listing: await listFolder(access.folder), file }
 }
 
-/** Looks for LilyPond as a compile would, and puts its directory on PATH. */
-async function lilypondStatus(configuredPath = settings.lilypondPath ?? process.env.LILYPOND_PATH): Promise<LilyPondStatus> {
-  const status = await detectLilyPond({ configuredPath })
+/** Looks for LilyPond as a compile would, and applies what it found. */
+async function lilypondStatus(): Promise<LilyPondStatus> {
+  return found(await detectLilyPond({ configuredPath: settings.lilypondPath ?? process.env.LILYPOND_PATH }))
+}
+
+/**
+ * Puts the found lilypond's directory on PATH, and compiles again the score
+ * that found none. The compile reads `settings`, so a choice is saved first.
+ */
+function found(status: LilyPondStatus): LilyPondStatus {
   if (status.path) process.env.PATH = searchPath(process.env.PATH, path.dirname(status.path))
   if (status.state === 'ready' && waitingForLilyPond && compiler.current) void compiler.compile(compiler.current)
   return status
@@ -273,14 +280,14 @@ function registerIpc(): void {
     const chosen = result.filePaths[0]
     if (result.canceled || !chosen) return undefined
     const configuredPath = choicePath(chosen)
-    const status = await lilypondStatus(configuredPath)
+    const status = await detectLilyPond({ configuredPath })
     if (status.state === 'missing') {
       return { ...status, message: `There is no LilyPond in ${chosen}. Choose the folder you downloaded from lilypond.org, or the lilypond program inside its bin folder.` }
     }
     // Kept even when too old or broken, so the message stays about this one.
     settings = { ...settings, lilypondPath: configuredPath }
     await writeSettings(settingsFile(), settings)
-    return status
+    return found(status)
   })
 
   ipcMain.handle(Channel.openLink, async (event, link: unknown) => {
