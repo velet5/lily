@@ -6,6 +6,7 @@ import type { TemplateId } from '../templates'
 import { compileStatus, DiagnosticStore } from './diagnostics'
 import { ScoreEditor } from './editor'
 import { button, FileList } from './files'
+import { ScorePreview } from './preview'
 
 declare global {
   interface Window {
@@ -64,6 +65,13 @@ const editor = new ScoreEditor({
   diagnostics: (file) => diagnostics.for(file),
 })
 
+const previewPane = pane('preview')
+const preview = new ScorePreview({
+  body: previewPane.querySelector<HTMLElement>('.pane-body')!,
+  actions: previewPane.querySelector<HTMLElement>('.pane-actions')!,
+  onReveal: (href) => void revealSource(href),
+})
+
 const files = new FileList({
   body: filesPane.querySelector<HTMLElement>('.pane-body')!,
   title: filesPane.querySelector<HTMLElement>('.pane-title')!,
@@ -100,6 +108,18 @@ async function showFirstProblem(): Promise<void> {
 }
 
 compileButton.addEventListener('click', () => void showFirstProblem())
+
+/** A click on a note in the preview: its place in the source, opened in the editor (D32). */
+async function revealSource(href: string): Promise<void> {
+  try {
+    const location = await studio.revealSource(href)
+    if (!location) return
+    await open(location.file)
+    if (editor.file === location.file) editor.revealSource(location.line, location.char)
+  } catch (error) {
+    report(error)
+  }
+}
 
 /** Unsaved-change marks: the file list, the editor header, the window. */
 function refreshMarkers(): void {
@@ -182,7 +202,10 @@ templateMenu.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') templateMenu.hidden = true
 })
 
-studio.onCompile(compiled)
+studio.onCompile((event) => {
+  compiled(event)
+  preview.compiled(event)
+})
 
 studio.onCommand((command) => {
   switch (command) {

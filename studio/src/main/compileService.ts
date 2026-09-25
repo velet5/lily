@@ -3,6 +3,7 @@
 // CompileService and parses lilypond's stderr with its parser. main.ts sends
 // the events to the renderer. No `electron` here, so the tests run it under
 // plain Node.
+import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
 import type { CompileResult, CompileService } from '../../../src/compile/compiler'
 import { LilyPondNotFoundError } from '../../../src/compile/locate'
@@ -74,6 +75,7 @@ export class StudioCompiler {
       })
       if (result.cancelled) return undefined
       outcome = fromResult(result)
+      outcome.svg = await readPages(result.pages)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       outcome = { ...empty(error instanceof LilyPondNotFoundError ? 'no-lilypond' : 'error', rootFile), message }
@@ -87,8 +89,21 @@ export class StudioCompiler {
   }
 }
 
+/**
+ * The text of the pages for the preview (step 5 of the studio plan), read now:
+ * the run's directory is emptied when the next compile of the score ends. A
+ * page that is gone already leaves none.
+ */
+async function readPages(pages: string[]): Promise<string[]> {
+  try {
+    return await Promise.all(pages.map((page) => fs.readFile(page, 'utf8')))
+  } catch {
+    return []
+  }
+}
+
 function empty(state: CompileOutcome['state'], rootFile: string): CompileOutcome {
-  return { state, rootFile, diagnostics: [], errorCount: 0, warningCount: 0, pages: [], midi: [], durationMs: 0 }
+  return { state, rootFile, diagnostics: [], errorCount: 0, warningCount: 0, pages: [], svg: [], midi: [], durationMs: 0 }
 }
 
 export function fromResult(result: CompileResult): CompileOutcome {
@@ -101,6 +116,7 @@ export function fromResult(result: CompileResult): CompileOutcome {
     errorCount,
     warningCount: diagnostics.length - errorCount,
     pages: result.pages,
+    svg: [],
     midi: result.midi,
     durationMs: result.durationMs,
   }

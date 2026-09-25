@@ -1,6 +1,7 @@
 // The IPC contract between main.ts and preload.ts (DECISIONS D28, D29): one
 // named channel per call. Types only, apart from the channel names.
 import type { LyDiagnostic } from '../../src/diagnostics/parse'
+import type { SourceLocation } from '../../src/preview/pointAndClick'
 import type { FolderListing } from './files'
 
 export const Channel = {
@@ -15,6 +16,8 @@ export const Channel = {
   command: 'studio:command',
   /** Main → renderer: a compile started or finished (D31). */
   compile: 'studio:compile',
+  /** A click in the preview: where a `textedit:` link points (D32). */
+  revealSource: 'studio:reveal-source',
 } as const
 
 /** A folder was opened, or a file whose folder becomes the open folder. */
@@ -44,6 +47,8 @@ export interface CompileOutcome {
   warningCount: number
   /** SVG pages of the run, in order; valid until the next compile of `rootFile`. */
   pages: string[]
+  /** The text of `pages`, read before the event was sent; the preview shows it (D32). */
+  svg: string[]
   midi: string[]
   durationMs: number
   /** Why lilypond did not run, or the end of its output when it failed without a parsable error. */
@@ -53,3 +58,5 @@ export interface CompileOutcome {
 export type CompileEvent =
   | { kind: 'started'; rootFile: string }
   | { kind: 'finished'; outcome: CompileOutcome }
+
+export type { SourceLocation }

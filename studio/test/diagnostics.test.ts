@@ -11,7 +11,7 @@ const error = (file: string, line: number, column?: number, message = 'oops'): L
 })
 
 function outcome(partial: Partial<CompileOutcome>): CompileOutcome {
-  return { state: 'ok', rootFile: '/s/score.ly', diagnostics: [], errorCount: 0, warningCount: 0, pages: [], midi: [], durationMs: 1234, ...partial }
+  return { state: 'ok', rootFile: '/s/score.ly', diagnostics: [], errorCount: 0, warningCount: 0, pages: [], svg: [], midi: [], durationMs: 1234, ...partial }
 }
 
 describe('toMarkers', () => {

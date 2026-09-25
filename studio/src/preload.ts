@@ -3,7 +3,7 @@
 // (src/ipc.ts); later steps add the playback calls here.
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FolderListing } from './files'
-import { Channel, type Command, type CompileEvent, type Opened } from './ipc'
+import { Channel, type Command, type CompileEvent, type Opened, type SourceLocation } from './ipc'
 import { TEMPLATES, type TemplateId } from './templates'
 
 const studio = {
@@ -22,6 +22,11 @@ const studio = {
   newScore: (template: TemplateId): Promise<Opened | undefined> => ipcRenderer.invoke(Channel.newScore, template),
   /** Tells the main process whether any open file has unsaved changes. */
   setDirty: (dirty: boolean): void => ipcRenderer.send(Channel.setDirty, dirty),
+  /**
+   * Where a `textedit:` link of the preview points; undefined when it is not
+   * one. Rejects when the file is not one the studio may open.
+   */
+  revealSource: (href: string): Promise<SourceLocation | undefined> => ipcRenderer.invoke(Channel.revealSource, href),
   /** Runs `listener` for each menu command; returns a function that removes it. */
   onCommand(listener: (command: Command) => void): () => void {
     const handler = (_event: unknown, command: Command) => listener(command)

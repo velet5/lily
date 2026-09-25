@@ -4,6 +4,9 @@ import * as path from 'node:path'
 // Point-and-click in both directions (DECISIONS D7, D19). LilyPond wraps what a
 // piece of input produced in `<a xlink:href="textedit://PATH:LINE:CHAR:COLUMN">`
 // (ARCHITECTURE §3.5). No `vscode` import: the mapping is tested under `node --test`.
+// The `CHAR` conversions live in the Node-free span.ts, which Lily Studio's
+// renderer bundles; they are re-exported here.
+export { charToCharacter, characterToChar } from '../diagnostics/span'
 
 /** A place in a source file, in the numbers LilyPond prints. */
 export interface SourceLocation {
@@ -36,20 +39,6 @@ export function parseTextEdit(href: string): SourceLocation | undefined {
   if (!path.isAbsolute(file) || file.includes('\0')) return undefined
   if (line < 1 || !Number.isSafeInteger(line) || !Number.isSafeInteger(char)) return undefined
   return { file: path.normalize(file), line, char }
-}
-
-/** `CHAR` → the editor's UTF-16 character: an astral character is two units. */
-export function charToCharacter(lineText: string, char: number): number {
-  let character = 0
-  for (let seen = 0; seen < char && character < lineText.length; seen++) {
-    character += lineText.codePointAt(character)! > 0xffff ? 2 : 1
-  }
-  return character
-}
-
-/** The editor's UTF-16 character → `CHAR`. */
-export function characterToChar(lineText: string, character: number): number {
-  return Array.from(lineText.slice(0, character)).length
 }
 
 /**

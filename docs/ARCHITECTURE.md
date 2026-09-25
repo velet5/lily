@@ -166,13 +166,13 @@ src/
   config.ts             typed, uncached access to the `lily.*` settings
   diagnostics/
     parse.ts            stderr → LyDiagnostic[] (no vscode)
-    span.ts             column → character, token span (no vscode, no Node)
+    span.ts             column → character, CHAR ↔ character, token span (no vscode, no Node)
     publish.ts          CompileReporter: Problems, output channel, status bar item
   preview/
     panel.ts            PreviewManager / PreviewPanel, html + CSP, message protocol (types-only vscode)
     autoPreview.ts      bounded edit/save debounce of previewed roots (no vscode)
     liveQueue.ts        one running and one replaceable pending revision per root
-    pointAndClick.ts    textedit link parser and index, CHAR ↔ character (no vscode)
+    pointAndClick.ts    textedit link parser and index; re-exports span.ts's CHAR ↔ character (no vscode)
   midi/
     player.ts           the custom editor for .mid/.midi files, html + CSP (types-only vscode)
   intellisense/

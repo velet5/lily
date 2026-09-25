@@ -5,6 +5,7 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
 import * as path from 'node:path'
 import { CompileService } from '../../src/compile/compiler'
+import { parseTextEdit } from '../../src/preview/pointAndClick'
 import { Access, createFromTemplate, isInside, isScoreFile, listFolder, readScore, unusedName, writeScore, SCORE_EXTENSIONS } from './files'
 import { Channel, type Command, type Opened } from './ipc'
 import { StudioCompiler } from './main/compileService'
@@ -171,6 +172,14 @@ function registerIpc(): void {
     // A score saved outside the open folder brings its own folder along.
     const folder = access.folder !== undefined && isInside(access.folder, file) ? access.folder : path.dirname(file)
     return openFolder(folder, path.resolve(file))
+  })
+
+  ipcMain.handle(Channel.revealSource, async (event, href: unknown) => {
+    owner(event)
+    const location = typeof href === 'string' ? parseTextEdit(href) : undefined
+    if (!location) return undefined
+    // A note from a file the studio may not open (lilypond's own ly/ files) goes nowhere.
+    return { ...location, file: access.check(location.file) }
   })
 
   ipcMain.on(Channel.setDirty, (event, value: unknown) => {

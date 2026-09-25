@@ -17,8 +17,7 @@
   </head>
   <body>
     <!-- The fixed layout of DECISIONS D28: files | editor | preview, a status
-         line below. src/renderer/index.ts fills the files and editor panes;
-         the preview is filled by a later step. -->
+         line below. src/renderer/index.ts fills the panes. -->
     <main class="studio">
       <nav class="pane files" data-pane="files" aria-label="Files">
         <header class="pane-header">
@@ -32,7 +31,10 @@
         <div class="pane-body placeholder">No score open</div>
       </section>
       <section class="pane preview" data-pane="preview" aria-label="Preview">
-        <header class="pane-header">Preview</header>
+        <header class="pane-header">
+          <span class="pane-title">Preview</span>
+          <span class="pane-actions"></span>
+        </header>
         <div class="pane-body placeholder">The score appears here</div>
       </section>
       <footer class="status" data-pane="status" role="status"></footer>

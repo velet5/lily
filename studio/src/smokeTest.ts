@@ -1,6 +1,7 @@
 // `npm test` in studio/: starts the real window hidden on a scratch folder and
 // drives it once — layout, Monaco, the file list, highlighting, an edit, the
-// unsaved marker, a save, and the compile it starts with an error marked —
+// unsaved marker, a save, the compile it starts, its pages in the preview
+// and a click on a note there, and an error marked —
 // then prints a JSON report and exits 0 or 1.
 import type { BrowserWindow } from 'electron'
 import * as fs from 'node:fs/promises'
@@ -113,6 +114,22 @@ export async function runSmokeTest(window: BrowserWindow, smoke: SmokeFolder): P
   if (firstTone === 'error' && (await run<string>(`document.querySelector('.status-compile').textContent`)).includes('not installed')) {
     compile.skipped = 'lilypond is not installed'
   } else {
+    // The preview shows the pages; a click on the note d puts the cursor on its line (D32).
+    compile.pages = await until<number>('the preview pages', `document.querySelectorAll('.preview-page svg').length`)
+    const clicked = await run<boolean>(`(() => {
+      const link = [...document.querySelectorAll('.preview-page a.source')].find((a) => /smoke\\.ly:2:5:/.test(a.href.baseVal))
+      link?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      return !!link
+    })()`)
+    if (!clicked) problems.push('no link to the note d in the preview')
+    compile.revealed = await until<string>('the cursor on the line of the clicked note', `(() => {
+      if (!document.activeElement?.closest('.monaco-editor')) return ''
+      const current = document.querySelector('.monaco-editor .view-overlays .current-line')
+      const line = current && [...document.querySelectorAll('.monaco-editor .view-line')].find((l) => l.style.top === current.parentElement.style.top)
+      const text = (line?.textContent ?? '').replace(/\\u00a0/g, ' ')
+      return text.includes('c4 d e f') ? text : ''
+    })()`)
+
     // A misspelt command is marked in the editor and turns the status red.
     await run(`document.querySelector('.monaco-editor .native-edit-context, .monaco-editor textarea').focus()`)
     // On a line of its own: the cursor is still in the `% smoke` comment.

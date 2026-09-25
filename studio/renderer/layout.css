@@ -306,3 +306,109 @@ button:focus-visible,
 .monaco-host {
   user-select: text;
 }
+
+/* Preview pane (DECISIONS D32), adapted from media/preview.css. The pages are
+   white paper in both themes; LilyPond paints with currentColor, so `color`
+   recolours a glyph. */
+
+.preview {
+  --paper-surround: #e9e9e7;
+  --lily-link: #0b5fd0;
+}
+
+@media (prefers-color-scheme: dark) {
+  .preview {
+    --paper-surround: #2b2b2b;
+  }
+}
+
+.preview .pane-body {
+  position: relative;
+  background: var(--paper-surround);
+}
+
+.preview-empty {
+  position: absolute;
+  inset: 0;
+  padding: 24px;
+  text-align: center;
+}
+
+.preview-pages {
+  /* Grows with zoomed pages so their left edge stays reachable by scrolling. */
+  width: max-content;
+  min-width: 100%;
+  padding: 16px; /* PADDING in preview.ts */
+}
+
+.preview-pages:empty {
+  display: none;
+}
+
+.preview-page {
+  width: var(--page-width, 100%);
+  margin: 0 auto 16px;
+  color: #000;
+  background: #fff;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+}
+
+.preview-page:last-child {
+  margin-bottom: 0;
+}
+
+.preview-page svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+/* What LilyPond puts inline and preview.js's quiet() removes. */
+.preview-page tspan {
+  white-space: pre;
+}
+
+.preview-page a {
+  color: inherit;
+  cursor: default;
+}
+
+.preview-page a.source {
+  cursor: pointer;
+}
+
+.preview-page a.source:hover,
+.preview-page a.current {
+  color: var(--lily-link);
+}
+
+.preview-page a.current path {
+  stroke: currentColor;
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+}
+
+.preview-page-error {
+  padding: 24px;
+  color: #c72e2e;
+}
+
+.preview-note {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.preview .pane-actions button {
+  min-width: 28px;
+  padding: 0 6px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}

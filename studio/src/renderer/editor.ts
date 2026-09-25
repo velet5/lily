@@ -4,7 +4,7 @@
 import * as monaco from 'monaco-editor/editor'
 import 'monaco-editor/features/register.all'
 import type { LyDiagnostic } from '../../../src/diagnostics/parse'
-import { columnToCharacter } from '../../../src/diagnostics/span'
+import { charToCharacter, columnToCharacter } from '../../../src/diagnostics/span'
 import { toMarkers } from './diagnostics'
 import { DARK_THEME, LIGHT_THEME, languageConfiguration, loadGrammar, theme, tokensProvider } from './grammar'
 
@@ -116,11 +116,19 @@ export class ScoreEditor {
 
   /** Puts the cursor of the shown file where a diagnostic points (1-based, lilypond's column). */
   reveal(line: number, column?: number): void {
+    this.place(line, (text) => (column === undefined ? 0 : columnToCharacter(text, column)))
+  }
+
+  /** Puts the cursor of the shown file where a point-and-click link points (1-based line, `CHAR`). */
+  revealSource(line: number, char: number): void {
+    this.place(line, (text) => charToCharacter(text, char))
+  }
+
+  private place(line: number, character: (lineText: string) => number): void {
     const model = this.editor.getModel()
     if (!model) return
     const lineNumber = Math.min(line, model.getLineCount())
-    const character = column === undefined ? 0 : columnToCharacter(model.getLineContent(lineNumber), column)
-    const position = { lineNumber, column: character + 1 }
+    const position = { lineNumber, column: character(model.getLineContent(lineNumber)) + 1 }
     this.editor.setPosition(position)
     this.editor.revealPositionInCenterIfOutsideViewport(position)
     this.editor.focus()

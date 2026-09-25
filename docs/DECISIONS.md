@@ -1448,3 +1448,41 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   test:smoke` saves in the window, waits for the status, types `\stacato` on a
   line of its own, saves, and sees the red status and an error squiggle.
 
+## D32 — Lily Studio: the SVG preview and click-to-source
+
+**Status:** proposed · **Refines:** D7, D17, D19, D31
+
+- **What is shown.** The preview pane shows the SVG pages of the last finished
+  compile, whichever score that was; another score starts at its top, the same
+  score keeps its place (preview.js's page anchor). Pages of any run are shown,
+  a failed one with a note that it may be incomplete; a run without pages
+  keeps what is on screen and says why in the note or the empty pane
+  (`previewUpdate` in `studio/src/renderer/preview.ts`). The pages are white
+  paper in both themes, fitted to the pane's width; −, Fit and + in the pane
+  header and Ctrl/Cmd + wheel zoom with preview.js's steps.
+- **Shared with the extension.** The renderer bundles `media/preview.js` and
+  uses its exported half: zoom steps, the scroll anchor, `quiet` and
+  `sanitize` (moved into that half for this; the webview is unchanged) and
+  `isSourceLink`. The styles are adapted from `media/preview.css` into
+  `studio/renderer/layout.css` rather than loaded, because that file styles a
+  whole webview (`body`, `#toolbar`) with `--vscode-*` colours.
+- **Pages over IPC.** `StudioCompiler` reads the pages' text into the
+  outcome's new `svg` field before it sends `finished`, as the extension's
+  panel does, because the run's directory is emptied when the next compile of
+  the score ends. The sandboxed renderer never reads the temp directory.
+- **Click-to-source.** A click on an element with a `textedit:` link marks it
+  and calls `studio.revealSource(href)` (`studio:reveal-source`). The main
+  process parses it with `parseTextEdit` and passes the file through the
+  `Access` check, so a link cannot name a file the studio may not open (a note
+  from lilypond's own `ly/` files is refused, and the status line says why).
+  The renderer opens the file and puts the cursor at `CHAR` with
+  `charToCharacter`, on the editor's current text. The `CHAR` conversions moved
+  from `src/preview/pointAndClick.ts` to the Node-free `span.ts`, which
+  `pointAndClick.ts` re-exports. The other direction of D19 (the cursor
+  highlights the notes) is not done.
+- **Verified.** `npm run test:unit` in `studio/`: `previewUpdate`, `quiet`,
+  the pages read into the outcome (and none when they are gone), and one real
+  compile whose link to a note in an include after a tab and an astral
+  character leads to that note (skipped without lilypond). `npm run
+  test:smoke` waits for the page in the window, clicks the note `d` and sees
+  the editor's cursor on its line.

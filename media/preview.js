@@ -2,8 +2,10 @@
 // message types are HostMessage / WebviewMessage in src/preview/panel.ts.
 // media/midi.js is loaded before it and plays the score (D24).
 //
-// The first half is pure and is also loaded by test/preview/panel.test.ts, which
-// is why the file ends with a CommonJS export that a webview never reaches.
+// The first half is pure (or needs only the DOM) and is also loaded by
+// test/preview/panel.test.ts and bundled by Lily Studio's preview
+// (studio/src/renderer/preview.ts), which is why it ends with a CommonJS
+// export that a webview never reaches.
 ;(function () {
   'use strict'
 
@@ -100,6 +102,30 @@
     if (element === 'a') return LINK.test(target)
     if (element === 'image') return BITMAP.test(target)
     return target.startsWith('#')
+  }
+
+  function sanitize(element) {
+    for (const child of [...element.children]) {
+      if (allowedElement(child.localName)) sanitize(child)
+      else child.remove()
+    }
+    for (const attribute of [...element.attributes]) {
+      if (!allowedAttribute(element.localName, attribute.localName, attribute.value)) {
+        element.removeAttributeNode(attribute)
+      }
+    }
+  }
+
+  /**
+   * LilyPond puts `style="color:inherit;"` on every link. The CSP blocks each one
+   * while parsing and logs a violation per notehead, so they go before parsing.
+   * Text content cannot match: a literal `<` is always escaped there. Whatever
+   * this misses is still blocked, and removed by sanitize().
+   */
+  function quiet(text) {
+    return text
+      .replace(/<style\b[\s\S]*?<\/style>/g, '')
+      .replace(/(<[A-Za-z][^<>]*?)\sstyle="[^"]*"/g, '$1')
   }
 
   // ---- point-and-click ---------------------------------------------------------
@@ -213,7 +239,7 @@
 
   const pure = {
     MIN_ZOOM, MAX_ZOOM, clampZoom, stepZoom, zoomLabel,
-    captureAnchor, resolveAnchor, pageAt, stepPage, allowedElement, allowedAttribute,
+    captureAnchor, resolveAnchor, pageAt, stepPage, allowedElement, allowedAttribute, sanitize, quiet,
     isSourceLink, scrollToShow, systemsOf, cursorAt, barAt, endsOf, soundingAt,
   }
 
@@ -336,30 +362,6 @@
 
   function setZoom(zoom, viewportY = window.innerHeight / 2) {
     relayout(viewportY, () => (state.zoom = clampZoom(zoom)))
-  }
-
-  function sanitize(element) {
-    for (const child of [...element.children]) {
-      if (allowedElement(child.localName)) sanitize(child)
-      else child.remove()
-    }
-    for (const attribute of [...element.attributes]) {
-      if (!allowedAttribute(element.localName, attribute.localName, attribute.value)) {
-        element.removeAttributeNode(attribute)
-      }
-    }
-  }
-
-  /**
-   * LilyPond puts `style="color:inherit;"` on every link. The CSP blocks each one
-   * while parsing and logs a violation per notehead, so they go before parsing.
-   * Text content cannot match: a literal `<` is always escaped there. Whatever
-   * this misses is still blocked, and removed by sanitize().
-   */
-  function quiet(text) {
-    return text
-      .replace(/<style\b[\s\S]*?<\/style>/g, '')
-      .replace(/(<[A-Za-z][^<>]*?)\sstyle="[^"]*"/g, '$1')
   }
 
   function toPage(text, index) {

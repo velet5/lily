@@ -1,6 +1,7 @@
 // Where a diagnostic sits in a line of text (DECISIONS D16). Neither `vscode`
 // nor Node: Lily Studio's renderer turns diagnostics into Monaco markers with
-// it (D31). parse.ts re-exports it.
+// it (D31). parse.ts re-exports it, and src/preview/pointAndClick.ts the
+// `CHAR` conversions of point-and-click (D19).
 
 const TAB_WIDTH = 8
 
@@ -28,6 +29,20 @@ export function columnToCharacter(lineText: string, column: number): number {
     character += char.length
   }
   return character
+}
+
+/** A point-and-click `CHAR` → the editor's UTF-16 character: an astral character is two units. */
+export function charToCharacter(lineText: string, char: number): number {
+  let character = 0
+  for (let seen = 0; seen < char && character < lineText.length; seen++) {
+    character += lineText.codePointAt(character)! > 0xffff ? 2 : 1
+  }
+  return character
+}
+
+/** The editor's UTF-16 character → `CHAR`. */
+export function characterToChar(lineText: string, character: number): number {
+  return Array.from(lineText.slice(0, character)).length
 }
 
 export interface Span {
