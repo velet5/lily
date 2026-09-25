@@ -3,11 +3,16 @@
 // from the version last written, so undoing back to it clears the mark.
 import * as monaco from 'monaco-editor/editor'
 import 'monaco-editor/features/register.all'
+import { DARK_THEME, LIGHT_THEME, languageConfiguration, loadGrammar, theme, tokensProvider } from './grammar'
 
-/** Step 3 attaches the TextMate grammar to this id. */
 export const LANGUAGE_ID = 'lilypond'
 
 monaco.languages.register({ id: LANGUAGE_ID, extensions: ['.ly', '.ily', '.lyi'], aliases: ['LilyPond'] })
+monaco.languages.setLanguageConfiguration(LANGUAGE_ID, languageConfiguration())
+// Monaco waits for the grammar before it colours a LilyPond model.
+monaco.languages.setTokensProvider(LANGUAGE_ID, loadGrammar().then(tokensProvider))
+monaco.editor.defineTheme(LIGHT_THEME, theme(false))
+monaco.editor.defineTheme(DARK_THEME, theme(true))
 
 interface Document {
   model: monaco.editor.ITextModel
@@ -32,7 +37,7 @@ export class ScoreEditor {
     this.editor = monaco.editor.create(options.container, {
       model: null,
       automaticLayout: true,
-      theme: dark.matches ? 'vs-dark' : 'vs',
+      theme: dark.matches ? DARK_THEME : LIGHT_THEME,
       fontSize: 14,
       minimap: { enabled: false },
       scrollBeyondLastLine: false,
@@ -42,7 +47,7 @@ export class ScoreEditor {
       renderWhitespace: 'none',
       fixedOverflowWidgets: true,
     })
-    dark.addEventListener('change', () => monaco.editor.setTheme(dark.matches ? 'vs-dark' : 'vs'))
+    dark.addEventListener('change', () => monaco.editor.setTheme(dark.matches ? DARK_THEME : LIGHT_THEME))
   }
 
   get file(): string | undefined {

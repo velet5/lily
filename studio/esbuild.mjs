@@ -1,7 +1,8 @@
 // Bundles Lily Studio's main process into dist/main.js, its preload script
 // into dist/preload.js (DECISIONS D28), and the renderer script with Monaco
 // and Monaco's worker into dist/renderer/ (D29). renderer/index.html and
-// layout.css are loaded as they are.
+// layout.css are loaded as they are. The renderer carries the extension's
+// grammar, language configuration and Oniguruma's WebAssembly inline (D30).
 //
 //   node esbuild.mjs                one-off development build
 //   node esbuild.mjs --watch        rebuild on change
@@ -9,10 +10,27 @@
 //   node esbuild.mjs --tests        test/*.test.ts → out/test/, for node --test
 import * as esbuild from 'esbuild'
 import { readdirSync } from 'node:fs'
+import { readFile } from 'node:fs/promises'
 
 const production = process.argv.includes('--production')
 const watch = process.argv.includes('--watch')
 const tests = process.argv.includes('--tests')
+
+/**
+ * language-configuration.json has comments, which esbuild's JSON loader
+ * rejects. A JSON-with-comments object is a JavaScript expression, so it is
+ * loaded as one.
+ * @type {import('esbuild').Plugin}
+ */
+const jsonWithComments = {
+  name: 'json-with-comments',
+  setup(build) {
+    build.onLoad({ filter: /[\\/]language-configuration\.json$/ }, async (args) => ({
+      contents: `export default (${await readFile(args.path, 'utf8')})`,
+      loader: 'js',
+    }))
+  },
+}
 
 /** @type {import('esbuild').BuildOptions} */
 const shared = {
@@ -22,6 +40,8 @@ const shared = {
   target: 'node22',
   // Provided by the Electron runtime.
   external: ['electron'],
+  loader: { '.wasm': 'binary' },
+  plugins: [jsonWithComments],
   sourcemap: !production,
   minify: production,
   logLevel: 'info',
@@ -42,7 +62,7 @@ const builds = [
     platform: 'browser',
     target: 'chrome140',
     external: [],
-    loader: { '.ttf': 'file' },
+    loader: { ...shared.loader, '.ttf': 'file' },
   },
   {
     ...shared,

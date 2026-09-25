@@ -1,6 +1,6 @@
 // `npm test` in studio/: starts the real window hidden on a scratch folder and
-// drives it once — layout, Monaco, the file list, an edit, the unsaved marker
-// and a save — then prints a JSON report and exits 0 or 1.
+// drives it once — layout, Monaco, the file list, highlighting, an edit, the
+// unsaved marker and a save — then prints a JSON report and exits 0 or 1.
 import type { BrowserWindow } from 'electron'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
@@ -81,6 +81,17 @@ export async function runSmokeTest(window: BrowserWindow, smoke: SmokeFolder): P
     `(() => { const t = (document.querySelector('.monaco-editor .view-lines')?.textContent ?? '').replace(/\u00a0/g, ' '); return t.includes('c4 d e f') ? t : '' })()`,
   )
 
+  // The grammar colours it (Monaco joins neighbouring pieces of one colour into a span).
+  const colours = await until<Record<string, string>>(
+    'LilyPond highlighting',
+    `(() => {
+      const spans = [...document.querySelectorAll('.monaco-editor .view-lines span span')]
+      const colour = (text) => { const s = spans.find((span) => span.textContent.trim() === text); return s && getComputedStyle(s).color }
+      const found = { brace: colour('{'), string: colour('"2.24.0"'), duration: colour('4') }
+      return Object.values(found).every(Boolean) && new Set(Object.values(found)).size === 3 ? found : null
+    })()`,
+  )
+
   // Typing marks the file unsaved, in the list and the editor header.
   // Monaco takes input through an EditContext element, or a textarea without it.
   window.webContents.focus()
@@ -96,6 +107,6 @@ export async function runSmokeTest(window: BrowserWindow, smoke: SmokeFolder): P
 
   await fs.rm(smoke.folder, { recursive: true, force: true })
   const ok = problems.length === 0
-  console.log(JSON.stringify({ ok, problems, ...layout, listed, monaco: !!shown, saved }, null, 2))
+  console.log(JSON.stringify({ ok, problems, ...layout, listed, monaco: !!shown, colours, saved }, null, 2))
   return ok ? 0 : 1
 }

@@ -1327,8 +1327,7 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
 - **Editor.** The editor pane is Monaco 0.57 (`monaco-editor/editor` with
   `features/register.all`, no bundled languages), created by
   `studio/src/renderer/editor.ts`. Each opened file keeps its own model under
-  `Uri.file(path)` with language id `lilypond` (the grammar comes in the next
-  step), so unsaved edits survive switching files. A file is unsaved while its
+  `Uri.file(path)` with language id `lilypond` (highlighted as in D30), so unsaved edits survive switching files. A file is unsaved while its
   model's alternative version id differs from the one last written; undoing
   back to the saved text clears the mark. The theme follows the system.
 - **Renderer bundle.** `studio/esbuild.mjs` now also bundles
@@ -1366,3 +1365,38 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   checks the file list, opens a score in Monaco, types into it, sees both
   unsaved marks, saves through the menu command and reads the file back.
   `npm test` runs both.
+
+## D30 — Lily Studio: highlighting from the extension's grammar
+
+**Status:** proposed · **Refines:** D2, D29
+
+- **One grammar.** Lily Studio highlights with the extension's own
+  `syntaxes/lilypond.tmLanguage.json` and takes comments, brackets,
+  auto-closing, word pattern and indentation from `language-configuration.json`;
+  neither is copied or rewritten for Monaco, so a grammar fix reaches both
+  editors. `studio/src/renderer/grammar.ts` loads the grammar with
+  vscode-textmate 9 and vscode-oniguruma 2 (Oniguruma as WebAssembly) and gives
+  Monaco a `TokensProvider` whose state is the grammar's `StateStack`. A line
+  that takes more than 500 ms stays partly uncoloured.
+- **Scopes to Monaco tokens.** Monaco themes colour one token name per piece,
+  not a scope stack, so each piece gets the theme key of its innermost scope
+  that has a colour (`punctuation.*` and `meta.*` have none, so a string's
+  quotes are coloured as the string). Inside a comment or string, `.comment` or
+  `.string` is appended when the key does not already start with it: Monaco
+  reads those words to skip brackets and auto-closing there, and the theme
+  ignores the extra segment. A test checks that every scope the grammar names,
+  other than punctuation and meta, has a colour.
+- **Themes.** `lilypond-light` and `lilypond-dark` inherit Monaco's `vs` and
+  `vs-dark` and colour the keys like VS Code's Light+ and Dark+, so a score
+  looks as it does in the extension. The editor still follows the system.
+- **Bundling.** esbuild inlines the grammar, the configuration and
+  `onig.wasm` (the `binary` loader) into `app.js`; nothing is fetched at run
+  time. `language-configuration.json` has comments, which esbuild's JSON loader
+  rejects, so `studio/esbuild.mjs` loads it as a JavaScript expression. The CSP
+  gains `'wasm-unsafe-eval'` in `script-src`, which permits compiling
+  WebAssembly and not `eval`.
+- **Verified.** `npm run test:unit` in `studio/` tokenizes lines with the same
+  WebAssembly under node (notes, durations, rests, strings, a block comment and
+  Scheme across lines) and checks the themes and the converted configuration;
+  `npm run test:smoke` checks in the window that a brace, the version string
+  and a duration are drawn in three different colours.
