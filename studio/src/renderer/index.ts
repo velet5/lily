@@ -1,6 +1,6 @@
 // The renderer's entry point, bundled into dist/renderer/app.js: connects the
 // file list, the editor and the status line to `window.studio` (preload.ts).
-import type { CompileEvent, Opened } from '../ipc'
+import type { CompileEvent, FileChange, Opened } from '../ipc'
 import type { StudioApi } from '../preload'
 import type { TemplateId } from '../templates'
 import { compileStatus, DiagnosticStore } from './diagnostics'
@@ -242,6 +242,38 @@ studio.onCompile((event) => {
   compiled(event)
   preview.compiled(event)
   pdfView.compiled(event)
+})
+
+/**
+ * Files another program changed (D34): an open one is reloaded, after asking
+ * when it has unsaved changes. The main process compiles the score again.
+ */
+async function changedOnDisk(changes: FileChange[]): Promise<void> {
+  for (const { file, exists } of changes) {
+    if (!editor.isOpen(file)) continue
+    const name = displayName(file)
+    try {
+      if (!exists) {
+        status(`${name} was deleted or moved by another program. Save to write it again.`)
+        continue
+      }
+      if (editor.isDirty(file) && !(await studio.confirmReload(file))) {
+        status(`${name} was changed by another program; your changes are kept`)
+        continue
+      }
+      // Read now: the file may have changed again while the dialog was open.
+      editor.reload(file, await studio.readFile(file))
+      status(`${name} was changed by another program and has been reloaded`)
+    } catch (error) {
+      report(error)
+    }
+  }
+}
+
+// One batch at a time, so a second change does not ask while the first dialog is open.
+let reloading = Promise.resolve()
+studio.onFilesChanged((changes) => {
+  reloading = reloading.then(() => changedOnDisk(changes))
 })
 
 studio.onCommand((command) => {

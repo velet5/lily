@@ -64,10 +64,30 @@ export async function includeClosure(
   rootFile: string,
   options: IncludeOptions = {},
 ): Promise<Set<string>> {
+  return (await includeGraph(rootFile, options)).files
+}
+
+export interface IncludeGraph {
+  /** As `includeClosure` returns them. */
+  files: Set<string>
+  /**
+   * For each name that resolves nowhere, every path lilypond would look for it
+   * at, absolute: a file created at one of them joins the score. Library names
+   * such as `english.ly` are among them.
+   */
+  missing: Set<string>
+}
+
+/** `includeClosure`, and the places where includes that were not found would be. */
+export async function includeGraph(
+  rootFile: string,
+  options: IncludeOptions = {},
+): Promise<IncludeGraph> {
   const buffers = await canonicalBuffers(options.buffers)
   const root = await canonical(rootFile)
   const rootDir = path.dirname(root)
   const seen = new Set<string>([root])
+  const missing = new Set<string>()
   const queue = [root]
   for (let file = queue.shift(); file !== undefined; file = queue.shift()) {
     let source: string
@@ -78,18 +98,24 @@ export async function includeClosure(
     }
     const dirs = [path.dirname(file), rootDir, ...(options.includeDirs ?? [])]
     for (const name of parseIncludes(source)) {
+      const candidates: string[] = []
+      let found = false
       for (const dir of new Set(dirs)) {
         const candidate = path.resolve(dir, name)
         const real = await canonical(candidate)
         const target = buffers.has(real) ? real : await existing(candidate)
-        if (target !== undefined && !seen.has(target)) {
+        candidates.push(candidate)
+        if (target === undefined) continue
+        found = true
+        if (!seen.has(target)) {
           seen.add(target)
           queue.push(target)
         }
       }
+      if (!found) for (const candidate of candidates) missing.add(candidate)
     }
   }
-  return seen
+  return { files: seen, missing }
 }
 
 /**

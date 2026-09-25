@@ -3,7 +3,7 @@
 // (src/ipc.ts); later steps add the playback calls here.
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FolderListing } from './files'
-import { Channel, type Command, type CompileEvent, type Opened, type PdfOutcome, type SourceLocation } from './ipc'
+import { Channel, type Command, type CompileEvent, type FileChange, type Opened, type PdfOutcome, type SourceLocation } from './ipc'
 import { TEMPLATES, type TemplateId } from './templates'
 
 const studio = {
@@ -34,6 +34,11 @@ const studio = {
   compilePdf: (rootFile: string): Promise<PdfOutcome | undefined> => ipcRenderer.invoke(Channel.compilePdf, rootFile),
   /** Writes the PDF of `rootFile` next to it; resolves with the files written. */
   exportPdf: (rootFile: string): Promise<string[]> => ipcRenderer.invoke(Channel.exportPdf, rootFile),
+  /**
+   * Asks, in a dialog, whether to reload `file` from disk and lose its unsaved
+   * changes; true for Reload.
+   */
+  confirmReload: (file: string): Promise<boolean> => ipcRenderer.invoke(Channel.confirmReload, file),
   /** Runs `listener` for each menu command; returns a function that removes it. */
   onCommand(listener: (command: Command) => void): () => void {
     const handler = (_event: unknown, command: Command) => listener(command)
@@ -45,6 +50,12 @@ const studio = {
     const handler = (_event: unknown, compile: CompileEvent) => listener(compile)
     ipcRenderer.on(Channel.compile, handler)
     return () => ipcRenderer.removeListener(Channel.compile, handler)
+  },
+  /** Runs `listener` when open files or the score's includes change on disk (D34). */
+  onFilesChanged(listener: (changes: FileChange[]) => void): () => void {
+    const handler = (_event: unknown, changes: FileChange[]) => listener(changes)
+    ipcRenderer.on(Channel.filesChanged, handler)
+    return () => ipcRenderer.removeListener(Channel.filesChanged, handler)
   },
 }
 

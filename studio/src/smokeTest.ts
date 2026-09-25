@@ -1,7 +1,8 @@
 // `npm test` in studio/: starts the real window hidden on a scratch folder and
 // drives it once — layout, Monaco, the file list, highlighting, an edit, the
 // unsaved marker, a save, the compile it starts, its pages in the preview
-// and a click on a note there, the PDF tab and Export PDF, and an error marked —
+// and a click on a note there, the PDF tab and Export PDF, an error marked,
+// and an edit by another program reloaded and compiled —
 // then prints a JSON report and exits 0 or 1.
 import type { BrowserWindow } from 'electron'
 import * as fs from 'node:fs/promises'
@@ -154,6 +155,33 @@ export async function runSmokeTest(window: BrowserWindow, smoke: SmokeFolder): P
     compile.squiggle = await until<boolean>('an error marker in the editor', `!!document.querySelector('.monaco-editor .squiggly-error')`)
     compile.status = await run<string>(`document.querySelector('.status-compile').textContent`)
   }
+
+  // Another program edits the saved score: the editor reloads it and the
+  // score compiles again (D34). The last save left the editor clean.
+  const firstCompile = await run<string>(`document.querySelector('.status-compile').textContent`)
+  await fs.writeFile(smoke.score, '\\version "2.24.0"\n{ c4 d e g }\n')
+  const external: Record<string, unknown> = {}
+  external.reloaded = await until<string>(
+    'the editor to reload the file changed on disk',
+    `(() => { const t = (document.querySelector('.monaco-editor .view-lines')?.textContent ?? '').replace(/\u00a0/g, ' '); return t.includes('c4 d e g') && document.querySelector('[data-pane="editor"]').dataset.dirty === 'false' ? document.querySelector('.status-message').textContent : '' })()`,
+  )
+  if (!compile.skipped) {
+    external.compile = await until<string>(
+      'the score to compile after the change on disk',
+      `(() => { const t = ${tone}; const s = document.querySelector('.status-compile').textContent; return t === 'ok' && s !== ${JSON.stringify(firstCompile)} ? s : '' })()`,
+      30_000,
+    )
+  }
+  // With unsaved edits it asks first; the smoke test's answer keeps them.
+  await run(`document.querySelector('.monaco-editor .native-edit-context, .monaco-editor textarea').focus()`)
+  window.webContents.insertText('% mine ')
+  await until('the unsaved marker before the second change', `document.querySelector('[data-pane="editor"]').dataset.dirty === 'true'`)
+  await fs.writeFile(smoke.score, '\\version "2.24.0"\n{ c4 d e a }\n')
+  external.kept = await until<string>(
+    'the unsaved edits to be kept',
+    `(() => { const s = document.querySelector('.status-message').textContent; const t = (document.querySelector('.monaco-editor .view-lines')?.textContent ?? '').replace(/\u00a0/g, ' '); return s.includes('changes are kept') && t.includes('% mine') && document.querySelector('[data-pane="editor"]').dataset.dirty === 'true' ? s : '' })()`,
+  )
+  compile.external = external
 
   await fs.rm(smoke.folder, { recursive: true, force: true })
   const ok = problems.length === 0

@@ -134,6 +134,25 @@ export class ScoreEditor {
     this.editor.focus()
   }
 
+  /**
+   * Replaces `file`'s text with `text`, what is on disk now, and counts it as
+   * saved (D34). One undoable edit, so Undo brings back what was there; the
+   * view keeps its place.
+   */
+  reload(file: string, text: string): void {
+    const doc = this.documents.get(file)
+    if (!doc) return
+    if (doc.model.getValue() !== text) {
+      const view = this.current === file ? this.editor.saveViewState() : null
+      doc.model.pushStackElement()
+      doc.model.pushEditOperations([], [{ range: doc.model.getFullModelRange(), text }], () => null)
+      doc.model.pushStackElement()
+      if (view) this.editor.restoreViewState(view)
+    }
+    doc.savedVersion = doc.model.getAlternativeVersionId()
+    this.options.onChange()
+  }
+
   /** Writes `file` (the one shown by default). Rejects when the write fails. */
   async save(file = this.current): Promise<void> {
     const doc = file && this.documents.get(file)

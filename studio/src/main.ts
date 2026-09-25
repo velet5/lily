@@ -1,6 +1,7 @@
 // Lily Studio's main process: one window with the fixed layout of
 // renderer/index.html (DECISIONS D28), the file access behind it (D29) and
-// compile on save (D31), and the PDF tab's compile and export (D33). Later steps add the playback service here and reach
+// compile on save (D31), the PDF tab's compile and export (D33), and the
+// watch on the files behind them (D34). Later steps add the playback service here and reach
 // the renderer only through preload.ts.
 import { app, BrowserWindow, dialog, ipcMain, Menu, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
 import * as path from 'node:path'
@@ -9,6 +10,7 @@ import { parseTextEdit } from '../../src/preview/pointAndClick'
 import { Access, createFromTemplate, isInside, isScoreFile, listFolder, readScore, unusedName, writeScore, SCORE_EXTENSIONS } from './files'
 import { Channel, type Command, type Opened } from './ipc'
 import { StudioCompiler } from './main/compileService'
+import { ScoreWatcher } from './main/watcher'
 import { prepareSmokeTest, runSmokeTest } from './smokeTest'
 import { TEMPLATES, type TemplateId } from './templates'
 
@@ -19,8 +21,24 @@ const access = new Access()
 const compiler = new StudioCompiler({
   compiler: new CompileService(),
   candidates: async () => (access.folder === undefined ? [] : (await listFolder(access.folder)).files.map((f) => f.path)),
-  emit: (event) => mainWindow?.webContents.send(Channel.compile, event),
+  emit: (event) => {
+    mainWindow?.webContents.send(Channel.compile, event)
+    // A compile may have added or removed an include: watch the score as it is now.
+    if (event.kind === 'finished' && event.outcome.state !== 'no-root') void watcher.watchScore(event.outcome.rootFile)
+  },
   lilypondPath: process.env.LILYPOND_PATH,
+})
+/**
+ * Another program changed a file: the renderer reloads the open ones, and the
+ * score compiles again when the file is one of its own (D34).
+ */
+const watcher = new ScoreWatcher({
+  onChange: (changes, score) => {
+    // Only files the renderer may open; an include outside the folder just recompiles.
+    const visible = changes.filter((change) => access.allows(change.file))
+    if (visible.length > 0) mainWindow?.webContents.send(Channel.filesChanged, visible)
+    if (score && watcher.score) void compiler.compile(watcher.score)
+  },
 })
 /** Whether the renderer reports unsaved changes; guards closing the window. */
 let dirty = false
@@ -143,6 +161,8 @@ function registerIpc(): void {
     // The editor keeps the file open when another folder is opened; it must
     // still be able to save it then.
     access.allowFile(allowed)
+    // Watched from now on, from what the editor shows.
+    await watcher.open(allowed, text)
     return text
   })
 
@@ -150,6 +170,7 @@ function registerIpc(): void {
     owner(event)
     if (typeof text !== 'string') throw new Error('Expected the text to save.')
     const allowed = access.check(file)
+    await watcher.writing(allowed, text)
     await writeScore(allowed, text)
     // The save is done; the compile reports on Channel.compile when it ends.
     void compiler.saved(allowed)
@@ -190,6 +211,22 @@ function registerIpc(): void {
   ipcMain.handle(Channel.exportPdf, async (event, rootFile: unknown) => {
     owner(event)
     return compiler.exportPdf(access.check(rootFile))
+  })
+
+  ipcMain.handle(Channel.confirmReload, async (event, file: unknown) => {
+    const window = owner(event)
+    const allowed = access.check(file)
+    // The smoke test does not answer dialogs; it keeps the edits.
+    if (smokeTest) return false
+    const { response } = await dialog.showMessageBox(window, {
+      type: 'warning',
+      message: `${path.basename(allowed)} was changed by another program.`,
+      detail: 'Reload it and lose the changes you have not saved, or keep your changes? Saving them will replace the other version.',
+      buttons: ['Reload', 'Keep My Changes'],
+      defaultId: 1,
+      cancelId: 1,
+    })
+    return response === 0
   })
 
   ipcMain.on(Channel.setDirty, (event, value: unknown) => {
@@ -280,6 +317,7 @@ if (!app.requestSingleInstanceLock()) {
     if (disposed) return
     event.preventDefault()
     disposed = true
+    watcher.dispose()
     void compiler.dispose().finally(() => app.quit())
   })
 }

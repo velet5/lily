@@ -6,6 +6,7 @@ import { after, before, describe, test } from 'node:test'
 import {
   includeClosure,
   includeDirsFromArgs,
+  includeGraph,
   parseIncludes,
   rootsIncluding,
 } from '../../src/compile/rootFile'
@@ -109,6 +110,15 @@ describe('include graph', () => {
     assert.ok(!(await includeClosure(at('hymn.ly'))).has(at('lib/house-style.ily')))
     const closure = await includeClosure(at('hymn.ly'), { includeDirs: [at('lib')] })
     assert.ok(closure.has(at('lib/house-style.ily')))
+  })
+
+  test('includeGraph lists where the includes that were not found would be', async () => {
+    const graph = await includeGraph(at('hymn.ly'))
+    assert.deepStrictEqual([...graph.files].sort(), [at('hymn.ly'), at('parts/lyrics.ily'), at('parts/melody.ily'), at('parts/shared.ily')].sort())
+    // house-style.ily from the root's directory; melody.ily from parts/ is found, so not missing.
+    assert.deepStrictEqual([...graph.missing], [at('house-style.ily')])
+    const withLib = await includeGraph(at('hymn.ly'), { includeDirs: [at('lib')] })
+    assert.deepStrictEqual([...withLib.missing], [])
   })
 
   test('a root that does not exist is its own closure', async () => {

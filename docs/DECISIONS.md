@@ -1529,3 +1529,44 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   score with errors, and one real compile and export (skipped without
   lilypond). `npm run test:smoke` switches to PDF, waits for a drawn canvas,
   checks no PDF was written, presses Export PDF and finds `smoke.pdf`.
+
+## D34 — Lily Studio: reload and recompile on changes made on disk
+
+**Status:** proposed · **Refines:** D10, D18, D29, D31
+
+- **What is watched.** `ScoreWatcher` (`studio/src/main/watcher.ts`, no
+  `electron`) watches every file the editor opened (each `studio:read-file`
+  adds one) and the score compiled last: its `\include` graph and, for each
+  include that was not found, every path lilypond would look for it at, so a
+  missing part that appears joins the score. The graph comes from
+  `includeGraph` in `src/compile/rootFile.ts`, which is `includeClosure` plus
+  those `missing` paths. Each finished compile watches its score again, as an
+  edit may have added or removed an include; another score replaces the
+  previous one's files, but open files stay watched.
+- **How.** One `fs.watch` per directory, not per file: a watch on a file ends
+  when an editor saves by writing a temporary file and renaming it over the
+  original. Events are debounced (150 ms) and a file counts as changed only
+  when its text differs from what was last seen, so repeated events, a write
+  of the same text and the studio's own saves (`writing` before the write)
+  are not changes. A file that cannot be read is reported as gone.
+- **Reload.** The main process sends the changes the renderer may open
+  (`Access`) on `studio:files-changed`. An open file without unsaved edits is
+  read again and replaces the editor's text as one undoable edit that counts
+  as saved, and the view keeps its place. With unsaved edits it asks first
+  (`studio:confirm-reload`, a native dialog: Reload or Keep My Changes, the
+  default); keeping them leaves the file unsaved, and the next save replaces
+  the other version. A deleted open file stays open with a note in the status
+  line; saving writes it again.
+- **Recompile.** When a changed file belongs to the watched score, the main
+  process compiles that score from disk, as a save would; files outside it
+  (an open score that is not the one shown) are only reloaded. The preview
+  shows what is on disk, so unsaved edits that were kept are not in it.
+- **Verified.** `npm run test:unit` in `studio/` (`test/watcher.test.ts`, on
+  the real file system): a change to an open file under the path the editor
+  used, no report for the studio's own save or a write of the same text, one
+  report for a burst, an include of the score, two saves by rename, a missing
+  include appearing and being deleted, a second score replacing the first
+  while open files stay watched, nothing after dispose. `test/compile/rootFile.test.ts`
+  covers `includeGraph`'s missing paths. `npm run test:smoke` writes the score
+  from outside: the editor reloads it and it compiles again; with unsaved
+  edits it asks, and the smoke test's answer keeps them.

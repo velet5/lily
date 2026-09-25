@@ -3,6 +3,7 @@
 import type { LyDiagnostic } from '../../src/diagnostics/parse'
 import type { SourceLocation } from '../../src/preview/pointAndClick'
 import type { FolderListing } from './files'
+import type { FileChange } from './main/watcher'
 
 export const Channel = {
   openFolder: 'studio:open-folder',
@@ -22,6 +23,10 @@ export const Channel = {
   compilePdf: 'studio:compile-pdf',
   /** Export PDF: writes that PDF next to the score (D33). */
   exportPdf: 'studio:export-pdf',
+  /** Main → renderer: files changed on disk by another program (D34). */
+  filesChanged: 'studio:files-changed',
+  /** Asks whether to reload a file with unsaved changes that changed on disk (D34). */
+  confirmReload: 'studio:confirm-reload',
 } as const
 
 /** A folder was opened, or a file whose folder becomes the open folder. */
@@ -78,4 +83,4 @@ export type CompileEvent =
   | { kind: 'started'; rootFile: string }
   | { kind: 'finished'; outcome: CompileOutcome }
 
-export type { SourceLocation }
+export type { FileChange, SourceLocation }
