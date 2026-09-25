@@ -39,6 +39,13 @@ const studio = {
    * changes; true for Reload.
    */
   confirmReload: (file: string): Promise<boolean> => ipcRenderer.invoke(Channel.confirmReload, file),
+  /**
+   * The unsaved text of `file` after an edit, or null after a save or reload.
+   * Live preview compiles with these texts (D36).
+   */
+  edited: (file: string, text: string | null): void => ipcRenderer.send(Channel.edited, file, text),
+  /** Turns live preview on or off. */
+  setLive: (on: boolean): void => ipcRenderer.send(Channel.setLive, on),
   /** Runs `listener` for each menu command; returns a function that removes it. */
   onCommand(listener: (command: Command) => void): () => void {
     const handler = (_event: unknown, command: Command) => listener(command)

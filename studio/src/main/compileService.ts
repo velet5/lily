@@ -1,7 +1,9 @@
 // Compile on save for Lily Studio's main process (DECISIONS D31): finds the
 // score a saved file belongs to, compiles it with the extension's
 // CompileService and parses lilypond's stderr with its parser. main.ts sends
-// the events to the renderer, with the MIDI to play (D35). The PDF tab's
+// the events to the renderer, with the MIDI to play (D35). Every compile of a
+// score waits in a LiveQueue and reads the unsaved texts live preview passes
+// in `buffers` (D36). The PDF tab's
 // compile and Export PDF are here too (D33). No `electron` here, so the tests run it under plain Node.
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
@@ -9,7 +11,9 @@ import * as path from 'node:path'
 import type { CompileResult, CompileService } from '../../../src/compile/compiler'
 import { LilyPondNotFoundError } from '../../../src/compile/locate'
 import { rootsIncluding } from '../../../src/compile/rootFile'
+import type { SourceBuffers } from '../../../src/compile/snapshot'
 import { parseStderr } from '../../../src/diagnostics/parse'
+import { LiveQueue } from '../../../src/preview/liveQueue'
 import { readTiming } from '../../../src/preview/panel'
 import type { CompileEvent, CompileOutcome, PdfOutcome } from '../ipc'
 
@@ -25,6 +29,13 @@ export interface StudioCompilerOptions {
   lilypondPath?: string
   /** Parent of the PDF compiles' private directories. Defaults to the OS temp dir. */
   tmpRoot?: string
+  /**
+   * The unsaved texts to compile instead of the files on disk (D36), read
+   * when a compile starts. None by default.
+   */
+  buffers?(): SourceBuffers
+  /** For the SVG compiles, as `lily.preview.acceleration` (D25). Defaults to off. */
+  acceleration?: 'off' | 'cache' | 'auto'
 }
 
 /** Lines of stderr kept for a run that failed without a parsable error. */
@@ -32,14 +43,24 @@ const TAIL_LINES = 12
 
 export class StudioCompiler {
   /** The score compiled last; preferred when an include belongs to several. */
-  private current: string | undefined
+  private last: string | undefined
   /**
    * The PDF of each score since its last compile, or the PDF compile running
    * for it; a compile of the score drops it, as the sources changed.
    */
   private readonly pdfs = new Map<string, Promise<PdfOutcome | undefined>>()
+  /**
+   * One running and one waiting compile per score (D25): a newer request
+   * replaces the waiting one, and never kills a run about to finish.
+   */
+  private readonly queue = new LiveQueue<CompileOutcome | undefined>()
 
   constructor(private readonly options: StudioCompilerOptions) {}
+
+  /** The score compiled last, or asked for last. */
+  get current(): string | undefined {
+    return this.last
+  }
 
   /**
    * Compiles the score `file` belongs to, after it was written. Resolves with
@@ -64,24 +85,35 @@ export class StudioCompiler {
   async rootFor(file: string): Promise<string | undefined> {
     if (path.extname(file).toLowerCase() === '.ly') return file
     const candidates = (await this.options.candidates()).filter((f) => path.extname(f).toLowerCase() === '.ly')
-    const roots = [...new Set([...(this.current ? [this.current] : []), ...candidates])]
+    const roots = [...new Set([...(this.last ? [this.last] : []), ...candidates])]
     // An unreadable file reaches nothing; the others still count.
-    const [first] = await rootsIncluding(file, roots).catch(() => [])
+    const buffers = this.options.buffers?.()
+    const [first] = await rootsIncluding(file, roots, () => ({ buffers })).catch(() => [])
     return first
   }
 
-  async compile(rootFile: string): Promise<CompileOutcome | undefined> {
-    this.current = rootFile
+  /**
+   * Compiles `rootFile` once the compile of it that is running has been
+   * reported. Resolves undefined when a newer request replaced this one
+   * before it started, or the run was cancelled; that one reports instead.
+   */
+  compile(rootFile: string): Promise<CompileOutcome | undefined> {
+    this.last = rootFile
+    return this.queue.request(rootFile, () => this.run(rootFile))
+  }
+
+  private async run(rootFile: string): Promise<CompileOutcome | undefined> {
     this.pdfs.delete(rootFile)
+    // Taken now, not when asked: the texts as they are when lilypond starts.
+    const buffers = this.options.buffers?.()
     this.options.emit({ kind: 'started', rootFile })
     let outcome: CompileOutcome
     try {
       const result = await this.options.compiler.compile({
         rootFile,
         lilypondPath: this.options.lilypondPath,
-        // The warm and cached engines need the extension's runtime/ files;
-        // they come with live preview (step 9 of the studio plan).
-        acceleration: 'off',
+        ...(buffers?.size ? { buffers } : {}),
+        acceleration: this.options.acceleration ?? 'off',
       })
       if (result.cancelled) return undefined
       outcome = fromResult(result)
@@ -200,7 +232,8 @@ function empty(state: CompileOutcome['state'], rootFile: string): CompileOutcome
 }
 
 export function fromResult(result: CompileResult): CompileOutcome {
-  const diagnostics = parseStderr(result.stderr, { rootFile: result.rootFile })
+  // A compile of unsaved texts names the snapshot's files (D25); the markers need the real ones.
+  const diagnostics = parseStderr(result.stderr, { rootFile: result.rootFile }).map((d) => result.snapshot?.diagnostic(d) ?? d)
   const errorCount = diagnostics.filter((d) => d.severity === 'error').length
   const outcome: CompileOutcome = {
     state: result.ok ? 'ok' : 'failed',

@@ -2,8 +2,8 @@
 // drives it once — layout, Monaco, the file list, highlighting, an edit, the
 // unsaved marker, a save, the compile it starts, its pages in the preview
 // and a click on a note there, the PDF tab and Export PDF, an error marked,
-// an edit by another program reloaded and compiled, and its MIDI played with
-// the notes marked —
+// an edit by another program reloaded and compiled, its MIDI played with
+// the notes marked, and unsaved edits in the preview with live preview on —
 // then prints a JSON report and exits 0 or 1.
 import type { BrowserWindow } from 'electron'
 import * as fs from 'node:fs/promises'
@@ -201,6 +201,26 @@ export async function runSmokeTest(window: BrowserWindow, smoke: SmokeFolder): P
     `(() => { const s = document.querySelector('.status-message').textContent; const t = (document.querySelector('.monaco-editor .view-lines')?.textContent ?? '').replace(/\u00a0/g, ' '); return s.includes('changes are kept') && t.includes('% mine') && document.querySelector('[data-pane="editor"]').dataset.dirty === 'true' ? s : '' })()`,
   )
   compile.external = external
+
+  // Live preview (D36): the unsaved text engraves without a save; switched
+  // off, the preview shows the file on disk again. The disk has `{ c4 d e a }`.
+  if (!compile.skipped) {
+    const live: Record<string, unknown> = {}
+    const notes = `new Set([...document.querySelectorAll('.preview-page a.source')].map((a) => a.href.baseVal).filter((h) => /smoke\\.ly:2:/.test(h))).size`
+    live.button = await run<string>(`document.querySelector('.status-live').textContent`)
+    await run(`document.querySelector('.monaco-editor .native-edit-context, .monaco-editor textarea').focus()`)
+    window.webContents.selectAll()
+    window.webContents.insertText('\\version "2.24.0"\n{ c4 d e f g a b c }\n')
+    live.unsaved = await until<number>('the unsaved notes in the preview', `(() => { const n = ${notes}; return n === 8 && document.querySelector('[data-pane="editor"]').dataset.dirty === 'true' ? n : 0 })()`, 30_000)
+    const disk = await fs.readFile(smoke.score, 'utf8')
+    if (disk !== '\\version "2.24.0"\n{ c4 d e a }\n') problems.push(`live preview wrote the file: ${JSON.stringify(disk)}`)
+    await run(`document.querySelector('.status-live').click()`)
+    live.off = await until<number>('the saved notes after switching live preview off', `(() => { const n = ${notes}; return n === 4 ? n : 0 })()`, 30_000)
+    // Back on, as the switch is remembered.
+    await run(`document.querySelector('.status-live').click()`)
+    live.on = await until<number>('the unsaved notes after switching it on again', `(() => { const n = ${notes}; return n === 8 ? n : 0 })()`, 30_000)
+    compile.live = live
+  }
 
   await fs.rm(smoke.folder, { recursive: true, force: true })
   const ok = problems.length === 0

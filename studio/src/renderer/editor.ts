@@ -30,6 +30,11 @@ export interface ScoreEditorOptions {
   save(file: string, text: string): Promise<void>
   /** After an edit, a save, or a switch to another file. */
   onChange(): void
+  /**
+   * After an edit, a save or a reload of `file`: its unsaved text, or
+   * undefined when it matches what is on disk. Live preview compiles it (D36).
+   */
+  onText?(file: string, unsaved: string | undefined): void
   /** The last compile's diagnostics in `file`; marked when it opens. */
   diagnostics(file: string): LyDiagnostic[]
 }
@@ -81,7 +86,10 @@ export class ScoreEditor {
       if (text === undefined) throw new Error(`${file} is not open.`)
       const model = monaco.editor.createModel(text, LANGUAGE_ID, monaco.Uri.file(file))
       doc = { model, savedVersion: model.getAlternativeVersionId(), viewState: null }
-      model.onDidChangeContent(() => this.options.onChange())
+      model.onDidChangeContent(() => {
+        this.text(file)
+        this.options.onChange()
+      })
       this.documents.set(file, doc)
       this.mark(file)
     }
@@ -150,6 +158,7 @@ export class ScoreEditor {
       if (view) this.editor.restoreViewState(view)
     }
     doc.savedVersion = doc.model.getAlternativeVersionId()
+    this.text(file)
     this.options.onChange()
   }
 
@@ -161,7 +170,13 @@ export class ScoreEditor {
     const version = doc.model.getAlternativeVersionId()
     await this.options.save(file, doc.model.getValue())
     doc.savedVersion = version
+    this.text(file)
     this.options.onChange()
+  }
+
+  private text(file: string): void {
+    const doc = this.documents.get(file)
+    if (doc) this.options.onText?.(file, this.isDirty(file) ? doc.model.getValue() : undefined)
   }
 
   async saveAll(): Promise<void> {

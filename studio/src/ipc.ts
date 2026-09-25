@@ -28,6 +28,10 @@ export const Channel = {
   filesChanged: 'studio:files-changed',
   /** Asks whether to reload a file with unsaved changes that changed on disk (D34). */
   confirmReload: 'studio:confirm-reload',
+  /** The unsaved text of an open file, or null once it matches the disk again (D36). */
+  edited: 'studio:edited',
+  /** Live preview on or off, from the status line (D36). */
+  setLive: 'studio:set-live',
 } as const
 
 /** A folder was opened, or a file whose folder becomes the open folder. */

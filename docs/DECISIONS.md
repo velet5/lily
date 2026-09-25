@@ -1617,3 +1617,57 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   and bar 2 is at 2 s (skipped without lilypond). `npm run test:smoke`
   plays a score with `\midi`, pauses a second in, finds a note marked,
   the playhead on its page and *bar 1*, and stop clears them.
+
+## D36 — Lily Studio: live preview of unsaved edits
+
+**Status:** proposed · **Refines:** D25, D31, D34, D35
+
+- **What.** While the status line's switch is on (**Live preview: On**, the
+  default, kept in the window's `localStorage`), the preview shows the
+  editor's unsaved texts. D31's “nothing compiles while typing” no longer
+  holds. Switching it off compiles the score shown last from disk, so the
+  preview shows the saved files again. Switching it on compiles what the
+  unsaved files belong to.
+- **Texts.** On every edit the editor sends the file's text on
+  `studio:edited`, or `null` once it matches the disk again (a save, an undo
+  back to it, or a D34 reload). `LiveCompile` (`studio/src/main/liveCompile.ts`,
+  no `electron`) keeps these texts. It keeps them while the switch is off too,
+  so switching on needs no new edit. The main process takes only files that
+  `Access` allows. The save handler does not clear a text: an edit made during
+  the write would be lost. The renderer's message after the save clears it.
+- **When.** D25's timing: a compile 150 ms after the last edit, and at most
+  750 ms after the first edit of a burst. The edited files resolve to their
+  scores with `rootFor`, as a save does (D31), with the unsaved texts. An
+  include that no score reaches compiles nothing and is not reported. A save
+  or reload drops what was waiting for that file.
+- **How.** Every SVG compile of `StudioCompiler` goes through a `LiveQueue`
+  (`src/preview/liveQueue.ts`): live, save and disk-change compiles alike. So
+  there is one running and one replaceable waiting compile per score, and
+  typing never kills a run that is about to finish. The texts are read when a
+  compile starts (`buffers`) and passed to `CompileService`. The service
+  writes them into a `SourceSnapshot` (`src/compile/snapshot.ts`), and never
+  writes them next to the score. Links in the pages and the playback map
+  already name the real files. Diagnostics are mapped back with
+  `snapshot.diagnostic`, as `src/diagnostics/publish.ts` does.
+- **Acceleration.** The studio's SVG compiles now use `acceleration: 'auto'`
+  (`src/compile/accelerator.ts`). `esbuild.mjs` copies `runtime/worker.scm`
+  and `glyph-cache.scm` next to `timing.ly`. D25's gate applies unchanged.
+  With LilyPond 2.26.0 and the checked backend, a warm, forked worker
+  compiles. Anything else falls back to ordinary spawning. The PDF tab and
+  Export PDF still compile the saved files, without acceleration (D33).
+- **Not done.** Markers from a live compile are placed on the text as it is
+  when the compile arrives, not on the version that was compiled. D25's
+  version check is left out. Edits arrive within 150–750 ms, so marks drift
+  by at most the characters typed since. There is no Updating indicator
+  beyond D31's “Engraving…”. The preview's page reuse (D25's hashes) is not
+  ported: each result redraws its pages.
+- **Verified.** `npm run test:unit` in `studio/` (`test/liveCompile.test.ts`)
+  covers the following. A burst compiles once, with the last text. Typing
+  without a pause compiles by the deadline. An include compiles its score,
+  and an unreached include compiles nothing. A save drops the waiting
+  compile. Off, on and off again behave as described above. The queue: a run
+  in progress is not joined, the waiting request is replaced, and buffers and
+  `auto` are passed. With real lilypond, an unsaved error in an include is
+  reported in the real `.ily`. An unsaved note links to the real score. The
+  disk is untouched. `npm run test:smoke` replaces the text without saving
+  and sees 8 notes; switched off, the 4 on disk; on again, 8.

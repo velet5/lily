@@ -4,7 +4,8 @@
 // layout.css are loaded as they are. The renderer carries the extension's
 // grammar, language configuration and Oniguruma's WebAssembly inline (D30),
 // and pdf.js, whose worker is bundled beside it (D33). The extension's
-// runtime/timing.ly is copied to dist/runtime/ for the playhead (D35).
+// runtime/ is copied to dist/runtime/: timing.ly for the playhead (D35), the
+// warm compiler and glyph cache for live preview (D36).
 //
 //   node esbuild.mjs                one-off development build
 //   node esbuild.mjs --watch        rebuild on change
@@ -91,9 +92,10 @@ if (tests) {
 }
 
 if (!tests) {
-  // Passed to every compile as -dinclude-settings; the playback map comes from it.
+  // timing.ly is passed to every compile as -dinclude-settings; the playback
+  // map comes from it. worker.scm and glyph-cache.scm speed up compiles (D25).
   mkdirSync('dist/runtime', { recursive: true })
-  cpSync('../runtime/timing.ly', 'dist/runtime/timing.ly')
+  for (const name of ['timing.ly', 'worker.scm', 'glyph-cache.scm']) cpSync(`../runtime/${name}`, `dist/runtime/${name}`)
 }
 
 if (watch) {

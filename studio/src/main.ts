@@ -1,8 +1,8 @@
 // Lily Studio's main process: one window with the fixed layout of
 // renderer/index.html (DECISIONS D28), the file access behind it (D29) and
 // compile on save (D31), the PDF tab's compile and export (D33), and the
-// watch on the files behind them (D34). Later steps add the playback service here and reach
-// the renderer only through preload.ts.
+// watch on the files behind them (D34), and live preview of unsaved edits
+// (D36). They reach the renderer only through preload.ts.
 import { app, BrowserWindow, dialog, ipcMain, Menu, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
 import * as path from 'node:path'
 import { CompileService } from '../../src/compile/compiler'
@@ -10,6 +10,7 @@ import { parseTextEdit } from '../../src/preview/pointAndClick'
 import { Access, createFromTemplate, isInside, isScoreFile, listFolder, readScore, unusedName, writeScore, SCORE_EXTENSIONS } from './files'
 import { Channel, type Command, type Opened } from './ipc'
 import { StudioCompiler } from './main/compileService'
+import { LiveCompile } from './main/liveCompile'
 import { ScoreWatcher } from './main/watcher'
 import { prepareSmokeTest, runSmokeTest } from './smokeTest'
 import { TEMPLATES, type TemplateId } from './templates'
@@ -19,8 +20,11 @@ const smokeTest = process.argv.includes('--smoke-test')
 
 const access = new Access()
 const compiler = new StudioCompiler({
-  // timing.ly, which esbuild.mjs copies beside this file, maps the MIDI to the pages (D35).
+  // runtime/, which esbuild.mjs copies beside this file: timing.ly maps the
+  // MIDI to the pages (D35), the rest speeds up compiles (D36).
   compiler: new CompileService({ runtimeDir: path.join(__dirname, 'runtime') }),
+  buffers: () => live.buffers(),
+  acceleration: 'auto',
   candidates: async () => (access.folder === undefined ? [] : (await listFolder(access.folder)).files.map((f) => f.path)),
   emit: (event) => {
     mainWindow?.webContents.send(Channel.compile, event)
@@ -29,6 +33,8 @@ const compiler = new StudioCompiler({
   },
   lilypondPath: process.env.LILYPOND_PATH,
 })
+/** Unsaved edits compile after a pause in typing, while the status line's switch is on (D36). */
+const live = new LiveCompile({ compiler })
 /**
  * Another program changed a file: the renderer reloads the open ones, and the
  * score compiles again when the file is one of its own (D34).
@@ -230,6 +236,23 @@ function registerIpc(): void {
     return response === 0
   })
 
+  ipcMain.on(Channel.edited, (event, file: unknown, text: unknown) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== mainWindow) return
+    if (typeof text !== 'string' && text !== null) return
+    let allowed: string
+    try {
+      allowed = access.check(file)
+    } catch {
+      return
+    }
+    live.edited(allowed, text ?? undefined)
+  })
+
+  ipcMain.on(Channel.setLive, (event, on: unknown) => {
+    if (BrowserWindow.fromWebContents(event.sender) !== mainWindow) return
+    live.setEnabled(on === true)
+  })
+
   ipcMain.on(Channel.setDirty, (event, value: unknown) => {
     if (BrowserWindow.fromWebContents(event.sender) !== mainWindow) return
     dirty = value === true
@@ -319,6 +342,7 @@ if (!app.requestSingleInstanceLock()) {
     event.preventDefault()
     disposed = true
     watcher.dispose()
+    live.dispose()
     void compiler.dispose().finally(() => app.quit())
   })
 }

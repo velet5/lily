@@ -121,7 +121,8 @@ body {
   font-size: 12px;
 }
 
-/* Messages on the left, the last compile on the right (DECISIONS D31). */
+/* Messages on the left; the live preview switch (D36) and the last compile
+   (D31) on the right. */
 .status-message,
 .status-compile {
   min-width: 0;
@@ -130,8 +131,30 @@ body {
   white-space: nowrap;
 }
 
-.status-compile {
+.status-live {
+  flex: none;
   margin-left: auto;
+  padding: 0 8px;
+  height: 18px;
+  border: 1px solid rgb(255 255 255 / 0.5);
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.status-live[aria-pressed='false'] {
+  opacity: 0.75;
+  border-style: dashed;
+}
+
+.status-live:hover {
+  background: rgb(255 255 255 / 0.15);
+}
+
+.status-compile {
   padding: 0 8px;
   height: 18px;
   border: 0;

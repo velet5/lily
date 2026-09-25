@@ -27,14 +27,43 @@ const pane = (name: string) => document.querySelector<HTMLElement>(`[data-pane="
 const editorPane = pane('editor')
 const filesPane = pane('files')
 const statusLine = pane('status')
-// The status line: messages on the left, the last compile on the right (D31).
+// The status line: messages on the left, the live preview switch (D36) and the
+// last compile (D31) on the right.
 const statusMessage = document.createElement('span')
 statusMessage.className = 'status-message'
 const compileButton = document.createElement('button')
 compileButton.className = 'status-compile'
 compileButton.type = 'button'
 compileButton.hidden = true
-statusLine.replaceChildren(statusMessage, compileButton)
+const liveButton = document.createElement('button')
+liveButton.className = 'status-live'
+liveButton.type = 'button'
+liveButton.title = 'Update the preview as you type, without saving'
+liveButton.addEventListener('click', () => setLive(liveButton.getAttribute('aria-pressed') !== 'true'))
+statusLine.replaceChildren(statusMessage, liveButton, compileButton)
+
+const LIVE_KEY = 'lily-studio.live'
+
+/** Live preview on or off (D36); remembered in this window's storage, on by default. */
+function setLive(on: boolean): void {
+  liveButton.setAttribute('aria-pressed', String(on))
+  liveButton.textContent = on ? 'Live preview: On' : 'Live preview: Off'
+  studio.setLive(on)
+  try {
+    localStorage.setItem(LIVE_KEY, String(on))
+  } catch {
+    // Storage may be unavailable; the switch still works for this run.
+  }
+}
+
+function storedLive(): boolean {
+  try {
+    return localStorage.getItem(LIVE_KEY) !== 'false'
+  } catch {
+    return true
+  }
+}
+setLive(storedLive())
 
 function status(message: string): void {
   statusMessage.textContent = message
@@ -64,6 +93,7 @@ const editor = new ScoreEditor({
   container: monacoHost,
   save: (file, text) => studio.saveFile(file, text),
   onChange: refreshMarkers,
+  onText: (file, unsaved) => studio.edited(file, unsaved ?? null),
   diagnostics: (file) => diagnostics.for(file),
 })
 
