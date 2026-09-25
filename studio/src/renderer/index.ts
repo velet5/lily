@@ -274,6 +274,29 @@ function refreshMarkers(): void {
   studio.setDirty(dirty.length > 0)
 }
 
+/**
+ * The score of the file in the editor: the preview, the player, the PDF tab
+ * and the banner show only its compiles, so a late compile of another score
+ * never takes the preview over (D39). Undefined when no score includes the file.
+ */
+let previewRoot: string | undefined
+/** Counts the files shown, so a slow answer about an earlier one is dropped. */
+let shownFiles = 0
+
+const forPreview = (event: CompileEvent) => (event.kind === 'started' ? event.rootFile : event.outcome.rootFile) === previewRoot
+
+/** The preview follows the editor: the score of `file`, shown or engraved now. */
+async function previewFor(file: string): Promise<void> {
+  const shown = ++shownFiles
+  const rootFile = await studio.showScore(file)
+  if (shown !== shownFiles || rootFile === previewRoot) return
+  if (previewRoot !== undefined) player.stop()
+  previewRoot = rootFile
+  banner.hidden = true
+  preview.showScore(rootFile)
+  pdfView.showScore(rootFile)
+}
+
 async function open(file: string): Promise<void> {
   try {
     const text = editor.isOpen(file) ? undefined : await studio.readFile(file)
@@ -281,6 +304,7 @@ async function open(file: string): Promise<void> {
     monacoHost.hidden = false
     editor.show(file, text)
     files.setActive(file)
+    await previewFor(file)
   } catch (error) {
     report(error)
   }
@@ -343,6 +367,7 @@ templateMenu.addEventListener('keydown', (event) => {
 
 studio.onCompile((event) => {
   compiled(event)
+  if (!forPreview(event)) return
   showBanner(event)
   preview.compiled(event)
   player.compiled(event)

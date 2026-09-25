@@ -97,6 +97,21 @@ export class PdfView {
     if (this.visible) void this.refresh()
   }
 
+  /**
+   * The editor switched to another score, or to a file of none (D39): the PDF
+   * of the old one goes, and a pending load of it is dropped. The next compile
+   * of the new score brings its PDF.
+   */
+  showScore(rootFile: string | undefined): void {
+    if (rootFile !== undefined && rootFile === this.rootFile) return
+    this.load++
+    this.rootFile = undefined
+    this.stale = false
+    this.exportButton.disabled = true
+    this.close()
+    this.setNote(undefined, rootFile === undefined ? 'This file is not part of a score.' : 'Engraving…')
+  }
+
   /** The tab was shown or hidden; showing it compiles a PDF that is out of date. */
   show(visible: boolean): void {
     this.visible = visible
@@ -191,7 +206,7 @@ export class PdfView {
   }
 
   /** `note` over the pages when there are some, else `empty` in the empty pane. */
-  private setNote(note: string | undefined, empty = 'Save a score to see its PDF here.'): void {
+  private setNote(note: string | undefined, empty = 'Open a score to see its PDF here.'): void {
     const hasPages = this.documents.length > 0
     this.empty.hidden = hasPages
     this.empty.textContent = hasPages ? '' : empty

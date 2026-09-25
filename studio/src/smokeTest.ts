@@ -6,6 +6,8 @@
 // the notes marked, and unsaved edits in the preview with live preview on —
 // then prints a JSON report and exits 0 or 1. It starts on the welcome
 // screen, sees LilyPond looked for, and reads the error explained (D37).
+// Opening a score engraves it without a save, and the preview follows the
+// editor from score to score (D39).
 import type { BrowserWindow } from 'electron'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
@@ -27,6 +29,7 @@ export async function prepareSmokeTest(): Promise<SmokeFolder> {
   await fs.mkdir(path.join(folder, 'parts'))
   await fs.writeFile(path.join(folder, 'parts', 'melody.ily'), 'melody = { g1 }\n')
   await fs.writeFile(path.join(folder, 'notes.txt'), 'not a score\n')
+  await fs.writeFile(path.join(folder, 'second.ly'), '\\version "2.24.0"\n{ g\'1 }\n')
   return { folder, score }
 }
 
@@ -87,7 +90,7 @@ export async function runSmokeTest(window: BrowserWindow, smoke: SmokeFolder): P
     'the file list',
     `(() => { const f = [...document.querySelectorAll('[data-file]')].map((e) => e.dataset.relative); return f.length ? f : null })()`,
   )
-  if (listed && JSON.stringify(listed) !== JSON.stringify(['smoke.ly', 'parts/melody.ily'])) {
+  if (listed && JSON.stringify(listed) !== JSON.stringify(['second.ly', 'smoke.ly', 'parts/melody.ily'])) {
     problems.push(`the file list is ${JSON.stringify(listed)}`)
   }
 
@@ -97,6 +100,9 @@ export async function runSmokeTest(window: BrowserWindow, smoke: SmokeFolder): P
     'Monaco to show smoke.ly',
     `(() => { const t = (document.querySelector('.monaco-editor .view-lines')?.textContent ?? '').replace(/\u00a0/g, ' '); return t.includes('c4 d e f') ? t : '' })()`,
   )
+
+  // Opening it engraved it, before any save (D39).
+  const openedPages = await until<number>('the preview of the score just opened', `document.querySelectorAll('.preview-page svg').length`, 30_000)
 
   // The grammar colours it (Monaco joins neighbouring pieces of one colour into a span).
   const colours = await until<Record<string, string>>(
@@ -237,8 +243,22 @@ export async function runSmokeTest(window: BrowserWindow, smoke: SmokeFolder): P
     compile.live = live
   }
 
+  // The preview follows the editor (D39): another score's pages, a note for
+  // an include of no score, and back to smoke.ly as it was, unsaved text and all.
+  const switching: Record<string, unknown> = {}
+  if (!compile.skipped) {
+    const linksTo = (name: string) => `new Set([...document.querySelectorAll('.preview-page a.source')].map((a) => a.href.baseVal).filter((h) => h.includes('/${name}:'))).size`
+    const before = await run<number>(linksTo('smoke.ly'))
+    await run(`document.querySelector('[data-relative="second.ly"]').click()`)
+    switching.second = await until<number>('the preview of second.ly', `(() => { const n = ${linksTo('second.ly')}; return n > 0 && ${linksTo('smoke.ly')} === 0 ? n : 0 })()`, 30_000)
+    await run(`document.querySelector('[data-relative="parts/melody.ily"]').click()`)
+    switching.include = await until<string>('the note for an include of no score', `(() => { const t = document.querySelector('[data-view="svg"] .pane-body').textContent; return !document.querySelector('.preview-page') && t.includes('not part of a score') ? t : '' })()`)
+    await run(`document.querySelector('[data-relative="smoke.ly"]').click()`)
+    switching.back = await until<number>('the preview of smoke.ly again', `(() => { const n = ${linksTo('smoke.ly')}; return n === ${before} && ${linksTo('second.ly')} === 0 ? n : 0 })()`, 30_000)
+  }
+
   await fs.rm(smoke.folder, { recursive: true, force: true })
   const ok = problems.length === 0
-  console.log(JSON.stringify({ ok, problems, ...layout, welcome, listed, monaco: !!shown, colours, saved, compile }, null, 2))
+  console.log(JSON.stringify({ ok, problems, ...layout, welcome, listed, openedPages, switching, monaco: !!shown, colours, saved, compile }, null, 2))
   return ok ? 0 : 1
 }

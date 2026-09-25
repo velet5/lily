@@ -136,6 +136,11 @@ export class ScorePlayer {
     this.player.load(midi)
   }
 
+  /** Stops the music; the score it belongs to left the preview (D39). */
+  stop(): void {
+    this.player.stop()
+  }
+
   toggle(): void {
     if (this.player.state === 'playing') this.player.pause()
     else void this.play()

@@ -17,6 +17,11 @@ export const Channel = {
   setDirty: 'studio:set-dirty',
   /** Main → renderer: a menu item or the close guard asks for a command. */
   command: 'studio:command',
+  /**
+   * The editor shows a file: the score it belongs to, whose last result is
+   * sent again at once and which compiles to be current (D39).
+   */
+  showScore: 'studio:show-score',
   /** Main → renderer: a compile started or finished (D31). */
   compile: 'studio:compile',
   /** A click in the preview: where a `textedit:` link points (D32). */

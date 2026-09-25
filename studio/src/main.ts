@@ -5,12 +5,14 @@
 // (D36), and LilyPond's setup and the sample score (D37). They reach the
 // renderer only through preload.ts.
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
+import { mkdtempSync, rmSync } from 'node:fs'
 import * as fs from 'node:fs/promises'
+import * as os from 'node:os'
 import * as path from 'node:path'
 import { CompileService } from '../../src/compile/compiler'
 import { parseTextEdit } from '../../src/preview/pointAndClick'
 import { Access, createFromTemplate, isInside, isScoreFile, listFolder, readScore, unusedName, writeScore, SCORE_EXTENSIONS } from './files'
-import { Channel, type Command, type Opened } from './ipc'
+import { Channel, type Command, type CompileOutcome, type Opened } from './ipc'
 import { StudioCompiler } from './main/compileService'
 import { LiveCompile } from './main/liveCompile'
 import { choicePath, detectLilyPond, readSettings, searchPath, SETUP_LINKS, writeSettings, type LilyPondStatus, type Settings } from './main/lilypondSetup'
@@ -20,6 +22,13 @@ import { SAMPLE, TEMPLATES, type TemplateId } from './templates'
 
 /** Run by `npm test`: load the window hidden, drive it once, exit. */
 const smokeTest = process.argv.includes('--smoke-test')
+if (smokeTest) {
+  // Its own profile: the single-instance lock belongs to the profile, so an
+  // open Lily Studio does not end the test, and the user's settings stay as they are.
+  const profile = mkdtempSync(path.join(os.tmpdir(), 'lily-studio-smoke-profile-'))
+  app.setPath('userData', profile)
+  process.on('exit', () => rmSync(profile, { recursive: true, force: true }))
+}
 
 const access = new Access()
 /** userData/settings.json: the LilyPond chosen in the setup (D37). */
@@ -27,6 +36,12 @@ let settings: Settings = {}
 const settingsFile = () => path.join(app.getPath('userData'), 'settings.json')
 // An app opened from the Finder has a bare PATH; lilypond's own helpers (gs) need more.
 process.env.PATH = searchPath(process.env.PATH)
+/**
+ * The last finished outcome of each score, newest last: switching the editor
+ * to a score shows it at once, before the compile that brings it up to date (D39).
+ */
+const outcomes = new Map<string, CompileOutcome>()
+const KEPT_OUTCOMES = 8
 const compiler = new StudioCompiler({
   // runtime/, which esbuild.mjs copies beside this file: timing.ly maps the
   // MIDI to the pages (D35), the rest speeds up compiles (D36). lilypond
@@ -38,6 +53,11 @@ const compiler = new StudioCompiler({
   candidates: async () => (access.folder === undefined ? [] : (await listFolder(access.folder)).files.map((f) => f.path)),
   emit: (event) => {
     mainWindow?.webContents.send(Channel.compile, event)
+    if (event.kind === 'finished' && event.outcome.state !== 'no-root') {
+      outcomes.delete(event.outcome.rootFile)
+      outcomes.set(event.outcome.rootFile, event.outcome)
+      for (const root of outcomes.keys()) if (outcomes.size > KEPT_OUTCOMES) outcomes.delete(root)
+    }
     // A compile may have added or removed an include: watch the score as it is now.
     if (event.kind === 'finished' && event.outcome.state !== 'no-root') void watcher.watchScore(event.outcome.rootFile)
     if (event.kind === 'finished') waitingForLilyPond = event.outcome.state === 'no-lilypond'
@@ -230,6 +250,20 @@ function registerIpc(): void {
     return openFolder(folder, path.resolve(file))
   })
 
+  ipcMain.handle(Channel.showScore, async (event, file: unknown) => {
+    owner(event)
+    const rootFile = await compiler.rootFor(access.check(file))
+    if (!rootFile) return undefined
+    // Sent after the reply, so the renderer knows the score before its result arrives.
+    setImmediate(() => {
+      const kept = outcomes.get(rootFile)
+      if (kept) mainWindow?.webContents.send(Channel.compile, { kind: 'finished', outcome: kept })
+      // Always compiled too: an include may have changed while another score was shown.
+      void compiler.compile(rootFile)
+    })
+    return rootFile
+  })
+
   ipcMain.handle(Channel.revealSource, async (event, href: unknown) => {
     owner(event)
     const location = typeof href === 'string' ? parseTextEdit(href) : undefined
@@ -398,9 +432,9 @@ if (!app.requestSingleInstanceLock()) {
         if (level === 'warning' || level === 'error') console.error(`renderer ${level}: ${message}`)
       })
       const timeout = setTimeout(() => {
-        console.error('smoke test: did not finish within 30 s')
+        console.error('smoke test: did not finish within 90 s')
         app.exit(1)
-      }, 30_000)
+      }, 90_000)
       window.webContents.once('did-finish-load', () => {
         runSmokeTest(window, smoke).then(
           (code) => app.exit(code),

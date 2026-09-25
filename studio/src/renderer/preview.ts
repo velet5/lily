@@ -125,6 +125,16 @@ export class ScorePreview {
     this.layout()
   }
 
+  /**
+   * The editor shows a file of `rootFile`, or of no score (undefined): pages
+   * of another score leave at once, and a note says what comes (D39).
+   */
+  showScore(rootFile: string | undefined): void {
+    if (rootFile !== undefined && rootFile === this.rootFile) return
+    if (this.rootFile !== undefined) this.clear()
+    this.showNote(rootFile === undefined ? 'This file is not part of a score. Open the .ly file that \\includes it to see the music.' : 'Engraving…')
+  }
+
   compiled(event: CompileEvent): void {
     if (event.kind === 'started') {
       if (this.pages.children.length === 0) this.empty.textContent = 'Engraving…'
@@ -175,7 +185,7 @@ export class ScorePreview {
   private showNote(note: string | undefined): void {
     const hasPages = this.pages.children.length > 0
     this.empty.hidden = hasPages
-    this.empty.textContent = hasPages ? '' : (note ?? 'Save a score to see it here.')
+    this.empty.textContent = hasPages ? '' : (note ?? 'Open a score to see it here.')
     this.note.hidden = !hasPages || !note
     this.note.textContent = note ?? ''
   }

@@ -216,8 +216,9 @@ LilyPond installed in the same way.
   If LilyPond cannot be found, a setup guide opens: download it, move it to
   Applications, and show the studio where it is. *Help › Set Up LilyPond…*
   brings it back.
-- **Editing.** Save with <kbd>⌘S</kbd>, or just type: the score follows as you
-  type (*Live preview* in the status line). Click a note to find it in the
+- **Editing.** Open a score and it is engraved right away; switch files and the
+  preview switches with them. Save with <kbd>⌘S</kbd>, or just type: the score
+  follows as you type (*Live preview* in the status line). Click a note to find it in the
   text. The SVG/PDF switch shows the printable PDF, and *Export PDF* saves it
   next to the score. ▶ plays the music and marks the notes as they sound.
 - **Mistakes** are underlined, and a note above the score explains the first

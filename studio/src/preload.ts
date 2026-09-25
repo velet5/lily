@@ -30,6 +30,11 @@ const studio = {
   saveFile: (file: string, text: string): Promise<void> => ipcRenderer.invoke(Channel.saveFile, file, text),
   /** Asks where to save a new score from `template`, writes it and opens its folder. */
   newScore: (template: TemplateId): Promise<Opened | undefined> => ipcRenderer.invoke(Channel.newScore, template),
+  /**
+   * The editor now shows `file`: resolves with its score, or undefined when no
+   * score includes it. The score's compile events follow on onCompile (D39).
+   */
+  showScore: (file: string): Promise<string | undefined> => ipcRenderer.invoke(Channel.showScore, file),
   /** Tells the main process whether any open file has unsaved changes. */
   setDirty: (dirty: boolean): void => ipcRenderer.send(Channel.setDirty, dirty),
   /**

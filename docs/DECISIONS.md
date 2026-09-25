@@ -1755,3 +1755,37 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   `spctl --assess` reporting “Notarized Developer ID”. It skips these for a
   `dist:local` build. The installed app's smoke test passes with the
   hardened runtime on: compiles, the warm lilypond worker, PDF and playback.
+
+---
+
+## D39 — Lily Studio: the preview follows the editor
+
+**Status:** proposed · **Refines:** D31, D32, D36
+
+- **What.** Opening or switching to a file shows its score in the preview,
+  without a save. D31 compiled only on save, and the preview showed whichever
+  compile finished last, so a late compile of another score could take it
+  over. Now the preview, the player, the PDF tab and D37's banner show only
+  the compiles of the editor's score. The status line and the markers still
+  take every compile.
+- **How.** The renderer calls `studio:show-score` with the file. The main
+  process resolves the score with `rootFor` (D31, so an include of the shown
+  score keeps it) and answers with it. It then re-sends that score's last
+  outcome, if it has one, and compiles the score anyway, with live
+  preview's texts. An include may have changed on disk while another score
+  was shown, and only the shown score is watched (D34). The main process
+  keeps the last outcomes of 8 scores. A slower answer about a file the
+  editor has already left is dropped.
+- **Switching.** On a switch to another score, its pages and PDF replace the
+  old ones at once when kept, else “Engraving…” until they arrive. The music
+  stops. A file that no score includes shows a note saying so, and no pages.
+- **Smoke test.** It now runs in a private `userData` directory. The
+  single-instance lock belongs to that directory, so an open Lily Studio no
+  longer ends the test at once with exit code 0 and no report. The user's
+  settings are not read or written. The run may take 90 s.
+- **Verified.** `npm run test:smoke`: `smoke.ly` shows its pages on opening,
+  before any save. `second.ly` replaces them. `parts/melody.ily`, which no
+  score includes, shows the note. Back to `smoke.ly`, its pages return as they
+  were, unsaved text included. Not covered: D36's live check does not
+  replace the whole text as it means to (select-all does not take in the
+  editor). It passes on the notes of line 2, which are the same either way.
