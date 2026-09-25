@@ -2,7 +2,8 @@
 // drives it once — layout, Monaco, the file list, highlighting, an edit, the
 // unsaved marker, a save, the compile it starts, its pages in the preview
 // and a click on a note there, the PDF tab and Export PDF, an error marked,
-// and an edit by another program reloaded and compiled —
+// an edit by another program reloaded and compiled, and its MIDI played with
+// the notes marked —
 // then prints a JSON report and exits 0 or 1.
 import type { BrowserWindow } from 'electron'
 import * as fs from 'node:fs/promises'
@@ -157,9 +158,10 @@ export async function runSmokeTest(window: BrowserWindow, smoke: SmokeFolder): P
   }
 
   // Another program edits the saved score: the editor reloads it and the
-  // score compiles again (D34). The last save left the editor clean.
+  // score compiles again (D34). The last save left the editor clean. The new
+  // version has a \midi block, which the player plays below.
   const firstCompile = await run<string>(`document.querySelector('.status-compile').textContent`)
-  await fs.writeFile(smoke.score, '\\version "2.24.0"\n{ c4 d e g }\n')
+  await fs.writeFile(smoke.score, '\\version "2.24.0"\n\\score { { c4 d e g a b a g } \\layout { } \\midi { } }\n')
   const external: Record<string, unknown> = {}
   external.reloaded = await until<string>(
     'the editor to reload the file changed on disk',
@@ -171,6 +173,23 @@ export async function runSmokeTest(window: BrowserWindow, smoke: SmokeFolder): P
       `(() => { const t = ${tone}; const s = document.querySelector('.status-compile').textContent; return t === 'ok' && s !== ${JSON.stringify(firstCompile)} ? s : '' })()`,
       30_000,
     )
+
+    // Play shows the length; paused a second in, a note is marked and the
+    // playhead stands on its page (D35). Stop clears both. A hidden window
+    // draws no animation frames, but a pause draws once.
+    const playback: Record<string, unknown> = {}
+    playback.length = await until<string>('the MIDI to load', `(() => { const b = document.querySelector('.transport-play'); return b && !b.disabled ? document.querySelector('.transport-time').textContent : '' })()`)
+    await run(`document.querySelector('.transport-play').click()`)
+    playback.playing = await until<string>('the music to play past one second', `(() => { const t = document.querySelector('.transport-time').textContent; return document.querySelector('.transport').dataset.state === 'playing' && !t.startsWith('0:00') ? t : '' })()`)
+    await run(`document.querySelector('.transport-play').click()`)
+    playback.paused = await until<{ notes: number; bar: string }>('the notes marked while paused', `(() => {
+      const notes = document.querySelectorAll('.preview-page a.playing').length
+      const head = document.querySelector('.preview-page > .playhead')
+      return notes > 0 && head && head.offsetHeight > 0 ? { notes, bar: document.querySelector('.transport-bar').textContent } : null
+    })()`)
+    await run(`document.querySelector('.transport button[aria-label="Stop"]').click()`)
+    playback.stopped = await until<boolean>('the marks to clear on stop', `!document.querySelector('.preview-page a.playing, .playhead') && document.querySelector('.transport').dataset.state === 'stopped'`)
+    external.playback = playback
   }
   // With unsaved edits it asks first; the smoke test's answer keeps them.
   await run(`document.querySelector('.monaco-editor .native-edit-context, .monaco-editor textarea').focus()`)

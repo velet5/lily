@@ -55,6 +55,10 @@ export interface ScorePreviewOptions {
   actions: HTMLElement
   /** A click on an element that carries a `textedit:` link. */
   onReveal(href: string): void
+  /** Other pages are on screen, or none (the playhead's map is out of date, D35). */
+  onRender?(): void
+  /** The pages changed size: zoom, or the pane was resized. */
+  onLayout?(): void
 }
 
 export class ScorePreview {
@@ -66,6 +70,8 @@ export class ScorePreview {
   private rootFile: string | undefined
   private zoom = 1
   private clicked: Element | undefined
+  /** The elements of the pages on screen by their `textedit:` link, in page order. */
+  readonly sourceLinks = new Map<string, Element[]>()
 
   constructor(private readonly options: ScorePreviewOptions) {
     const { body, actions } = options
@@ -139,17 +145,31 @@ export class ScorePreview {
     this.pages.replaceChildren(...svg.map(toPage))
     this.rootFile = rootFile
     this.clicked = undefined
+    this.sourceLinks.clear()
     for (const link of this.pages.querySelectorAll('a')) {
-      if (isSourceLink(linkHref(link))) link.classList.add('source')
+      const href = linkHref(link)
+      if (!isSourceLink(href)) continue
+      link.classList.add('source')
+      const links = this.sourceLinks.get(href)
+      if (links) links.push(link)
+      else this.sourceLinks.set(href, [link])
     }
     this.layout()
     this.options.body.scrollTop = resolveAnchor(anchor, this.pageRects())
+    this.options.onRender?.()
   }
 
   private clear(): void {
     this.pages.replaceChildren()
+    this.sourceLinks.clear()
     this.rootFile = undefined
     this.clicked = undefined
+    this.options.onRender?.()
+  }
+
+  /** The page elements on screen, in order. */
+  get pageElements(): HTMLCollection {
+    return this.pages.children
   }
 
   private showNote(note: string | undefined): void {
@@ -185,6 +205,7 @@ export class ScorePreview {
     this.layout()
     body.scrollTop = resolveAnchor(anchor, this.pageRects()) - y
     body.scrollLeft = x * body.scrollWidth - body.clientWidth / 2
+    this.options.onLayout?.()
   }
 
   private setZoom(zoom: number, y = this.options.body.clientHeight / 2): void {

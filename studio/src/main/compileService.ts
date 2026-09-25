@@ -1,8 +1,8 @@
 // Compile on save for Lily Studio's main process (DECISIONS D31): finds the
 // score a saved file belongs to, compiles it with the extension's
 // CompileService and parses lilypond's stderr with its parser. main.ts sends
-// the events to the renderer. The PDF tab's compile and Export PDF are here
-// too (D33). No `electron` here, so the tests run it under plain Node.
+// the events to the renderer, with the MIDI to play (D35). The PDF tab's
+// compile and Export PDF are here too (D33). No `electron` here, so the tests run it under plain Node.
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
@@ -10,6 +10,7 @@ import type { CompileResult, CompileService } from '../../../src/compile/compile
 import { LilyPondNotFoundError } from '../../../src/compile/locate'
 import { rootsIncluding } from '../../../src/compile/rootFile'
 import { parseStderr } from '../../../src/diagnostics/parse'
+import { readTiming } from '../../../src/preview/panel'
 import type { CompileEvent, CompileOutcome, PdfOutcome } from '../ipc'
 
 /** The part of CompileService used here; tests pass a stand-in. */
@@ -85,6 +86,7 @@ export class StudioCompiler {
       if (result.cancelled) return undefined
       outcome = fromResult(result)
       outcome.svg = await readPages(result.pages)
+      Object.assign(outcome, await readPlayback(result))
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       outcome = { ...empty(error instanceof LilyPondNotFoundError ? 'no-lilypond' : 'error', rootFile), message }
@@ -172,6 +174,25 @@ async function readPages(pages: string[]): Promise<string[]> {
   } catch {
     return []
   }
+}
+
+/**
+ * The music the preview plays (D35), read now for the same reason as the
+ * pages: the first MIDI file of the run, as the extension's preview plays
+ * (D24), and its entry of the playback map (D26). A map that cannot be read
+ * only costs the playhead.
+ */
+async function readPlayback(result: CompileResult): Promise<Pick<CompileOutcome, 'midiData' | 'timing'>> {
+  const [first] = result.midi
+  if (first === undefined) return {}
+  let midiData: Uint8Array
+  try {
+    midiData = new Uint8Array(await fs.readFile(first))
+  } catch {
+    return {}
+  }
+  const timing = result.timing ? await readTiming(result.timing, 0).catch(() => undefined) : undefined
+  return { midiData, ...(timing ? { timing } : {}) }
 }
 
 function empty(state: CompileOutcome['state'], rootFile: string): CompileOutcome {

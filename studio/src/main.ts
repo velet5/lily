@@ -19,7 +19,8 @@ const smokeTest = process.argv.includes('--smoke-test')
 
 const access = new Access()
 const compiler = new StudioCompiler({
-  compiler: new CompileService(),
+  // timing.ly, which esbuild.mjs copies beside this file, maps the MIDI to the pages (D35).
+  compiler: new CompileService({ runtimeDir: path.join(__dirname, 'runtime') }),
   candidates: async () => (access.folder === undefined ? [] : (await listFolder(access.folder)).files.map((f) => f.path)),
   emit: (event) => {
     mainWindow?.webContents.send(Channel.compile, event)

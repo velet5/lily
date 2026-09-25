@@ -237,10 +237,97 @@
     return sounding.reverse()
   }
 
+  /**
+   * The timing map resolved against the pages (D26), so that a frame is a
+   * binary search and a few style properties. `sourceLinks` maps an href to
+   * the elements that carry it, in page order; `box(element)` is its
+   * `{ page, left, right, top, bottom }` in fractions of its page, or
+   * undefined; `time(at, grace)` is when a moment is heard, in seconds, and
+   * `duration` the length of the music. Returns the events with their
+   * elements, the moments that were placed, their systems and the bars.
+   */
+  function timelineOf(timing, duration, sourceLinks, box, time) {
+    // An href used as often as it is drawn (`\repeat unfold`, a variable used
+    // twice) is paired up in order: the k-th time it is played is the k-th
+    // place it is drawn. Drawn once, it is that place every time (a repeat
+    // unfolded in the MIDI only). Anything else is settled once the systems are known.
+    const uses = new Map()
+    for (const event of timing.events) uses.set(event.href, (uses.get(event.href) ?? 0) + 1)
+    const seen = new Map()
+    const ordered = [...timing.events].sort((a, b) => a.at - b.at || a.grace - b.grace)
+    const events = []
+    for (const { href, at, grace, length } of ordered) {
+      const candidates = sourceLinks.get(href) ?? []
+      if (candidates.length === 0) continue // a skip, or point-and-click switched off
+      const rank = seen.get(href) ?? 0
+      seen.set(href, rank + 1)
+      const element =
+        candidates.length === uses.get(href) ? candidates[rank]
+        : candidates.length === 1 ? candidates[0]
+        : undefined
+      events.push({
+        time: time(at, grace),
+        end: grace === 0 ? time(at + length, 0) : time(at, grace + length),
+        element,
+        candidates,
+      })
+    }
+    events.sort((a, b) => a.time - b.time)
+    // What has no length of its own (a syllable) lasts to the next moment.
+    for (let i = events.length - 1, next = duration; i >= 0; i--) {
+      if (events[i].end <= events[i].time) events[i].end = next
+      if (i > 0 && events[i - 1].time < events[i].time) next = events[i].time
+    }
+
+    // A moment: the events that begin together, and where that is on the page,
+    // from the elements found so far: the leftmost centre, and their extent.
+    const moments = []
+    for (const event of events) {
+      let moment = moments[moments.length - 1]
+      if (!moment || moment.time !== event.time) {
+        moment = { time: event.time, events: [], placed: 0, page: -1, x: 0, top: 1, bottom: 0 }
+        moments.push(moment)
+      }
+      moment.events.push(event)
+      const b = event.element && box(event.element)
+      if (!b || (moment.placed > 0 && b.page !== moment.page)) continue
+      const centre = (b.left + b.right) / 2
+      moment.page = b.page
+      moment.x = moment.placed === 0 ? centre : Math.min(moment.x, centre)
+      moment.top = Math.min(moment.top, b.top)
+      moment.bottom = Math.max(moment.bottom, b.bottom)
+      moment.placed++
+    }
+    const placed = moments.filter((moment) => moment.placed > 0)
+    const systems = systemsOf(placed)
+
+    // What is left is drawn in several places and played some other number of
+    // times (a cue, say): take the place on the system that is playing then.
+    for (const moment of moments) {
+      for (const event of moment.events) {
+        if (event.element) continue
+        const near = lastAt(placed, moment.time)
+        const system = near >= 0 ? systems[placed[near].system] : undefined
+        const within = (candidate) => {
+          const b = box(candidate)
+          if (!b || b.page !== system.page) return false
+          const middle = (b.top + b.bottom) / 2
+          return middle >= system.top && middle <= system.bottom
+        }
+        event.element = (system && event.candidates.find(within)) ?? event.candidates[0]
+      }
+    }
+
+    const bars = timing.bars
+      .map(({ at, number }) => ({ time: time(at, 0), number }))
+      .sort((a, b) => a.time - b.time)
+    return { events, ends: endsOf(events), moments: placed, systems, bars }
+  }
+
   const pure = {
     MIN_ZOOM, MAX_ZOOM, clampZoom, stepZoom, zoomLabel,
     captureAnchor, resolveAnchor, pageAt, stepPage, allowedElement, allowedAttribute, sanitize, quiet,
-    isSourceLink, scrollToShow, systemsOf, cursorAt, barAt, endsOf, soundingAt,
+    isSourceLink, scrollToShow, systemsOf, cursorAt, barAt, endsOf, soundingAt, timelineOf,
   }
 
   if (typeof acquireVsCodeApi !== 'function') {
@@ -625,12 +712,7 @@
     return box
   }
 
-  /**
-   * Finds the elements of the timing map's events on the pages by their hrefs
-   * (the cursor's map, indexLinks) and works out the moments, the systems
-   * they lie on and the bars, all in seconds and page fractions, so that a
-   * frame is a binary search and a few style properties.
-   */
+  /** Finds the timing map's events on the pages by their hrefs (the cursor's map, indexLinks). */
   function buildTimeline() {
     const { midi } = player
     if (!timing || !midi || pagesEl.children.length === 0) return null
@@ -642,82 +724,7 @@
       const index = indexes.get(page)
       return index === undefined ? undefined : boxOf(page, index, rects[index], element)
     }
-
-    // An href used as often as it is drawn (`\repeat unfold`, a variable used
-    // twice) is paired up in order: the k-th time it is played is the k-th
-    // place it is drawn. Drawn once, it is that place every time (a repeat
-    // unfolded in the MIDI only). Anything else is settled once the systems are known.
-    const uses = new Map()
-    for (const event of timing.events) uses.set(event.href, (uses.get(event.href) ?? 0) + 1)
-    const seen = new Map()
-    const ordered = [...timing.events].sort((a, b) => a.at - b.at || a.grace - b.grace)
-    const events = []
-    for (const { href, at, grace, length } of ordered) {
-      const candidates = sourceLinks.get(href) ?? []
-      if (candidates.length === 0) continue // a skip, or point-and-click switched off
-      const rank = seen.get(href) ?? 0
-      seen.set(href, rank + 1)
-      const element =
-        candidates.length === uses.get(href) ? candidates[rank]
-        : candidates.length === 1 ? candidates[0]
-        : undefined
-      events.push({
-        time: momentTime(midi, at, grace),
-        end: grace === 0 ? momentTime(midi, at + length, 0) : momentTime(midi, at, grace + length),
-        element,
-        candidates,
-      })
-    }
-    events.sort((a, b) => a.time - b.time)
-    // What has no length of its own (a syllable) lasts to the next moment.
-    for (let i = events.length - 1, next = midi.duration; i >= 0; i--) {
-      if (events[i].end <= events[i].time) events[i].end = next
-      if (i > 0 && events[i - 1].time < events[i].time) next = events[i].time
-    }
-
-    // A moment: the events that begin together, and where that is on the page,
-    // from the elements found so far: the leftmost centre, and their extent.
-    const moments = []
-    for (const event of events) {
-      let moment = moments[moments.length - 1]
-      if (!moment || moment.time !== event.time) {
-        moment = { time: event.time, events: [], placed: 0, page: -1, x: 0, top: 1, bottom: 0 }
-        moments.push(moment)
-      }
-      moment.events.push(event)
-      const b = event.element && box(event.element)
-      if (!b || (moment.placed > 0 && b.page !== moment.page)) continue
-      const centre = (b.left + b.right) / 2
-      moment.page = b.page
-      moment.x = moment.placed === 0 ? centre : Math.min(moment.x, centre)
-      moment.top = Math.min(moment.top, b.top)
-      moment.bottom = Math.max(moment.bottom, b.bottom)
-      moment.placed++
-    }
-    const placed = moments.filter((moment) => moment.placed > 0)
-    const systems = systemsOf(placed)
-
-    // What is left is drawn in several places and played some other number of
-    // times (a cue, say): take the place on the system that is playing then.
-    for (const moment of moments) {
-      for (const event of moment.events) {
-        if (event.element) continue
-        const near = lastAt(placed, moment.time)
-        const system = near >= 0 ? systems[placed[near].system] : undefined
-        const within = (candidate) => {
-          const b = box(candidate)
-          if (!b || b.page !== system.page) return false
-          const middle = (b.top + b.bottom) / 2
-          return middle >= system.top && middle <= system.bottom
-        }
-        event.element = (system && event.candidates.find(within)) ?? event.candidates[0]
-      }
-    }
-
-    const bars = timing.bars
-      .map(({ at, number }) => ({ time: momentTime(midi, at, 0), number }))
-      .sort((a, b) => a.time - b.time)
-    return { events, ends: endsOf(events), moments: placed, systems, bars }
+    return timelineOf(timing, midi.duration, sourceLinks, box, (at, grace) => momentTime(midi, at, grace))
   }
 
   function showBar(number) {

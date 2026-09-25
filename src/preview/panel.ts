@@ -201,7 +201,7 @@ export function previewHtml(options: PreviewHtmlOptions): string {
  * MIDI file of the same index; undefined when the file is not what
  * `runtime/timing.ly` writes.
  */
-async function readTiming(file: string, index: number): Promise<PlaybackTiming | undefined> {
+export async function readTiming(file: string, index: number): Promise<PlaybackTiming | undefined> {
   const parsed: unknown = JSON.parse(await fs.readFile(file, 'utf8'))
   const entry = Array.isArray(parsed) ? (parsed[index] as Partial<PlaybackTiming> | undefined) : undefined
   if (!entry || !Array.isArray(entry.events) || !Array.isArray(entry.bars)) return undefined

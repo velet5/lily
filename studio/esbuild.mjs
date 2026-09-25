@@ -3,14 +3,15 @@
 // and Monaco's worker into dist/renderer/ (D29). renderer/index.html and
 // layout.css are loaded as they are. The renderer carries the extension's
 // grammar, language configuration and Oniguruma's WebAssembly inline (D30),
-// and pdf.js, whose worker is bundled beside it (D33).
+// and pdf.js, whose worker is bundled beside it (D33). The extension's
+// runtime/timing.ly is copied to dist/runtime/ for the playhead (D35).
 //
 //   node esbuild.mjs                one-off development build
 //   node esbuild.mjs --watch        rebuild on change
 //   node esbuild.mjs --production   minified, no source maps
 //   node esbuild.mjs --tests        test/*.test.ts → out/test/, for node --test
 import * as esbuild from 'esbuild'
-import { readdirSync } from 'node:fs'
+import { cpSync, mkdirSync, readdirSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 
 const production = process.argv.includes('--production')
@@ -87,6 +88,12 @@ if (tests) {
     outdir: 'out/test',
     logLevel: 'warning',
   })
+}
+
+if (!tests) {
+  // Passed to every compile as -dinclude-settings; the playback map comes from it.
+  mkdirSync('dist/runtime', { recursive: true })
+  cpSync('../runtime/timing.ly', 'dist/runtime/timing.ly')
 }
 
 if (watch) {

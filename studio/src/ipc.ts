@@ -1,6 +1,7 @@
 // The IPC contract between main.ts and preload.ts (DECISIONS D28, D29): one
 // named channel per call. Types only, apart from the channel names.
 import type { LyDiagnostic } from '../../src/diagnostics/parse'
+import type { PlaybackTiming } from '../../src/preview/panel'
 import type { SourceLocation } from '../../src/preview/pointAndClick'
 import type { FolderListing } from './files'
 import type { FileChange } from './main/watcher'
@@ -59,6 +60,10 @@ export interface CompileOutcome {
   /** The text of `pages`, read before the event was sent; the preview shows it (D32). */
   svg: string[]
   midi: string[]
+  /** The bytes of the first of `midi`, read with the pages: the music the preview plays (D35). */
+  midiData?: Uint8Array
+  /** Where the notes of `midiData` are on the pages (D26), when the map was written. */
+  timing?: PlaybackTiming
   durationMs: number
   /** Why lilypond did not run, or the end of its output when it failed without a parsable error. */
   message?: string
@@ -83,4 +88,4 @@ export type CompileEvent =
   | { kind: 'started'; rootFile: string }
   | { kind: 'finished'; outcome: CompileOutcome }
 
-export type { FileChange, SourceLocation }
+export type { FileChange, PlaybackTiming, SourceLocation }

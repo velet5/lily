@@ -1570,3 +1570,50 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   covers `includeGraph`'s missing paths. `npm run test:smoke` writes the score
   from outside: the editor reloads it and it compiles again; with unsaved
   edits it asks, and the smoke test's answer keeps them.
+
+## D35 — Lily Studio: MIDI playback and the notes as they play
+
+**Status:** proposed · **Refines:** D24, D26, D32
+
+- **What plays.** The MIDI of the last finished compile, the first file of the
+  run as in the extension (D24), with the same rules: a run that did not
+  happen keeps the music, another score replaces it, a failed run without
+  MIDI keeps it, a good run without `\midi` clears it, and the same bytes
+  again play on, remapped when only the map changed (`playbackChange` in
+  `studio/src/renderer/player.ts`). A transport under both preview views,
+  so it plays in the PDF tab too: ▶/❚❚, ■, a position slider, the bar and
+  `0:03 / 0:08`. Without MIDI the buttons are disabled and ▶'s tooltip says
+  which block to add. Space plays or pauses while the preview has the focus;
+  in the editor it types a space.
+- **Shared code.** The renderer bundles `media/midi.js` (parser, synthesizer,
+  player) unchanged. The D26 timeline, which was inside the webview half of
+  `media/preview.js`, moved into its pure half as `timelineOf(timing,
+  duration, sourceLinks, box, time)`; the webview calls it as before. The
+  studio ports only the webview's glue: element boxes cached per page as
+  fractions, `playing` on what sounds, a `.playhead` inside the page, the
+  bar label and scrolling the pane to a new system (never while the slider
+  is dragged). Behind the PDF tab the pages have no size, so the timeline is
+  built only once they are shown. `media/player.js` and `src/midi/player.ts`
+  (the `.mid` viewer) have no studio counterpart: the studio does not open
+  `.mid` files.
+- **Main process.** `CompileService` gets a runtime directory, `dist/runtime/`,
+  into which `studio/esbuild.mjs` copies `runtime/timing.ly`, so every
+  compile writes the playback map (acceleration stays off; the other
+  runtime files come with live preview). `StudioCompiler` reads the first
+  MIDI file and its map entry (`readTiming`, now exported from
+  `src/preview/panel.ts`) with the pages into `CompileOutcome.midiData` and
+  `timing`, because the run's directory is emptied by the next compile. A
+  map that cannot be read only loses the playhead.
+- **Sound.** Electron allows audio without a user gesture, so D24's
+  *Click ▶ to play* does not apply; a context that still does not start is
+  reported in the status line.
+- **Not done.** No click-to-seek, tempo, volume or choice among several
+  `\midi` files, as in D26/D24. Colours are the paper colour of D26 in
+  both themes, as the pages are paper.
+- **Verified.** `npm run test:unit` in `studio/` (`test/player.test.ts`):
+  `playbackChange`, `timelineOf` on made-up boxes, the MIDI and map read
+  with the pages (and a broken map dropped), and a real compile whose MIDI
+  parses to the four notes and 0:04, every map event's link is on the page
+  and bar 2 is at 2 s (skipped without lilypond). `npm run test:smoke`
+  plays a score with `\midi`, pauses a second in, finds a note marked,
+  the playhead on its page and *bar 1*, and stop clears them.

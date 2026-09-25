@@ -466,3 +466,94 @@ button:focus-visible,
   letter-spacing: 0;
   text-transform: none;
 }
+
+/* Playback (DECISIONS D35), adapted from media/player.css and preview.css
+   (D26): the transport under the views, what sounds now `playing` and a bar
+   sliding through the system. */
+
+.preview {
+  --lily-playing: #d9480f;
+}
+
+.preview-page {
+  /* The playhead is placed inside the page it is on. */
+  position: relative;
+}
+
+.preview-page a.playing {
+  color: var(--lily-playing);
+}
+
+.preview-page a.playing path {
+  stroke: currentColor;
+  stroke-width: 2px;
+  vector-effect: non-scaling-stroke;
+}
+
+.playhead {
+  position: absolute;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--lily-playing) 40%, transparent);
+  pointer-events: none;
+}
+
+.preview .pane-body:focus {
+  outline: none;
+}
+
+.transport {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: var(--header-height);
+  padding: 0 8px;
+  border-top: 1px solid var(--border);
+  color: var(--fg-muted);
+  user-select: none;
+}
+
+.transport button {
+  min-width: 28px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.transport button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.transport button:disabled,
+.transport input:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.transport[data-state='playing'] .transport-play {
+  color: var(--lily-playing);
+}
+
+.transport input[type='range'] {
+  flex: 1 1 80px;
+  min-width: 40px;
+  margin: 0 8px;
+  accent-color: var(--accent);
+}
+
+.transport-bar,
+.transport-time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.transport-time {
+  min-width: 78px;
+  text-align: right;
+}

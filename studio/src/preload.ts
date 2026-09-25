@@ -1,6 +1,6 @@
 // The only bridge between the sandboxed renderer and the main process
 // (DECISIONS D28). It exposes `window.studio`, one named IPC channel per call
-// (src/ipc.ts); later steps add the playback calls here.
+// (src/ipc.ts).
 import { contextBridge, ipcRenderer } from 'electron'
 import type { FolderListing } from './files'
 import { Channel, type Command, type CompileEvent, type FileChange, type Opened, type PdfOutcome, type SourceLocation } from './ipc'

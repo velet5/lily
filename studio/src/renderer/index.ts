@@ -7,6 +7,7 @@ import { compileStatus, DiagnosticStore } from './diagnostics'
 import { ScoreEditor } from './editor'
 import { button, FileList } from './files'
 import { PdfView } from './pdfView'
+import { ScorePlayer } from './player'
 import { ScorePreview } from './preview'
 
 declare global {
@@ -76,10 +77,28 @@ const viewActions = (name: 'svg' | 'pdf') => {
   previewPane.querySelector('.pane-header > .pane-actions')!.append(actions)
   return actions
 }
+const previewBody = view('svg').querySelector<HTMLElement>('.pane-body')!
 const preview = new ScorePreview({
-  body: view('svg').querySelector<HTMLElement>('.pane-body')!,
+  body: previewBody,
   actions: viewActions('svg'),
   onReveal: (href) => void revealSource(href),
+  onRender: () => player.rendered(),
+  onLayout: () => player.refresh(),
+})
+// The score's MIDI, with the notes marked on the pages as they play (D35).
+const player = new ScorePlayer({
+  transport: previewPane.querySelector<HTMLElement>('.transport')!,
+  preview,
+  body: previewBody,
+  onError: status,
+})
+// Space plays or pauses when the preview has the focus; a click on the pages gives it.
+previewBody.tabIndex = -1
+previewPane.addEventListener('keydown', (event) => {
+  const target = event.target as HTMLElement
+  if (event.key !== ' ' || event.repeat || target.closest('button, input')) return
+  event.preventDefault()
+  player.toggle()
 })
 const pdfView = new PdfView({
   body: view('pdf').querySelector<HTMLElement>('.pane-body')!,
@@ -105,6 +124,7 @@ function showView(name: 'svg' | 'pdf'): void {
     element.hidden = element.dataset.view !== name
   }
   pdfView.show(name === 'pdf')
+  player.refresh()
 }
 showView('svg')
 
@@ -241,6 +261,7 @@ templateMenu.addEventListener('keydown', (event) => {
 studio.onCompile((event) => {
   compiled(event)
   preview.compiled(event)
+  player.compiled(event)
   pdfView.compiled(event)
 })
 
