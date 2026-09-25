@@ -1342,7 +1342,8 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   (`studio/src/ipc.ts` names the channels). `studio/src/files.ts` holds an
   `Access` that allows the folder opened with a dialog and single files picked
   in one; every read and write is checked against it, so the renderer cannot
-  name an arbitrary path. Only `.ly`, `.ily` and `.lyi` files are listed,
+  name an arbitrary path. A file once read stays allowed, so a score left open
+  in the editor can still be saved after another folder is opened. Only `.ly`, `.ily` and `.lyi` files are listed,
   read or written. The list descends at most four directories, skips hidden
   entries, `node_modules`, `out` and `dist`, and stops at 500 files. Files are
   written as UTF-8 exactly as the editor holds them.

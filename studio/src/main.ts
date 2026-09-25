@@ -127,9 +127,14 @@ function registerIpc(): void {
     return access.folder === undefined ? undefined : listFolder(access.folder)
   })
 
-  ipcMain.handle(Channel.readFile, (event, file: unknown) => {
+  ipcMain.handle(Channel.readFile, async (event, file: unknown) => {
     owner(event)
-    return readScore(access.check(file))
+    const allowed = access.check(file)
+    const text = await readScore(allowed)
+    // The editor keeps the file open when another folder is opened; it must
+    // still be able to save it then.
+    access.allowFile(allowed)
+    return text
   })
 
   ipcMain.handle(Channel.saveFile, (event, file: unknown, text: unknown) => {
