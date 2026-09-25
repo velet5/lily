@@ -126,6 +126,10 @@ export class PdfView {
       if (load !== this.load) return
     } else if (outcome.state !== 'failed' || !same) {
       this.close()
+    } else if (this.documents.length > 0 && this.pages.children.length === 0) {
+      // A load this one took over had cleared the pages before drawing them.
+      await this.draw(load)
+      if (load !== this.load) return
     }
     this.setNote(update.note, update.note)
   }
