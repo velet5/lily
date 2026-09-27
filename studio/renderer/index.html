@@ -16,16 +16,32 @@
     <script src="../dist/renderer/app.js" defer></script>
   </head>
   <body>
-    <!-- The fixed layout of DECISIONS D28: files | editor | preview, a status
-         line below. src/renderer/index.ts fills the panes. -->
+    <!-- The layout of DECISIONS D28: sidebar | editor | preview, a status line
+         below. The sidebar is as wide as its edge is dragged, and holds the
+         files above the agents' accordion (D40). src/renderer/index.ts fills
+         the panes. -->
     <main class="studio">
-      <nav class="pane files" data-pane="files" aria-label="Files">
-        <header class="pane-header">
-          <span class="pane-title">Files</span>
-          <span class="pane-actions"></span>
-        </header>
-        <div class="pane-body placeholder">No folder open</div>
-      </nav>
+      <aside class="sidebar" data-pane="sidebar">
+        <nav class="pane files" data-pane="files" aria-label="Files">
+          <header class="pane-header">
+            <span class="pane-title">Files</span>
+            <span class="pane-actions"></span>
+          </header>
+          <div class="pane-body placeholder">No folder open</div>
+        </nav>
+        <div class="splitter splitter-rows" role="separator" aria-orientation="horizontal" aria-label="Resize the agents" tabindex="0"></div>
+        <section class="agents" data-pane="agents" aria-label="Agents">
+          <section class="fold" data-fold="chats">
+            <h2 class="fold-header"><button type="button" aria-expanded="false">Agent chats</button></h2>
+            <div class="fold-body" hidden></div>
+          </section>
+          <section class="fold" data-fold="setup">
+            <h2 class="fold-header"><button type="button" aria-expanded="false">Agent setup</button></h2>
+            <div class="fold-body" hidden></div>
+          </section>
+        </section>
+        <div class="splitter splitter-columns" role="separator" aria-orientation="vertical" aria-label="Resize the sidebar" tabindex="0"></div>
+      </aside>
       <section class="pane editor" data-pane="editor" aria-label="Editor">
         <header class="pane-header"><span class="pane-title">Editor</span></header>
         <div class="pane-body placeholder">No score open</div>

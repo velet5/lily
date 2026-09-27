@@ -37,6 +37,19 @@ export interface ScoreEditorOptions {
   onText?(file: string, unsaved: string | undefined): void
   /** The last compile's diagnostics in `file`; marked when it opens. */
   diagnostics(file: string): LyDiagnostic[]
+  /** After the selection or the cursor moved, or another file was shown. */
+  onSelection?(): void
+}
+
+/** An item of the editor's context menu, shown only while text is selected (D41). */
+export interface SelectionAction {
+  id: string
+  label: string
+  /** Where it goes among the others: lower first. */
+  order: number
+  /** ⌘⌥ and this letter, when it has a shortcut. */
+  key?: 'I'
+  run(): void
 }
 
 export class ScoreEditor {
@@ -58,8 +71,26 @@ export class ScoreEditor {
       insertSpaces: true,
       renderWhitespace: 'none',
       fixedOverflowWidgets: true,
+      // The context menu in the page itself, where app.css styles it; in a
+      // shadow root it had no background.
+      useShadowDOM: false,
     })
     dark.addEventListener('change', () => monaco.editor.setTheme(dark.matches ? DARK_THEME : LIGHT_THEME))
+    this.editor.onDidChangeCursorSelection(() => options.onSelection?.())
+    this.editor.onDidChangeModel(() => options.onSelection?.())
+  }
+
+  /** Adds `action` to the top of the context menu, where it shows while text is selected. */
+  addSelectionAction(action: SelectionAction): void {
+    this.editor.addAction({
+      id: action.id,
+      label: action.label,
+      precondition: 'editorHasSelection',
+      contextMenuGroupId: '0_agent',
+      contextMenuOrder: action.order,
+      ...(action.key ? { keybindings: [monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyI] } : {}),
+      run: () => action.run(),
+    })
   }
 
   get file(): string | undefined {
@@ -120,6 +151,14 @@ export class ScoreEditor {
         source: 'LilyPond',
       })),
     )
+  }
+
+  /** The selected lines of the shown file (1-based) and the selected text; undefined when nothing is selected. */
+  selection(): { startLine: number; endLine: number; text: string } | undefined {
+    const model = this.editor.getModel()
+    const selection = this.editor.getSelection()
+    if (!model || !selection || selection.isEmpty()) return undefined
+    return { startLine: selection.startLineNumber, endLine: selection.endLineNumber, text: model.getValueInRange(selection) }
   }
 
   /** Puts the cursor of the shown file where a diagnostic points (1-based, lilypond's column). */

@@ -7,7 +7,10 @@
 // then prints a JSON report and exits 0 or 1. It starts on the welcome
 // screen, sees LilyPond looked for, and reads the error explained (D37).
 // Opening a score engraves it without a save, and the preview follows the
-// editor from score to score (D39).
+// editor from score to score (D39). The sidebar's edge drags wider, and a
+// stand-in for Claude Code answers a chat, writes a score that the file list
+// then shows, and continues its session on the second message (D40). A
+// selection's context menu explains it with the agent, the lines attached (D41).
 import type { BrowserWindow } from 'electron'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
@@ -20,7 +23,22 @@ const PANES = ['files', 'editor', 'preview'] as const
 export interface SmokeFolder {
   folder: string
   score: string
+  /** A stand-in for Claude Code: stream-json out, agent.ly written, no network. */
+  agent: string
 }
+
+/** Answers as `claude -p --output-format stream-json` does, and says whether it was resumed. */
+const FAKE_AGENT = `#!/bin/sh
+case " $* " in *" --version "*) echo "9.9.9 (Claude Code)"; exit 0;; esac
+resumed=no
+for arg in "$@"; do [ "$arg" = "--resume" ] && resumed=yes; done
+case "$*" in *"The user has selected"*) resumed="$resumed, with a selection";; esac
+echo '{"type":"system","subtype":"init","session_id":"smoke-session"}'
+printf '%s\\n' '\\version "2.24.0"' '{ a4 b c d }' > agent.ly
+echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"file_path":"'"$PWD"'/agent.ly"}}]}}'
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Wrote agent.ly (resumed: '$resumed')"}]}}'
+echo '{"type":"result","subtype":"success","is_error":false,"result":"done"}'
+`
 
 export async function prepareSmokeTest(): Promise<SmokeFolder> {
   const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'lily-studio-smoke-'))
@@ -30,7 +48,10 @@ export async function prepareSmokeTest(): Promise<SmokeFolder> {
   await fs.writeFile(path.join(folder, 'parts', 'melody.ily'), 'melody = { g1 }\n')
   await fs.writeFile(path.join(folder, 'notes.txt'), 'not a score\n')
   await fs.writeFile(path.join(folder, 'second.ly'), '\\version "2.24.0"\n{ g\'1 }\n')
-  return { folder, score }
+  const agent = path.join(folder, '.agent', 'claude')
+  await fs.mkdir(path.dirname(agent))
+  await fs.writeFile(agent, FAKE_AGENT, { mode: 0o755 })
+  return { folder, score, agent }
 }
 
 export async function runSmokeTest(window: BrowserWindow, smoke: SmokeFolder): Promise<number> {
@@ -257,8 +278,81 @@ export async function runSmokeTest(window: BrowserWindow, smoke: SmokeFolder): P
     switching.back = await until<number>('the preview of smoke.ly again', `(() => { const n = ${linksTo('smoke.ly')}; return n === ${before} && ${linksTo('second.ly')} === 0 ? n : 0 })()`, 30_000)
   }
 
+  // The sidebar (D40): its edge dragged 80 px to the right makes it 80 px wider.
+  const sidebar: Record<string, unknown> = {}
+  sidebar.width = await run<{ before: number; after: number }>(`(() => {
+    const width = () => document.querySelector('[data-pane="sidebar"]').getBoundingClientRect().width
+    const handle = document.querySelector('.splitter-columns')
+    const r = handle.getBoundingClientRect()
+    const at = (type, x) => handle.dispatchEvent(new PointerEvent(type, { bubbles: true, clientX: x, clientY: r.top + 50, button: 0, pointerId: 1 }))
+    const before = width()
+    at('pointerdown', r.left + 3)
+    at('pointermove', r.left + 83)
+    at('pointerup', r.left + 83)
+    return { before, after: width() }
+  })()`)
+  const widths = sidebar.width as { before: number; after: number }
+  if (Math.round(widths.after - widths.before) !== 80) problems.push(`dragging the sidebar's edge by 80 px changed its width from ${widths.before} to ${widths.after}`)
+
+  // Agent setup finds the stand-in; Agent chats sends it a message. Its answer
+  // and what it did appear, agent.ly joins the file list, and a second message
+  // continues the same session.
+  await run(`document.querySelector('[data-fold="setup"] .fold-header button').click()`)
+  sidebar.setup = await until<string>('Agent setup to find the stand-in agent', `(() => { const c = document.querySelector('.agent-card[data-agent="claude"]'); return c && c.dataset.state === 'ready' && c.textContent.includes('9.9.9') ? c.querySelector('.agent-card-state').textContent : '' })()`, 20_000)
+  await run(`document.querySelector('[data-fold="chats"] .fold-header button').click()`)
+  const send = (text: string) => run(`(() => {
+    const input = document.querySelector('.chat-composer textarea')
+    input.value = ${JSON.stringify(text)}
+    document.querySelector('.chat-composer button').click()
+  })()`)
+  const answer = (resumed: string) => `(() => {
+    const log = document.querySelector('.chat-log')
+    const text = [...(log?.querySelectorAll('.chat-entry.agent') ?? [])].map((e) => e.textContent).join('|')
+    return text.includes('(resumed: ${resumed})') && !log.querySelector('.chat-working:not([hidden])') ? text : ''
+  })()`
+  await until('the agent to be ready in the chat', `(() => { const s = document.querySelector('.chat-toolbar select'); return s && s.value === 'claude' && !document.querySelector('.chat-composer textarea').disabled })()`)
+  await send('Write a new score')
+  sidebar.answer = await until<string>('the agent to answer', answer('no'), 20_000)
+  sidebar.tool = await run<string>(`[...document.querySelectorAll('.chat-entry.tool')].map((e) => e.textContent).join('|')`)
+  if (sidebar.tool !== 'Wrote agent.ly') problems.push(`the chat shows the agent did ${JSON.stringify(sidebar.tool)}`)
+  sidebar.listed = await until<boolean>('agent.ly in the file list', `!!document.querySelector('[data-relative="agent.ly"]')`)
+  await send('And again')
+  sidebar.resumed = await until<string>('the second answer in the same session', answer('yes'), 20_000)
+
+  // A selection in the editor: the message box says it goes along, and the
+  // context menu's Explain sends it to the agent in the open chat (D41).
+  window.webContents.focus()
+  await run(`document.querySelector('.monaco-editor .native-edit-context, .monaco-editor textarea').focus()`)
+  window.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'A', modifiers: ['meta'] })
+  window.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'A', modifiers: ['meta'] })
+  sidebar.attached = await until<string>('the selection named above the message box', `(() => { const t = document.querySelector('.chat-context')?.textContent ?? ''; return /^With lines 1–\\d+ of smoke\\.ly$/.test(t) ? t : '' })()`)
+  /** Elements matching `selector` in the page and in every shadow root (Monaco's menu is in one). */
+  const deep = `const deep = (root, selector) => [...root.querySelectorAll(selector), ...[...root.querySelectorAll('*')].filter((e) => e.shadowRoot).flatMap((e) => deep(e.shadowRoot, selector))]`
+  await run(`(() => {
+    const lines = document.querySelector('.monaco-editor .view-lines')
+    const r = lines.getBoundingClientRect()
+    lines.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: r.left + 20, clientY: r.top + 8, button: 2 }))
+  })()`)
+  sidebar.menu = await until<string[]>('the agent items in the context menu', `(() => {
+    ${deep}
+    const labels = deep(document, '.action-label').map((e) => e.textContent.trim()).filter((t) => t.includes('Agent') || t.includes('Selection'))
+    return labels.length === 3 ? labels : null
+  })()`)
+  // Monaco's menu takes a mouse-up only a moment after it opens, against stray clicks.
+  await new Promise((resolve) => setTimeout(resolve, 500))
+  await run(`(() => {
+    ${deep}
+    const item = deep(document, '.action-label').find((e) => e.textContent.trim() === 'Explain Selection with Agent')
+    item.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, button: 0 }))
+  })()`)
+  sidebar.explained = await until<string>('the selection explained in the open chat', `(() => {
+    const users = [...document.querySelectorAll('.chat-log .chat-entry.user')].map((e) => e.textContent)
+    const answers = [...document.querySelectorAll('.chat-log .chat-entry.agent')].map((e) => e.textContent)
+    return users.length === 3 && users[2].startsWith('Explain what the selected lines do') && answers.length === 3 && answers[2].includes('with a selection') ? answers[2] : ''
+  })()`, 20_000)
+
   await fs.rm(smoke.folder, { recursive: true, force: true })
   const ok = problems.length === 0
-  console.log(JSON.stringify({ ok, problems, ...layout, welcome, listed, openedPages, switching, monaco: !!shown, colours, saved, compile }, null, 2))
+  console.log(JSON.stringify({ ok, problems, ...layout, welcome, listed, openedPages, switching, monaco: !!shown, colours, saved, compile, sidebar }, null, 2))
   return ok ? 0 : 1
 }

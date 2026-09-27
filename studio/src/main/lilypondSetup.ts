@@ -33,6 +33,9 @@ export interface LilyPondStatus {
 export const SETUP_LINKS = {
   download: 'https://lilypond.org/download.html',
   learn: 'https://lilypond.org/doc/v2.24/Documentation/learning/',
+  // How to install the agents of the sidebar (D40).
+  claude: 'https://docs.claude.com/en/docs/claude-code/setup',
+  codex: 'https://developers.openai.com/codex/cli',
 } as const
 
 export type SetupLink = keyof typeof SETUP_LINKS
@@ -130,17 +133,40 @@ export function searchPath(current: string | undefined, binaryDir?: string): str
   return [...new Set(dirs)].join(path.delimiter)
 }
 
-/** The studio's settings: userData/settings.json. Only the chosen LilyPond so far. */
+/** One agent's choices in the setup (D40): where it is, and which model it uses. */
+export interface AgentSettings {
+  path?: string
+  model?: string
+}
+
+/** The studio's settings: userData/settings.json. The chosen LilyPond, and the agents' choices. */
 export interface Settings {
   lilypondPath?: string
+  agents?: { claude?: AgentSettings; codex?: AgentSettings }
+}
+
+function agentSettings(value: unknown): AgentSettings | undefined {
+  if (typeof value !== 'object' || value === null) return undefined
+  const { path: agentPath, model } = value as Record<string, unknown>
+  const result: AgentSettings = {
+    ...(typeof agentPath === 'string' && agentPath ? { path: agentPath } : {}),
+    ...(typeof model === 'string' && model ? { model } : {}),
+  }
+  return Object.keys(result).length > 0 ? result : undefined
 }
 
 export async function readSettings(file: string): Promise<Settings> {
   try {
     const value: unknown = JSON.parse(await fs.readFile(file, 'utf8'))
     if (typeof value !== 'object' || value === null) return {}
-    const { lilypondPath } = value as Record<string, unknown>
-    return typeof lilypondPath === 'string' && lilypondPath ? { lilypondPath } : {}
+    const { lilypondPath, agents } = value as Record<string, unknown>
+    const settings: Settings = typeof lilypondPath === 'string' && lilypondPath ? { lilypondPath } : {}
+    if (typeof agents === 'object' && agents !== null) {
+      const claude = agentSettings((agents as Record<string, unknown>).claude)
+      const codex = agentSettings((agents as Record<string, unknown>).codex)
+      if (claude || codex) settings.agents = { ...(claude ? { claude } : {}), ...(codex ? { codex } : {}) }
+    }
+    return settings
   } catch {
     // Missing or damaged: start again from nothing.
     return {}

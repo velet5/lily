@@ -5,10 +5,16 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { FolderListing } from './files'
 import {
   Channel,
+  type AgentId,
+  type AgentStatus,
+  type ChatEvent,
+  type ChatInfo,
+  type ChatMessage,
   type Command,
   type CompileEvent,
   type FileChange,
   type LilyPondStatus,
+  type OpenChat,
   type Opened,
   type PdfOutcome,
   type SetupLink,
@@ -69,6 +75,30 @@ const studio = {
   openLink: (link: SetupLink): Promise<void> => ipcRenderer.invoke(Channel.openLink, link),
   /** Opens the sample score, writing it first when it is not there. */
   openSample: (): Promise<Opened> => ipcRenderer.invoke(Channel.openSample),
+  /** Looks for Claude Code and Codex and asks each for its version (D40). */
+  agentStatus: (): Promise<AgentStatus[]> => ipcRenderer.invoke(Channel.agentStatus),
+  /** Asks where `agent` is; undefined when the dialog was cancelled. */
+  chooseAgent: (agent: AgentId): Promise<AgentStatus | undefined> => ipcRenderer.invoke(Channel.chooseAgent, agent),
+  /** The model `agent` uses from its next turn; empty for its default. */
+  setAgentModel: (agent: AgentId, model: string): Promise<void> => ipcRenderer.invoke(Channel.setAgentModel, agent, model),
+  /** The chats of the open folder, newest first; empty when none is open. */
+  chatList: (): Promise<ChatInfo[]> => ipcRenderer.invoke(Channel.chatList),
+  /** A chat of the open folder, with its entries; undefined when it is gone. */
+  chatGet: (chatId: string): Promise<OpenChat | undefined> => ipcRenderer.invoke(Channel.chatGet, chatId),
+  /**
+   * Sends a message to an agent working in the open folder; resolves with the
+   * chat's id once the turn has started. What follows arrives on onChatEvent.
+   */
+  chatSend: (message: ChatMessage): Promise<string> => ipcRenderer.invoke(Channel.chatSend, message),
+  /** Stops the agent of `chatId`, and the commands it started. */
+  chatStop: (chatId: string): Promise<void> => ipcRenderer.invoke(Channel.chatStop, chatId),
+  chatDelete: (chatId: string): Promise<void> => ipcRenderer.invoke(Channel.chatDelete, chatId),
+  /** Runs `listener` for each entry of a chat and each start and end of a turn. */
+  onChatEvent(listener: (event: ChatEvent) => void): () => void {
+    const handler = (_event: unknown, chat: ChatEvent) => listener(chat)
+    ipcRenderer.on(Channel.chatEvent, handler)
+    return () => ipcRenderer.removeListener(Channel.chatEvent, handler)
+  },
   /** Runs `listener` for each menu command; returns a function that removes it. */
   onCommand(listener: (command: Command) => void): () => void {
     const handler = (_event: unknown, command: Command) => listener(command)

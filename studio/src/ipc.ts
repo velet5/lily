@@ -4,6 +4,8 @@ import type { LyDiagnostic } from '../../src/diagnostics/parse'
 import type { PlaybackTiming } from '../../src/preview/panel'
 import type { SourceLocation } from '../../src/preview/pointAndClick'
 import type { FolderListing } from './files'
+import type { ChatEvent, ChatInfo, ChatMessage, OpenChat } from './main/agentChats'
+import type { AgentId, AgentStatus, ChatEntry } from './main/agents'
 import type { LilyPondStatus, SetupLink } from './main/lilypondSetup'
 import type { FileChange } from './main/watcher'
 
@@ -46,6 +48,22 @@ export const Channel = {
   openLink: 'studio:open-link',
   /** Writes the sample score into Documents/Lily Studio, unless it is there, and opens it (D37). */
   openSample: 'studio:open-sample',
+  /** Looks for the sidebar's agents, Claude Code and Codex (D40). */
+  agentStatus: 'studio:agent-status',
+  /** Agent setup's Choose… dialog for one agent's executable. */
+  chooseAgent: 'studio:choose-agent',
+  /** Agent setup's model field; empty for the agent's default. */
+  setAgentModel: 'studio:set-agent-model',
+  /** The chats of the open folder, newest first. */
+  chatList: 'studio:chat-list',
+  /** One chat of the open folder, with its entries. */
+  chatGet: 'studio:chat-get',
+  /** A message to an agent: starts a turn, in a new chat or an old one. */
+  chatSend: 'studio:chat-send',
+  chatStop: 'studio:chat-stop',
+  chatDelete: 'studio:chat-delete',
+  /** Main → renderer: a chat got an entry, or its agent started or stopped. */
+  chatEvent: 'studio:chat-event',
 } as const
 
 /** A folder was opened, or a file whose folder becomes the open folder. */
@@ -106,4 +124,17 @@ export type CompileEvent =
   | { kind: 'started'; rootFile: string }
   | { kind: 'finished'; outcome: CompileOutcome }
 
-export type { FileChange, LilyPondStatus, PlaybackTiming, SetupLink, SourceLocation }
+export type {
+  AgentId,
+  AgentStatus,
+  ChatEntry,
+  ChatEvent,
+  ChatInfo,
+  ChatMessage,
+  FileChange,
+  LilyPondStatus,
+  OpenChat,
+  PlaybackTiming,
+  SetupLink,
+  SourceLocation,
+}

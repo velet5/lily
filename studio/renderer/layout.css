@@ -1,9 +1,11 @@
-/* The fixed layout of Lily Studio (DECISIONS D28). The panes cannot be moved,
-   resized, hidden or split: files on the left, the editor in the middle, the
-   preview on the right, a status line along the bottom. */
+/* The layout of Lily Studio (DECISIONS D28): the sidebar on the left, the
+   editor in the middle, the preview on the right, a status line along the
+   bottom. The panes cannot be moved or hidden; the sidebar's width and the
+   split between its files and the agents' accordion follow their edges when
+   dragged (D40). */
 
 :root {
-  --files-width: 240px;
+  --sidebar-width: 240px;
   --status-height: 24px;
   --header-height: 32px;
 
@@ -52,10 +54,10 @@ body {
 
 .studio {
   display: grid;
-  grid-template-columns: var(--files-width) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr) var(--status-height);
   grid-template-areas:
-    'files editor preview'
+    'sidebar editor preview'
     'status status status';
   height: 100vh;
 }
@@ -68,10 +70,19 @@ body {
   min-height: 0;
 }
 
-.files {
-  grid-area: files;
+.sidebar {
+  grid-area: sidebar;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
   background: var(--bg-side);
   border-right: 1px solid var(--border);
+}
+
+.files {
+  flex: 1 1 0;
 }
 
 .editor {
@@ -758,4 +769,436 @@ button.primary:hover {
 
 .problem-banner:hover {
   background: rgba(199, 46, 46, 0.16);
+}
+
+/* The sidebar's edges (DECISIONS D40): a few pixels wide to grab, a line when
+   hovered, dragged or focused. */
+
+.splitter {
+  position: absolute;
+  z-index: 20;
+  touch-action: none;
+}
+
+.splitter::after {
+  content: '';
+  position: absolute;
+  background: var(--accent);
+  opacity: 0;
+  transition: opacity 0.1s 0.15s;
+}
+
+.splitter:hover::after,
+.splitter:focus-visible::after,
+body[data-resizing] .splitter:active::after {
+  opacity: 1;
+}
+
+.splitter:focus-visible {
+  outline: none;
+}
+
+.splitter-columns {
+  top: 0;
+  bottom: 0;
+  right: -4px;
+  width: 7px;
+  cursor: col-resize;
+}
+
+.splitter-columns::after {
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 3px;
+}
+
+.splitter-rows {
+  position: relative;
+  flex: none;
+  height: 0;
+  cursor: row-resize;
+}
+
+.splitter-rows::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -3px;
+  height: 7px;
+}
+
+.splitter-rows::after {
+  left: 0;
+  right: 0;
+  top: -1px;
+  height: 3px;
+}
+
+/* While an edge is dragged: its cursor everywhere, no text selected, and the
+   editor and the preview do not take the pointer. */
+body[data-resizing='x'] {
+  cursor: col-resize;
+}
+
+body[data-resizing='y'] {
+  cursor: row-resize;
+}
+
+body[data-resizing] .editor,
+body[data-resizing] .preview {
+  pointer-events: none;
+}
+
+/* The agents' accordion: two folds, one open at a time, or none. */
+
+.agents {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 1px solid var(--border);
+}
+
+.fold {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.fold[data-open='true'] {
+  flex: 1;
+}
+
+.fold + .fold {
+  border-top: 1px solid var(--border);
+}
+
+.fold-header {
+  flex: none;
+  margin: 0;
+}
+
+.fold-header button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 28px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 0;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+}
+
+.fold-header button::before {
+  content: '›';
+  display: inline-block;
+  width: 10px;
+  font-size: 14px;
+  transition: transform 0.1s;
+}
+
+.fold-header button[aria-expanded='true']::before {
+  transform: rotate(90deg);
+}
+
+.fold-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fold[data-fold='setup'] .fold-body {
+  overflow: auto;
+  gap: 8px;
+  padding: 0 10px 10px;
+}
+
+.fold[data-fold='setup'] .fold-body > button {
+  align-self: flex-start;
+}
+
+/* Agent chats */
+
+.chat-toolbar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px 6px;
+}
+
+.chat-toolbar button,
+.chat-toolbar select {
+  flex: none;
+  font-size: 12px;
+}
+
+.chat-toolbar select {
+  min-width: 0;
+  flex: 1;
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 4px;
+}
+
+.chat-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.chat-toolbar select + .chat-title,
+.chat-title:has(+ select) {
+  flex: none;
+}
+
+.chat-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.chat-note {
+  margin: 4px 12px;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.chat-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 4px;
+  overflow: auto;
+}
+
+.chat-list button {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: 0;
+  text-align: left;
+}
+
+.chat-list-title,
+.chat-list-meta {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-list-meta {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.chat-log {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 10px 8px;
+  user-select: text;
+}
+
+.chat-entry {
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-entry.user {
+  align-self: flex-end;
+  max-width: 90%;
+  padding: 5px 9px;
+  border-radius: 10px 10px 2px 10px;
+  background: var(--selected);
+}
+
+.chat-entry.tool {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.chat-entry.tool::before {
+  content: '• ';
+}
+
+.chat-entry.error {
+  padding: 4px 8px;
+  border-left: 3px solid #c72e2e;
+  background: rgba(199, 46, 46, 0.1);
+}
+
+.chat-entry code,
+.chat-entry pre {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+
+.chat-entry code {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--hover);
+}
+
+.chat-entry pre {
+  margin: 4px 0;
+  padding: 6px 8px;
+  overflow-x: auto;
+  white-space: pre;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+}
+
+.chat-working {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.chat-working::after {
+  content: '…';
+  animation: chat-working 1.2s steps(4, end) infinite;
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+  width: 0;
+}
+
+@keyframes chat-working {
+  to {
+    width: 1.2em;
+  }
+}
+
+.chat-composer {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 10px 10px;
+  border-top: 1px solid var(--border);
+}
+
+.chat-context {
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-composer textarea {
+  width: 100%;
+  resize: none;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  user-select: text;
+}
+
+.chat-composer textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.chat-composer button {
+  align-self: flex-end;
+}
+
+.chat-composer[data-running='true'] button.primary {
+  background: #c72e2e;
+  border-color: #c72e2e;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Agent setup */
+
+.agent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left: 4px solid #2f9e44;
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.agent-card:not([data-state='ready']) {
+  border-left-color: #c72e2e;
+}
+
+.agent-card-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.agent-card-state,
+.agent-card-detail {
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.agent-card-detail {
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.agent-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.agent-card-model {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.agent-card-model input {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 6px;
+  font: inherit;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  user-select: text;
 }

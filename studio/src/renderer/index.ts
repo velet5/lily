@@ -1,15 +1,18 @@
 // The renderer's entry point, bundled into dist/renderer/app.js: connects the
 // file list, the editor and the status line to `window.studio` (preload.ts),
-// with the welcome screen and LilyPond's setup (D37).
+// with the welcome screen and LilyPond's setup (D37), and the resizable
+// sidebar with the agents' accordion (D40).
 import type { CompileEvent, FileChange, Opened } from '../ipc'
 import type { StudioApi } from '../preload'
 import type { TemplateId } from '../templates'
+import { AgentPanel, SELECTION_ACTIONS } from './agents'
 import { compileStatus, DiagnosticStore, problemSummary } from './diagnostics'
 import { ScoreEditor } from './editor'
 import { button, FileList } from './files'
 import { PdfView } from './pdfView'
 import { ScorePlayer } from './player'
 import { ScorePreview } from './preview'
+import { Sidebar } from './sidebar'
 import { Welcome } from './welcome'
 
 declare global {
@@ -111,6 +114,7 @@ const editor = new ScoreEditor({
   onChange: refreshMarkers,
   onText: (file, unsaved) => studio.edited(file, unsaved ?? null),
   diagnostics: (file) => diagnostics.for(file),
+  onSelection: () => agents.refreshContext(),
 })
 
 // The preview pane: the SVG pages (D32) or the PDF (D33), switched in its header.
@@ -216,6 +220,44 @@ const files = new FileList({
   onNewScore: () => showTemplates(),
 })
 
+// The agents' accordion under the files (D40). A message saves unsaved edits
+// first, so the agent reads what the editor shows; a finished turn lists the
+// folder again, for the files it added. Changed files reload through D34.
+const agentsPane = pane('agents')
+const fold = (name: string) => agentsPane.querySelector<HTMLElement>(`[data-fold="${name}"] .fold-body`)!
+const agents = new AgentPanel({
+  studio,
+  chats: fold('chats'),
+  setup: fold('setup'),
+  beforeSend: async () => {
+    if (editor.dirtyFiles().length === 0) return
+    await editor.saveAll()
+    status('Saved your changes, so the agent works on them')
+  },
+  context: () => {
+    const selection = editor.selection()
+    return { ...(editor.file ? { file: editor.file } : {}), ...(selection ? { selection } : {}) }
+  },
+  displayName: (file) => displayName(file),
+  onTurnEnd: () => void studio.listFolder().then((listing) => listing && files.show(listing), report),
+  onError: report,
+})
+const sidebar = new Sidebar({ studio: document.querySelector<HTMLElement>('.studio')!, sidebar: pane('sidebar'), agents: agentsPane })
+void agents.refreshSetup()
+// The selection's context menu: ask, explain or fix it with the agent (D41).
+SELECTION_ACTIONS.forEach((action, order) =>
+  editor.addSelectionAction({
+    id: action.id,
+    label: action.label,
+    order,
+    ...(action.prompt ? {} : { key: 'I' as const }),
+    run: () => {
+      sidebar.show('chats')
+      agents.ask(action.prompt)
+    },
+  }),
+)
+
 /** A path as the file list shows it, else its name. */
 function displayName(file: string): string {
   return files.folder?.files.find((f) => f.path === file)?.relative ?? file.split(/[\\/]/).pop() ?? file
@@ -316,6 +358,7 @@ async function run(opening: Promise<Opened | undefined>): Promise<void> {
     const opened = await opening
     if (!opened) return
     files.show(opened.listing)
+    void agents.folderChanged(opened.listing.folder)
     refreshMarkers()
     if (opened.file) await open(opened.file)
   } catch (error) {
@@ -432,5 +475,7 @@ void welcome.check(true).catch(report)
 
 // A folder the main process already has (the smoke test's) is shown at once.
 void studio.listFolder().then((listing) => {
-  if (listing) files.show(listing)
+  if (!listing) return
+  files.show(listing)
+  void agents.folderChanged(listing.folder)
 }, report)

@@ -1789,3 +1789,120 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   were, unsaved text included. Not covered: D36's live check does not
   replace the whole text as it means to (select-all does not take in the
   editor). It passes on the notes of line 2, which are the same either way.
+
+---
+
+## D40 — Lily Studio: a resizable sidebar, and Claude Code and Codex in it
+
+**Status:** proposed · **Refines:** D28, D34
+
+- **Sidebar.** The left column is now a sidebar: the file list on top, the
+  agents' accordion below it. Its right edge drags to set its width
+  (180–640 px, always leaving 480 px to the editor and the preview), and the
+  edge between the files and the accordion drags to share its height (the
+  files keep at least 96 px, an open fold at least 140 px). Both edges are
+  focusable separators that the arrow keys move by 16 px, or 64 px with Shift,
+  and a double-click puts them back. The width, the height and the open fold
+  are kept in the window's `localStorage`, like live preview's switch (D36). The
+  editor and the preview are still fixed; D28's "cannot be resized" now
+  holds only for them.
+- **Accordion.** Two folds, *Agent chats* and *Agent setup*, one open at a
+  time or none. With none open, only the two headers stay under the files.
+- **Which agents.** Claude Code (`claude`) and Codex (`codex`), as the user
+  installed and signed in to them. Lily Studio does not bundle them, log in
+  for them, or hold keys. An app opened from the Finder has a bare PATH, so
+  `src/main/agents.ts` asks the login shell for its PATH once (`$SHELL -ilc`,
+  5 s), then adds the installers' usual directories. Codex from npm needs
+  `node` from that PATH too. *Agent setup* shows each agent's path and
+  version, lets the user choose the executable, and takes an optional model.
+  Both are kept in `settings.json` under `agents`.
+- **One process per turn.** Each message runs the agent headless in the open
+  folder, and the session continues on the next message:
+  `claude -p <prompt> --output-format stream-json --verbose --permission-mode acceptEdits --allowedTools … [--resume <id>]`,
+  or `codex exec [resume <id>] --json --skip-git-repo-check -c sandbox_mode="workspace-write" -c approval_policy="never" <prompt>`.
+  `codex exec resume` takes neither `--sandbox` nor `--cd`, so the sandbox
+  is given as config and the folder as the working directory. The JSONL is
+  read into chat entries: what the agent said, one line per tool call ("Edited
+  melody.ily", "Ran lilypond …"), and errors. The rest (thinking, reasoning,
+  todo lists, token counts) is dropped. Stop ends the agent's process group.
+- **Permissions.** No one is at a terminal to approve a tool while the agent
+  works, so the limits are set beforehand. Claude Code accepts edits inside
+  the folder, and may run only `lilypond` (by name and by the found path).
+  Anything else is denied and shown in the chat as "Not allowed in Lily
+  Studio: …". Codex runs in its own `workspace-write` sandbox: commands write
+  only in the folder and the temp directory, without network. There is no
+  switch for more access.
+- **What the agent is told.** A chat's first turn starts with instructions:
+  the user may not be a programmer, edit the files in place, check the score
+  with the found LilyPond into the temp directory (never next to the sources),
+  fix the first error first, and do not delete bar checks (AGENTS.md's loop).
+  Every turn names the file in the editor and quotes the selected lines, when
+  there are any (4 000 characters at most).
+- **Unsaved edits.** A message saves every unsaved file first, and says so in
+  the status line, so the agent edits what the editor shows. The agent's
+  writes then come back through D34: open files reload, the shown score
+  compiles again. After each turn the folder is listed again, so new files
+  appear.
+- **Chats.** Kept in `userData/chats.json`, 200 at most, per folder. An
+  agent's session can be resumed only from the folder it ran in. The list
+  shows the open folder's chats, newest first. A message with no chat open
+  starts a new chat with the agent chosen above the list. An agent that is not
+  set up keeps the message and says why in the chat. Deleting a chat asks
+  first and does not delete the agent's own session files.
+- **Code.** `src/main/agents.ts` (finding, arguments, prompt, parsing,
+  running), `src/main/chats.ts` (the store) and `src/main/agentChats.ts` (a
+  turn from message to entries) import neither `electron` nor the DOM.
+  `src/renderer/sidebar.ts` and `src/renderer/agents.ts` are the UI. The IPC
+  channels are `studio:agent-status`, `studio:choose-agent`,
+  `studio:set-agent-model`, `studio:chat-list|get|send|stop|delete` and, from
+  main to renderer, `studio:chat-event`.
+- **Verified.** `npm run test:unit` in `studio/`: the arguments, prompt and
+  JSONL parsing (lines captured from Claude Code 2.1.282 and Codex 0.157.0),
+  detection, runs that end, crash or are stopped, a two-turn chat that
+  resumes its session, the store, the settings and the sidebar's limits.
+  `npm run test:smoke`: dragging the edge 80 px widens the sidebar by 80 px;
+  a stand-in `claude` script is found in *Agent setup*, answers in *Agent
+  chats*, writes `agent.ly`, which then appears in the file list, and resumes
+  on the second message. By hand, outside the window: `AgentChats` with the
+  real Claude Code and Codex, one turn each in a scratch folder ("make the
+  last note a half note and add an a"). Each read, edited and compiled the
+  score with the found LilyPond into the temp directory, with no denials and
+  nothing written next to it. That check found that the output directory
+  must exist before the turn: the studio creates it, since `mkdir` is denied.
+  Resuming was checked with the CLIs directly. Not covered: the real agents
+  inside the window, and the packaged app (`npm run test:e2e`).
+
+---
+
+## D41 — Lily Studio: the agent in the selection's context menu
+
+**Status:** proposed · **Refines:** D40
+
+- **What.** With text selected, the editor's context menu starts with three
+  items (`SELECTION_ACTIONS` in `studio/src/renderer/agents.ts`):
+  - *Ask Agent About Selection…* (⌥⌘I) opens *Agent chats* and puts the
+    cursor in the message box.
+  - *Explain Selection with Agent* sends "Explain what the selected lines
+    do, in plain words … Do not change any files."
+  - *Fix Selection with Agent* sends "Find and fix what is wrong in the
+    selected lines, then check that the score compiles."
+
+  Without a selection they are not in the menu. ⌥⌘I is not bound in Monaco,
+  and the studio's menu has no developer tools on it.
+- **Where it goes.** To the open chat, unless its agent is still working, in
+  which case to a new chat with the agent chosen in the list. The selection
+  goes as D40 sends it: the file, the line numbers and the text. A menu item
+  leaves a draft in the message box as it is.
+- **What goes along, shown.** A line above the message box says what goes
+  with a message, "With lines 3–4 of melody.ily" or "With melody.ily". It
+  follows the editor's selection and file.
+- **Context menu styling.** Monaco drew its context menu in a shadow root,
+  which `app.css` does not reach, so the menu had no background and its items
+  lay over the code (Cut, Copy and Paste too, before this). The editor now has
+  `useShadowDOM: false`.
+- **Verified.** `npm run test:unit`: the label and the items.
+  `npm run test:smoke`: ⌘A in the editor shows "With lines 1–5 of smoke.ly";
+  a right-click lists the three items; *Explain Selection with Agent* sends
+  its prompt in the open chat, and the stand-in agent receives the selection.
+  A screenshot of the menu shows it opaque. Monaco's menu takes a mouse-up
+  only a moment after it opens, so the test waits 500 ms before clicking.

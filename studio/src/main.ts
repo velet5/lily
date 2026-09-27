@@ -2,8 +2,8 @@
 // renderer/index.html (DECISIONS D28), the file access behind it (D29) and
 // compile on save (D31), the PDF tab's compile and export (D33), and the
 // watch on the files behind them (D34), and live preview of unsaved edits
-// (D36), and LilyPond's setup and the sample score (D37). They reach the
-// renderer only through preload.ts.
+// (D36), and LilyPond's setup and the sample score (D37), and the agent
+// chats of the sidebar (D40). They reach the renderer only through preload.ts.
 import { app, BrowserWindow, dialog, ipcMain, Menu, shell, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from 'electron'
 import { mkdtempSync, rmSync } from 'node:fs'
 import * as fs from 'node:fs/promises'
@@ -13,6 +13,9 @@ import { CompileService } from '../../src/compile/compiler'
 import { parseTextEdit } from '../../src/preview/pointAndClick'
 import { Access, createFromTemplate, isInside, isScoreFile, listFolder, readScore, unusedName, writeScore, SCORE_EXTENSIONS } from './files'
 import { Channel, type Command, type CompileOutcome, type Opened } from './ipc'
+import { AgentChats, type ChatMessage } from './main/agentChats'
+import { agentEnv, agentPath, AGENTS, detectAgent, isAgentId, loginShellPath, type AgentId } from './main/agents'
+import { ChatStore } from './main/chats'
 import { StudioCompiler } from './main/compileService'
 import { LiveCompile } from './main/liveCompile'
 import { choicePath, detectLilyPond, readSettings, searchPath, SETUP_LINKS, writeSettings, type LilyPondStatus, type Settings } from './main/lilypondSetup'
@@ -77,6 +80,20 @@ const watcher = new ScoreWatcher({
     if (visible.length > 0) mainWindow?.webContents.send(Channel.filesChanged, visible)
     if (score && watcher.score) void compiler.compile(watcher.score)
   },
+})
+/** The LilyPond found last; agents check their edits with it (D40). */
+let lilypondBinary: string | undefined
+/** The PATH the agents run with, from the login shell (D40). */
+const agentSearchPath = async () => agentPath(await loginShellPath(), process.env.PATH)
+const detectAgentNow = async (id: AgentId) =>
+  detectAgent(id, { configuredPath: settings.agents?.[id]?.path, model: settings.agents?.[id]?.model, pathValue: await agentSearchPath() })
+/** The agent chats of the sidebar; each turn runs in the open folder (D40). */
+const chats = new AgentChats({
+  store: new ChatStore(path.join(app.getPath('userData'), 'chats.json')),
+  emit: (event) => mainWindow?.webContents.send(Channel.chatEvent, event),
+  status: detectAgentNow,
+  lilypond: async () => lilypondBinary ?? (await lilypondStatus()).path,
+  env: async () => agentEnv(await agentSearchPath()),
 })
 /** The last compile found no LilyPond; the setup compiles again once it is ready (D37). */
 let waitingForLilyPond = false
@@ -168,6 +185,7 @@ async function lilypondStatus(): Promise<LilyPondStatus> {
  */
 function found(status: LilyPondStatus): LilyPondStatus {
   if (status.path) process.env.PATH = searchPath(process.env.PATH, path.dirname(status.path))
+  lilypondBinary = status.state === 'ready' ? status.path : undefined
   if (status.state === 'ready' && waitingForLilyPond && compiler.current) void compiler.compile(compiler.current)
   return status
 }
@@ -344,6 +362,70 @@ function registerIpc(): void {
     return openFolder(folder, file)
   })
 
+  ipcMain.handle(Channel.agentStatus, async (event) => {
+    owner(event)
+    return Promise.all(AGENTS.map((agent) => detectAgentNow(agent.id)))
+  })
+
+  ipcMain.handle(Channel.chooseAgent, async (event, agent: unknown) => {
+    const window = owner(event)
+    if (!isAgentId(agent)) throw new Error(`Unknown agent: ${String(agent)}`)
+    const { label, command } = AGENTS.find((a) => a.id === agent)!
+    const result = await dialog.showOpenDialog(window, {
+      title: `Choose ${label}`,
+      message: `Choose the ${command} program. In Terminal, \`which ${command}\` prints where it is.`,
+      buttonLabel: 'Choose',
+      properties: ['openFile', 'showHiddenFiles'],
+      defaultPath: path.join(os.homedir(), '.local', 'bin'),
+    })
+    const chosen = result.filePaths[0]
+    if (result.canceled || !chosen) return undefined
+    settings = { ...settings, agents: { ...settings.agents, [agent]: { ...settings.agents?.[agent], path: chosen } } }
+    await writeSettings(settingsFile(), settings)
+    return detectAgentNow(agent)
+  })
+
+  ipcMain.handle(Channel.setAgentModel, async (event, agent: unknown, model: unknown) => {
+    owner(event)
+    if (!isAgentId(agent) || typeof model !== 'string') throw new Error('Expected an agent and a model.')
+    const { model: _old, ...rest } = settings.agents?.[agent] ?? {}
+    const trimmed = model.trim()
+    settings = { ...settings, agents: { ...settings.agents, [agent]: { ...rest, ...(trimmed ? { model: trimmed } : {}) } } }
+    await writeSettings(settingsFile(), settings)
+  })
+
+  /** The open folder: chats belong to it, and its agent works in it. */
+  const chatFolder = (): string => {
+    if (access.folder === undefined) throw new Error('Open a score or a folder first; the agent works on its files.')
+    return access.folder
+  }
+
+  ipcMain.handle(Channel.chatList, async (event) => {
+    owner(event)
+    return access.folder === undefined ? [] : chats.list(access.folder)
+  })
+
+  ipcMain.handle(Channel.chatGet, async (event, chatId: unknown) => {
+    owner(event)
+    if (typeof chatId !== 'string' || access.folder === undefined) return undefined
+    return chats.get(chatId, access.folder)
+  })
+
+  ipcMain.handle(Channel.chatSend, async (event, message: unknown) => {
+    owner(event)
+    return chats.send(chatMessage(message), chatFolder())
+  })
+
+  ipcMain.handle(Channel.chatStop, async (event, chatId: unknown) => {
+    owner(event)
+    if (typeof chatId === 'string') chats.stop(chatId)
+  })
+
+  ipcMain.handle(Channel.chatDelete, async (event, chatId: unknown) => {
+    owner(event)
+    if (typeof chatId === 'string') await chats.delete(chatId, chatFolder())
+  })
+
   ipcMain.on(Channel.edited, (event, file: unknown, text: unknown) => {
     if (BrowserWindow.fromWebContents(event.sender) !== mainWindow) return
     if (typeof text !== 'string' && text !== null) return
@@ -366,6 +448,29 @@ function registerIpc(): void {
     dirty = value === true
     mainWindow?.setDocumentEdited(dirty)
   })
+}
+
+/** A message from the renderer, checked field by field. */
+function chatMessage(value: unknown): ChatMessage {
+  const message = (typeof value === 'object' && value !== null ? value : {}) as Record<string, unknown>
+  const optional = (name: string) => (typeof message[name] === 'string' ? (message[name] as string) : undefined)
+  if (typeof message.text !== 'string') throw new Error('Expected the text of a message.')
+  const selection = message.selection as Record<string, unknown> | undefined
+  const validSelection =
+    typeof selection === 'object' &&
+    selection !== null &&
+    Number.isInteger(selection.startLine) &&
+    Number.isInteger(selection.endLine) &&
+    typeof selection.text === 'string'
+  const chatId = optional('chatId')
+  const file = optional('file')
+  return {
+    text: message.text,
+    ...(chatId !== undefined ? { chatId } : {}),
+    ...(isAgentId(message.agent) ? { agent: message.agent } : {}),
+    ...(file !== undefined ? { file } : {}),
+    ...(validSelection ? { selection: { startLine: selection.startLine as number, endLine: selection.endLine as number, text: selection.text as string } } : {}),
+  }
 }
 
 /**
@@ -423,7 +528,11 @@ if (!app.requestSingleInstanceLock()) {
     registerIpc()
     Menu.setApplicationMenu(buildMenu())
     const smoke = smokeTest ? await prepareSmokeTest() : undefined
-    if (smoke) access.folder = smoke.folder
+    if (smoke) {
+      access.folder = smoke.folder
+      // A stand-in for Claude Code that answers and edits without a network (D40).
+      settings = { ...settings, agents: { claude: { path: smoke.agent } } }
+    }
     mainWindow = createWindow()
     if (smoke) {
       const window = mainWindow
@@ -461,6 +570,7 @@ if (!app.requestSingleInstanceLock()) {
     disposed = true
     watcher.dispose()
     live.dispose()
+    chats.dispose()
     void compiler.dispose().finally(() => app.quit())
   })
 }
