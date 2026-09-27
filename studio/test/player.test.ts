@@ -2,14 +2,12 @@ import * as assert from 'node:assert/strict'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { after, before, describe, test, type TestContext } from 'node:test'
+import { after, before, describe, test } from 'node:test'
 import { formatTime, momentTime, parseMidi } from '../../media/midi.js'
 import { timelineOf, type Box } from '../../media/preview.js'
-import { CompileService, type CompileResult } from '../../src/compile/compiler'
-import { locateLilyPond } from '../../src/compile/locate'
 import type { CompileOutcome, PlaybackTiming } from '../src/ipc'
-import { StudioCompiler } from '../src/main/compileService'
 import { playbackChange, type Loaded } from '../src/renderer/player'
+import { realOutcome } from './outcome'
 
 // Runs under `node --test` from out/test/, in studio/ (npm run test:unit).
 
@@ -77,59 +75,13 @@ describe('timelineOf, shared with the extension', () => {
   })
 })
 
-describe('StudioCompiler: the music of a compile', () => {
-  test('the first MIDI file and its map are read with the pages', async () => {
-    const dir = await fs.mkdtemp(path.join(scratch, 'fake-'))
-    const midi = [path.join(dir, 's.midi'), path.join(dir, 's-1.midi')]
-    await fs.writeFile(midi[0], MIDI_A)
-    await fs.writeFile(midi[1], MIDI_B)
-    const timing = path.join(dir, 's.timing.json')
-    await fs.writeFile(timing, JSON.stringify([MAP, { events: [], bars: [] }]))
-    const answer = (partial: Partial<CompileResult>) =>
-      new StudioCompiler({
-        compiler: {
-          compile: async (request) => ({ rootFile: request.rootFile, ok: true, cancelled: false, exitCode: 0, pages: [], midi: [], stdout: '', stderr: '', outputDir: undefined, durationMs: 1, ...partial }),
-          export: () => Promise.reject(new Error('no export here')),
-          dispose: async () => {},
-        },
-        candidates: async () => [],
-        emit: () => {},
-      })
-
-    const both = await answer({ midi, timing }).compile('/s.ly')
-    assert.deepEqual(both?.midiData, MIDI_A)
-    assert.deepEqual(both?.timing, MAP)
-    // A map that cannot be read only costs the playhead.
-    await fs.writeFile(timing, 'not json')
-    const unmapped = await answer({ midi, timing }).compile('/s.ly')
-    assert.deepEqual(unmapped?.midiData, MIDI_A)
-    assert.equal(unmapped?.timing, undefined)
-    const none = await answer({}).compile('/s.ly')
-    assert.equal(none?.midiData, undefined)
-  })
-})
-
-describe('StudioCompiler: the music of a real score', () => {
-  // Where main.ts's copy comes from.
-  const service = new CompileService({ tmpRoot: os.tmpdir(), runtimeDir: path.resolve('../runtime') })
-  after(() => service.dispose())
-
-  async function lilypond(t: TestContext): Promise<boolean> {
-    try {
-      await locateLilyPond()
-      return true
-    } catch {
-      t.skip('lilypond is not installed')
-      return false
-    }
-  }
-
+// The Rust side reads the MIDI and its map with the pages (crates/engrave's tests).
+describe('the music of a real score', () => {
   test('plays, and every note it plays is a link on the pages', async (t) => {
-    if (!(await lilypond(t))) return
     const score = path.join(scratch, 'song.ly')
     await fs.writeFile(score, '\\version "2.24.0"\n\\score {\n  { \\tempo 4 = 120 c\'4 d\' e\'2 | f\'1 }\n  \\layout { }\n  \\midi { }\n}\n')
-    const studio = new StudioCompiler({ compiler: service, candidates: async () => [], emit: () => {} })
-    const outcome = await studio.compile(score)
+    const outcome = await realOutcome(t, score)
+    if (!outcome) return
     assert.equal(outcome?.state, 'ok', outcome?.message)
     assert.ok(outcome?.midiData, 'no MIDI was read')
     const midi = parseMidi(outcome.midiData)

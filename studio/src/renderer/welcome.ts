@@ -3,8 +3,8 @@
 // Help › Welcome asks for it: the sample score, new and open, a few first
 // steps, and whether LilyPond is ready. The setup dialog walks through
 // installing LilyPond; it opens by itself on a launch that cannot find it.
-import type { LilyPondStatus } from '../main/lilypondSetup'
-import type { StudioApi } from '../preload'
+import type { LilyPondStatus } from '../ipc'
+import type { StudioApi } from './bridge'
 import { button } from './files'
 
 export interface WelcomeOptions {

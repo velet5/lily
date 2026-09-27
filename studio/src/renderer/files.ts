@@ -1,7 +1,7 @@
 // The file list in the left pane (DECISIONS D29): the LilyPond files of the
 // open folder as a tree, the one in the editor highlighted, unsaved ones
 // marked. `fileRows` is pure so the tests can run it without a DOM.
-import type { FolderListing, ScoreFile } from '../files'
+import type { FolderListing, ScoreFile } from '../ipc'
 
 export type Row =
   | { kind: 'directory'; name: string; depth: number }

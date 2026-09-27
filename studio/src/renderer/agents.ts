@@ -4,7 +4,7 @@
 // where each agent is, its version, and the model it uses. `textRuns` is pure
 // so the tests can run it without a DOM.
 import type { AgentId, AgentStatus, ChatEntry, ChatEvent, ChatInfo, OpenChat } from '../ipc'
-import type { StudioApi } from '../preload'
+import type { StudioApi } from './bridge'
 import { button } from './files'
 
 /** A piece of an agent's answer: plain text, `code`, or a fenced block. */

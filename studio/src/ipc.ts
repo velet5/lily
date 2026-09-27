@@ -1,70 +1,28 @@
-// The IPC contract between main.ts and preload.ts (DECISIONS D28, D29): one
-// named channel per call. Types only, apart from the channel names.
+// What the renderer and Lily Studio's Rust side exchange (DECISIONS D28, D42):
+// the types of src/renderer/bridge.ts's calls and events, as the Rust side
+// serializes them (crates/engrave, crates/agents). Types only.
 import type { LyDiagnostic } from '../../src/diagnostics/parse'
 import type { PlaybackTiming } from '../../src/preview/panel'
 import type { SourceLocation } from '../../src/preview/pointAndClick'
-import type { FolderListing } from './files'
-import type { ChatEvent, ChatInfo, ChatMessage, OpenChat } from './main/agentChats'
-import type { AgentId, AgentStatus, ChatEntry } from './main/agents'
-import type { LilyPondStatus, SetupLink } from './main/lilypondSetup'
-import type { FileChange } from './main/watcher'
 
-export const Channel = {
-  openFolder: 'studio:open-folder',
-  openFile: 'studio:open-file',
-  listFolder: 'studio:list-folder',
-  readFile: 'studio:read-file',
-  saveFile: 'studio:save-file',
-  newScore: 'studio:new-score',
-  setDirty: 'studio:set-dirty',
-  /** Main → renderer: a menu item or the close guard asks for a command. */
-  command: 'studio:command',
-  /**
-   * The editor shows a file: the score it belongs to, whose last result is
-   * sent again at once and which compiles to be current (D39).
-   */
-  showScore: 'studio:show-score',
-  /** Main → renderer: a compile started or finished (D31). */
-  compile: 'studio:compile',
-  /** A click in the preview: where a `textedit:` link points (D32). */
-  revealSource: 'studio:reveal-source',
-  /** The PDF of a score for the PDF tab, compiled into the temp directory (D33). */
-  compilePdf: 'studio:compile-pdf',
-  /** Export PDF: writes that PDF next to the score (D33). */
-  exportPdf: 'studio:export-pdf',
-  /** Main → renderer: files changed on disk by another program (D34). */
-  filesChanged: 'studio:files-changed',
-  /** Asks whether to reload a file with unsaved changes that changed on disk (D34). */
-  confirmReload: 'studio:confirm-reload',
-  /** The unsaved text of an open file, or null once it matches the disk again (D36). */
-  edited: 'studio:edited',
-  /** Live preview on or off, from the status line (D36). */
-  setLive: 'studio:set-live',
-  /** Looks for LilyPond again and says whether it is ready (D37). */
-  lilypondStatus: 'studio:lilypond-status',
-  /** The setup's Choose LilyPond… dialog; keeps the choice when it is LilyPond (D37). */
-  chooseLilyPond: 'studio:choose-lilypond',
-  /** Opens one of the setup's SETUP_LINKS in the browser. */
-  openLink: 'studio:open-link',
-  /** Writes the sample score into Documents/Lily Studio, unless it is there, and opens it (D37). */
-  openSample: 'studio:open-sample',
-  /** Looks for the sidebar's agents, Claude Code and Codex (D40). */
-  agentStatus: 'studio:agent-status',
-  /** Agent setup's Choose… dialog for one agent's executable. */
-  chooseAgent: 'studio:choose-agent',
-  /** Agent setup's model field; empty for the agent's default. */
-  setAgentModel: 'studio:set-agent-model',
-  /** The chats of the open folder, newest first. */
-  chatList: 'studio:chat-list',
-  /** One chat of the open folder, with its entries. */
-  chatGet: 'studio:chat-get',
-  /** A message to an agent: starts a turn, in a new chat or an old one. */
-  chatSend: 'studio:chat-send',
-  chatStop: 'studio:chat-stop',
-  chatDelete: 'studio:chat-delete',
-  /** Main → renderer: a chat got an entry, or its agent started or stopped. */
-  chatEvent: 'studio:chat-event',
-} as const
+/** The scores File › New starts from (crates/engrave/src/templates.rs). */
+export type TemplateId = 'melody' | 'song' | 'piano'
+
+export interface ScoreFile {
+  /** Absolute path. */
+  path: string
+  /** Relative to the folder, with `/` as separator, for display and sorting. */
+  relative: string
+}
+
+/** The LilyPond files of the open folder (D29). */
+export interface FolderListing {
+  folder: string
+  name: string
+  files: ScoreFile[]
+  /** True when the list was cut short at 500 files. */
+  truncated: boolean
+}
 
 /** A folder was opened, or a file whose folder becomes the open folder. */
 export interface Opened {
@@ -87,7 +45,7 @@ export interface CompileOutcome {
   state: CompileState
   /** The score that was compiled; for `no-root`, the saved file. */
   rootFile: string
-  /** From src/diagnostics/parse.ts: absolute files, 1-based lines and columns. */
+  /** As src/diagnostics/parse.ts has them: absolute files, 1-based lines and columns. */
   diagnostics: LyDiagnostic[]
   errorCount: number
   warningCount: number
@@ -124,17 +82,90 @@ export type CompileEvent =
   | { kind: 'started'; rootFile: string }
   | { kind: 'finished'; outcome: CompileOutcome }
 
-export type {
-  AgentId,
-  AgentStatus,
-  ChatEntry,
-  ChatEvent,
-  ChatInfo,
-  ChatMessage,
-  FileChange,
-  LilyPondStatus,
-  OpenChat,
-  PlaybackTiming,
-  SetupLink,
-  SourceLocation,
+/** A file another program changed (D34). */
+export interface FileChange {
+  /** The path the editor opened it under, else its canonical path. */
+  file: string
+  /** False when the file is gone. */
+  exists: boolean
 }
+
+/**
+ * What the welcome screen and the setup say about LilyPond (D37). `ready`:
+ * found and new enough. `missing`: not found, or the chosen path is not
+ * lilypond. `too-old` and `broken`: found, but too old, or it did not answer
+ * `--version`.
+ */
+export interface LilyPondStatus {
+  state: 'ready' | 'missing' | 'too-old' | 'broken'
+  /** The executable, when one was found. */
+  path?: string
+  version?: string
+  source?: 'setting' | 'path' | 'well-known'
+  /** The path chosen in the setup, when there is one. */
+  chosen?: string
+  /** One or two sentences for someone who has never used a terminal. */
+  message: string
+}
+
+/** The pages the setup may open; the Rust side opens nothing else. */
+export type SetupLink = 'download' | 'learn' | 'claude' | 'codex'
+
+/** The sidebar's agents (D40). */
+export type AgentId = 'claude' | 'codex'
+
+/** What the setup says about one agent. `broken`: found, but `--version` failed. */
+export interface AgentStatus {
+  id: AgentId
+  state: 'ready' | 'missing' | 'broken'
+  path?: string
+  version?: string
+  /** The path chosen in the setup, when there is one. */
+  chosen?: string
+  model?: string
+  message: string
+}
+
+/** One line of a chat, as the sidebar shows it and chats.json keeps it. */
+export type ChatEntry =
+  | { role: 'user'; text: string }
+  | { role: 'agent'; text: string }
+  /** Something the agent did: read or edited a file, ran a command. */
+  | { role: 'tool'; text: string }
+  | { role: 'error'; text: string }
+
+export interface Chat {
+  id: string
+  agent: AgentId
+  folder: string
+  /** The start of the first message. */
+  title: string
+  /** The agent's own session, known after the first turn started. */
+  sessionId?: string
+  created: number
+  updated: number
+  entries: ChatEntry[]
+}
+
+/** A chat in the list, without its entries. */
+export type ChatSummary = Omit<Chat, 'entries'>
+export type ChatInfo = ChatSummary & { running: boolean }
+export type OpenChat = Chat & { running: boolean }
+
+/** What the renderer sends with a message. */
+export interface ChatMessage {
+  /** The chat to continue; a new one is started without it. */
+  chatId?: string
+  /** The agent of a new chat. */
+  agent?: AgentId
+  text: string
+  /** The file in the editor, and the lines selected in it. */
+  file?: string
+  selection?: { startLine: number; endLine: number; text: string }
+}
+
+export type ChatEvent =
+  | { kind: 'entry'; chatId: string; entry: ChatEntry }
+  | { kind: 'running'; chatId: string; running: boolean }
+
+export type { PlaybackTiming, SourceLocation }

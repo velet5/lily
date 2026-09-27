@@ -22,3 +22,7 @@ Thumbs.db
 
 # Lily Studio packages (npm run dist in studio/)
 release/
+
+# Lily Studio's Cargo workspace (studio/), and what tauri-build generates
+target/
+studio/src-tauri/gen/

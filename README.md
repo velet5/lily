@@ -207,9 +207,9 @@ follow VS Code's own switches, which can be set per language:
 
 `studio/` holds Lily Studio, a small Mac app for LilyPond scores aimed at people
 who do not program: the files of a folder on the left, the text in the middle,
-the engraved score on the right, and nothing to configure. It shares the
-extension's compiler, error parser, grammar, preview and player, and needs
-LilyPond installed in the same way.
+the engraved score on the right, and nothing to configure. It is a Tauri app
+with a Rust port of the extension's compiler and error parser, shares its
+grammar, preview and player, and needs LilyPond installed in the same way.
 
 - **First launch.** A welcome screen offers a sample score (Ode to Joy, saved
   in *Documents › Lily Studio*), new scores from templates, and opening files.
@@ -227,11 +227,13 @@ LilyPond installed in the same way.
 
 Build and install it:
 
+It needs Node and a Rust toolchain (`rustup`):
+
 ```sh
 cd studio
 npm install
 npm start              # run from the sources
-npm test               # unit tests, then the window's smoke test
+npm test               # Rust and renderer unit tests, then the window's smoke test
 npm run dist           # release/Lily Studio-<version>-<arch>.dmg, signed and notarized
 npm run dist:local     # the same DMG, ad-hoc signed, for a Mac without the certificate
 npm run test:e2e       # build the DMG, install the app from it, launch it

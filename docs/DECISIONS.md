@@ -1279,7 +1279,7 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
 
 ## D28 — Lily Studio: an Electron shell with a fixed layout
 
-**Status:** proposed · **Refines:** D1, D12
+**Status:** proposed; the shell is replaced by D42 · **Refines:** D1, D12
 
 - **Decision.** Lily Studio, an editor for LilyPond scores aimed at people who
   do not program, is a separate Electron application in `studio/`, with its
@@ -1906,3 +1906,81 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   its prompt in the open chat, and the stand-in agent receives the selection.
   A screenshot of the menu shows it opaque. Monaco's menu takes a mouse-up
   only a moment after it opens, so the test waits 500 ms before clicking.
+
+---
+
+## D42 — Lily Studio: Tauri, with the main process in Rust
+
+**Status:** proposed · **Replaces:** the Electron shell of D28 · **Refines:** D29–D41
+
+- **Decision.** Lily Studio is a Tauri 2 app. Electron, electron-builder and
+  the preload script are gone; the page (`renderer/`, `src/renderer/`) is the
+  same page, in the system's WebKit instead of Chromium. Everything the
+  Electron main process did is Rust, in a Cargo workspace in `studio/`:
+  - `crates/engrave` (`lily-engrave`): compiling, the warm worker and glyph
+    cache, the include graph, unsaved snapshots, lilypond's stderr, live
+    preview, the watch on the files, file access, the LilyPond setup, the
+    settings and the templates.
+  - `crates/agents` (`lily-agents`): Claude Code and Codex, and the chats.
+  - `src-tauri` (`lily-studio`): the window, the menu, AppKit's dialogs, and
+    one command per call of the page.
+  The two crates do not depend on Tauri, as the TS modules did not import
+  `electron`; `cargo test` runs them.
+- **The cost.** The studio no longer shares the extension's compiler, parser
+  and include graph (`src/compile/`, `src/diagnostics/parse.ts`); it has a
+  Rust port of them. A change to one must be made in the other. The renderer
+  still shares `span.ts`, `media/preview.js`, `media/midi.js`, the grammar and
+  the language configuration.
+- **Why.** An app of 13.6 MB instead of about 250 (a 9.7 MB DMG), and one
+  process fewer.
+- **The bridge.** `src/renderer/bridge.ts` gives the page the `studio` object
+  it had, over `invoke`. What the Rust side starts itself (menu commands,
+  compiles, changes on disk, chat entries) comes on one `Channel`. MIDI and
+  PDF bytes travel as base64. A command's error rejects with its message.
+  `edited`, `set_live` and `set_dirty` are synchronous commands: Tauri runs
+  those in order on the main thread, whereas async commands may overtake each
+  other, and a burst of typing then left live preview with an older text.
+- **No PATH of the process.** The Electron studio widened `process.env.PATH`
+  for lilypond's helpers. `lily-engrave`'s `SearchPath` is one shared value
+  that every lilypond it starts gets as its `PATH`; the process's own is not
+  changed. Agents get the login shell's PATH on top of it (D40).
+- **Live preview's texts.** `LiveTexts` holds the unsaved texts. It is made
+  first and handed to both the compiler, which reads it, and `LiveCompile`,
+  which fills it and asks the compiler to compile.
+- **Dialogs.** Straight from AppKit (`objc2-app-kit`): one panel that takes
+  the LilyPond folder, the `.app` or the program, messages above the list,
+  hidden files for the agents' programs, the unsaved-changes dot in the close
+  button. The alerts keep their answers: Save is the default on closing, Keep
+  My Changes when a file changed on disk.
+- **Files.** Settings and chats stay in `~/Library/Application Support/Lily
+  Studio/`, where Electron kept them, so they carry over. The Content Security
+  Policy moved from the page to `tauri.conf.json`, with `style-src` left as it
+  is for Monaco's `<style>` elements. `runtime/` is a bundle resource,
+  `Contents/Resources/runtime/`.
+- **Package.** `tauri build` makes and signs the `.app` with the hardened
+  runtime; `scripts/dmg.mjs` notarizes and staples it, then makes, signs,
+  notarizes and staples the DMG (Tauri's DMG step builds the app again and
+  would drop its ticket). The DMG has the app and a link to Applications,
+  without positioned icons. The V8 entitlements of D38 are gone: WebKit's JIT
+  runs in the system's own process. The icon is a placeholder
+  (`build/icon.svg`) until the studio has its own. macOS 14 or later.
+- **Smoke test.** `lily-studio --smoke-test` opens the window hidden and loads
+  `src/renderer/smoke.ts` into it, which drives the page as smokeTest.ts did
+  from outside and reports through `smoke_*` commands that answer only in that
+  mode. It types through `document.execCommand('insertText')` and sends ⌘A as
+  a key event to Monaco's input. WebKit runs no animation frames in a hidden
+  window, and Monaco, pdf.js and the playhead draw in them, so the smoke
+  window gets a timer in their place; background throttling is off for it.
+  The window is never shown: a test must not take over the screen.
+- **Verified.** `cargo test --workspace`: 181 tests (the TS tests of the
+  removed modules, ported, and more), with lilypond 2.26.0 and the warm
+  worker. `npm run test:unit`'s node tests, 37, for the renderer; the ones that
+  need a real outcome get it from `lily-outcome`, a binary of `lily-engrave`.
+  `npm run test:smoke` passes every step of D28–D41's smoke test.
+  `cargo clippy -D warnings`, `cargo fmt`, `tsc` and the repository's lint are
+  clean. The e2e test with a `dist:local` DMG: it mounts, the installed app's
+  signature verifies, its runtime files are there, and it passes the smoke
+  test with the Finder's bare PATH. Tauri refuses to start from a path that
+  goes through a symlink, so the test installs into the real path of the temp
+  directory (`/var` is a link to `/private/var`). Not run: `npm run dist`,
+  which notarizes with Apple.

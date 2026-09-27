@@ -9,7 +9,7 @@ import { promisify } from 'node:util'
 // `npm run test:e2e` in studio/ (DECISIONS D37): builds the DMG with
 // `npm run dist`, then mounts it, installs the app from it into a scratch
 // folder as a user would drag it to Applications, and launches that copy with
-// the Finder's bare PATH. The app runs its own smoke test (src/smokeTest.ts)
+// the Finder's bare PATH. The app runs its own smoke test (src/renderer/smoke.ts, D42)
 // and reports it as JSON: the window, the welcome screen, LilyPond found,
 // a compile, the PDF, playback and live preview, from inside the package.
 // Runs from out/test/e2e/.
@@ -27,7 +27,9 @@ before(async () => {
   const pkg = JSON.parse(await fs.readFile(path.join(studioDir, 'package.json'), 'utf8')) as { version: string }
   const candidate = path.join(studioDir, 'release', `Lily Studio-${pkg.version}-${process.arch}.dmg`)
   dmg = await fs.access(candidate).then(() => candidate, () => undefined)
-  scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'lily-studio-e2e-'))
+  // Real, as /Applications is: Tauri refuses to start from a path through a
+  // symlink, and the temp directory is under /var, a link to /private/var.
+  scratch = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lily-studio-e2e-')))
 })
 
 after(async () => {
@@ -56,11 +58,9 @@ describe('the macOS package', { skip: process.platform !== 'darwin' && 'the DMG 
   test('the app is signed, and lilypond can read its runtime files', async () => {
     assert.ok(installed, 'installed by the test before')
     await run('codesign', ['--verify', '--deep', '--strict', installed])
+    // Bundled as Tauri resources, plain files that lilypond reads (D42).
     const resources = path.join(installed, 'Contents', 'Resources')
-    await fs.access(path.join(resources, 'app.asar'))
-    for (const name of ['timing.ly', 'worker.scm', 'glyph-cache.scm']) {
-      await fs.access(path.join(resources, 'app.asar.unpacked', 'dist', 'runtime', name))
-    }
+    for (const name of ['timing.ly', 'worker.scm', 'glyph-cache.scm']) await fs.access(path.join(resources, 'runtime', name))
     const plist = await fs.readFile(path.join(installed, 'Contents', 'Info.plist'), 'utf8')
     assert.match(plist, /<string>io\.github\.velet5\.lily-studio<\/string>/)
   })
@@ -91,7 +91,7 @@ describe('the macOS package', { skip: process.platform !== 'darwin' && 'the DMG 
       child.on('error', reject)
       child.on('close', (exit) => resolve({ code: exit, stdout: out, stderr: err }))
     })
-    // The report is the JSON object printed last; Chromium may log before it.
+    // The report is the JSON object printed last; WebKit may log before it.
     const start = stdout.search(/^\{$/m)
     assert.ok(start >= 0, `no report from the app (exit ${code}; is Lily Studio already open?)\n${stdout}\n${stderr}`)
     const report = JSON.parse(stdout.slice(start)) as {

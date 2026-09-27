@@ -1,0 +1,21 @@
+[package]
+name = "lily-engrave"
+description = "Lily Studio's compiling, watching and file access, without Tauri."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+futures.workspace = true
+regex.workspace = true
+base64.workspace = true
+sha2.workspace = true
+notify.workspace = true
+libc.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

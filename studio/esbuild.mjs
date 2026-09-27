@@ -1,11 +1,12 @@
-// Bundles Lily Studio's main process into dist/main.js, its preload script
-// into dist/preload.js (DECISIONS D28), and the renderer script with Monaco
-// and Monaco's worker into dist/renderer/ (D29). renderer/index.html and
-// layout.css are loaded as they are. The renderer carries the extension's
-// grammar, language configuration and Oniguruma's WebAssembly inline (D30),
-// and pdf.js, whose worker is bundled beside it (D33). The extension's
-// runtime/ is copied to dist/runtime/: timing.ly for the playhead (D35), the
-// warm compiler and glyph cache for live preview (D36).
+// Bundles Lily Studio's page into dist/web/, which Tauri serves as the app's
+// frontend (DECISIONS D42): renderer/index.html and layout.css as they are,
+// the renderer script with Monaco as app.js and Monaco's CSS as app.css
+// (D29), and Monaco's and pdf.js's workers beside it (D33). The renderer
+// carries the extension's grammar, language configuration and Oniguruma's
+// WebAssembly inline (D30). smoke.js is the smoke test's driver, loaded only
+// by `lily-studio --smoke-test` (D42). The extension's runtime/ is copied to
+// dist/runtime/, which the app bundles as a resource: timing.ly for the
+// playhead (D35), the warm compiler and glyph cache for live preview (D36).
 //
 //   node esbuild.mjs                one-off development build
 //   node esbuild.mjs --watch        rebuild on change
@@ -40,11 +41,11 @@ const jsonWithComments = {
 /** @type {import('esbuild').BuildOptions} */
 const shared = {
   bundle: true,
-  format: 'cjs',
-  platform: 'node',
-  target: 'node22',
-  // Provided by the Electron runtime.
-  external: ['electron'],
+  // Classic scripts and workers, loaded by <script> tags and new Worker().
+  format: 'iife',
+  platform: 'browser',
+  // The system WebKit of macOS 14 and later.
+  target: 'safari17',
   loader: { '.wasm': 'binary' },
   plugins: [jsonWithComments],
   sourcemap: !production,
@@ -54,58 +55,41 @@ const shared = {
 
 /** @type {import('esbuild').BuildOptions[]} */
 const builds = [
-  { ...shared, entryPoints: ['src/main.ts'], outfile: 'dist/main.js' },
-  // A sandboxed preload is one CommonJS file that may only require `electron`.
-  { ...shared, entryPoints: ['src/preload.ts'], outfile: 'dist/preload.js' },
-  // Loaded by a <script> tag from a sandboxed page: one classic script, with
-  // Monaco's CSS beside it as app.css and its icon font as a file.
+  // Monaco's icon font is written as a file beside app.css.
   {
     ...shared,
-    entryPoints: { app: 'src/renderer/index.ts' },
-    outdir: 'dist/renderer',
-    format: 'iife',
-    platform: 'browser',
-    target: 'chrome140',
-    external: [],
+    entryPoints: { app: 'src/renderer/index.ts', smoke: 'src/renderer/smoke.ts' },
+    outdir: 'dist/web',
     loader: { ...shared.loader, '.ttf': 'file' },
   },
   {
     ...shared,
-    // pdf.js's worker for the PDF tab (D33), loaded as a classic worker.
     entryPoints: { 'editor.worker': 'monaco-editor/editor/editor.worker', 'pdf.worker': 'pdfjs-dist/build/pdf.worker.mjs' },
-    outdir: 'dist/renderer',
-    format: 'iife',
-    platform: 'browser',
-    target: 'chrome140',
-    external: [],
+    outdir: 'dist/web',
   },
 ]
 
-if (tests) {
-  // Tests import only modules without `electron` or the DOM.
-  builds.splice(0, builds.length, {
-    ...shared,
-    entryPoints: readdirSync('test')
-      .filter((name) => name.endsWith('.test.ts'))
-      .map((name) => `test/${name}`),
-    outdir: 'out/test',
-    logLevel: 'warning',
-  })
-}
+/** Test files for node --test: CommonJS for Node, the same loaders. */
+const nodeBuild = (dir, outdir) => ({
+  ...shared,
+  format: 'cjs',
+  platform: 'node',
+  target: 'node22',
+  entryPoints: readdirSync(dir)
+    .filter((name) => name.endsWith('.test.ts'))
+    .map((name) => `${dir}/${name}`),
+  outdir,
+  logLevel: 'warning',
+})
 
-if (e2e) {
-  // Run by `npm run test:e2e` after `npm run dist`; it drives the DMG, not the sources.
-  builds.splice(0, builds.length, {
-    ...shared,
-    entryPoints: readdirSync('test/e2e')
-      .filter((name) => name.endsWith('.test.ts'))
-      .map((name) => `test/e2e/${name}`),
-    outdir: 'out/test/e2e',
-    logLevel: 'warning',
-  })
-}
+// Tests import only modules without the DOM or Tauri.
+if (tests) builds.splice(0, builds.length, nodeBuild('test', 'out/test'))
+// Run by `npm run test:e2e` after `npm run dist`; it drives the DMG, not the sources.
+if (e2e) builds.splice(0, builds.length, nodeBuild('test/e2e', 'out/test/e2e'))
 
 if (!tests && !e2e) {
+  mkdirSync('dist/web', { recursive: true })
+  for (const name of ['index.html', 'layout.css']) cpSync(`renderer/${name}`, `dist/web/${name}`)
   // timing.ly is passed to every compile as -dinclude-settings; the playback
   // map comes from it. worker.scm and glyph-cache.scm speed up compiles (D25).
   mkdirSync('dist/runtime', { recursive: true })

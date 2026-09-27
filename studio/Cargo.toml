@@ -1,0 +1,33 @@
+# Lily Studio's Rust side (DECISIONS D42): the Tauri app in src-tauri/, and
+# the crates it is made of, which do not depend on Tauri, so their tests run
+# with plain `cargo test`.
+[workspace]
+resolver = "3"
+members = ["crates/engrave", "crates/agents", "src-tauri"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+authors = ["Oleg Arshinskii <velet592@gmail.com>"]
+rust-version = "1.90"
+
+[workspace.dependencies]
+lily-engrave = { path = "crates/engrave" }
+lily-agents = { path = "crates/agents" }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+futures = "0.3"
+regex = "1"
+base64 = "0.22"
+sha2 = "0.10"
+uuid = { version = "1", features = ["v4"] }
+notify = "8"
+libc = "0.2"
+tempfile = "3"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

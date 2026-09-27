@@ -159,7 +159,7 @@ export class ScorePlayer {
 
   private async play(): Promise<void> {
     if (!this.player.midi) return
-    // Electron lets a page make sound without a click; this is a device that failed.
+    // Play is a click, which lets the page make sound; this is a device that failed.
     if (!(await this.player.play()) && this.player.suspended) this.options.onError('The sound could not be started.')
   }
 

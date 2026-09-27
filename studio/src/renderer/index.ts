@@ -1,11 +1,10 @@
-// The renderer's entry point, bundled into dist/renderer/app.js: connects the
-// file list, the editor and the status line to `window.studio` (preload.ts),
+// The renderer's entry point, bundled into dist/web/app.js: connects the
+// file list, the editor and the status line to `studio` (bridge.ts),
 // with the welcome screen and LilyPond's setup (D37), and the resizable
 // sidebar with the agents' accordion (D40).
 import type { CompileEvent, FileChange, Opened } from '../ipc'
-import type { StudioApi } from '../preload'
-import type { TemplateId } from '../templates'
 import { AgentPanel, SELECTION_ACTIONS } from './agents'
+import { studio, type StudioApi } from './bridge'
 import { compileStatus, DiagnosticStore, problemSummary } from './diagnostics'
 import { ScoreEditor } from './editor'
 import { button, FileList } from './files'
@@ -27,7 +26,8 @@ declare global {
 const workerUrl = new URL('editor.worker.js', (document.currentScript as HTMLScriptElement).src).href
 window.MonacoEnvironment = { getWorker: () => new Worker(workerUrl) }
 
-const studio = window.studio
+// For the smoke test, which looks for it.
+window.studio = studio
 const pane = (name: string) => document.querySelector<HTMLElement>(`[data-pane="${name}"]`)!
 const editorPane = pane('editor')
 const filesPane = pane('files')
@@ -75,8 +75,7 @@ function status(message: string): void {
 }
 
 function report(error: unknown): void {
-  // Electron prefixes errors thrown in the main process with the channel name.
-  const message = error instanceof Error ? error.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(error)
+  const message = error instanceof Error ? error.message : String(error)
   status(message)
   console.error(error)
 }
@@ -386,14 +385,16 @@ const templateMenu = document.createElement('div')
 templateMenu.className = 'template-menu'
 templateMenu.hidden = true
 templateMenu.setAttribute('role', 'menu')
-for (const template of studio.templates) {
-  const item = button(template.label, () => {
-    templateMenu.hidden = true
-    void run(studio.newScore(template.id as TemplateId))
-  })
-  item.setAttribute('role', 'menuitem')
-  templateMenu.append(item)
-}
+void studio.templates().then((templates) => {
+  for (const template of templates) {
+    const item = button(template.label, () => {
+      templateMenu.hidden = true
+      void run(studio.newScore(template.id))
+    })
+    item.setAttribute('role', 'menuitem')
+    templateMenu.append(item)
+  }
+}, report)
 filesPane.querySelector('.pane-actions')!.append(newButton, openButton)
 filesPane.append(templateMenu)
 

@@ -2,18 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; img-src 'self' data:; font-src 'self'"
-    />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Lily Studio</title>
-    <!-- Monaco adds its own <style> elements, hence 'unsafe-inline' for styles
-         only (DECISIONS D29); 'wasm-unsafe-eval' lets the grammar compile
-         Oniguruma's WebAssembly, and nothing else (D30). -->
-    <link rel="stylesheet" href="../dist/renderer/app.css" />
+    <!-- The Content Security Policy is src-tauri/tauri.conf.json's, which Tauri
+         adds its own scripts to (DECISIONS D42). esbuild.mjs copies this page
+         to dist/web/, beside app.js and app.css. -->
+    <link rel="stylesheet" href="app.css" />
     <link rel="stylesheet" href="layout.css" />
-    <script src="../dist/renderer/app.js" defer></script>
+    <script src="app.js" defer></script>
   </head>
   <body>
     <!-- The layout of DECISIONS D28: sidebar | editor | preview, a status line

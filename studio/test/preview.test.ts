@@ -2,15 +2,12 @@ import * as assert from 'node:assert/strict'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
-import { after, before, describe, test, type TestContext } from 'node:test'
+import { after, before, describe, test } from 'node:test'
 import { quiet } from '../../media/preview.js'
-import { CompileService, type CompileRequest, type CompileResult } from '../../src/compile/compiler'
-import { LilyPondNotFoundError, locateLilyPond } from '../../src/compile/locate'
 import { charToCharacter, parseTextEdit } from '../../src/preview/pointAndClick'
-import { Access } from '../src/files'
-import type { CompileEvent, CompileOutcome } from '../src/ipc'
-import { StudioCompiler } from '../src/main/compileService'
+import type { CompileOutcome } from '../src/ipc'
 import { previewUpdate } from '../src/renderer/preview'
+import { realOutcome } from './outcome'
 
 // Runs under `node --test` from out/test/ (npm run test:unit in studio/).
 
@@ -59,57 +56,10 @@ describe('previewUpdate', () => {
   })
 })
 
-describe('StudioCompiler: the pages for the preview', () => {
-  function studio(pages: string[]) {
-    const events: CompileEvent[] = []
-    const compiler = new StudioCompiler({
-      compiler: {
-        compile: async (request: CompileRequest): Promise<CompileResult> => ({
-          rootFile: request.rootFile, ok: true, cancelled: false, exitCode: 0, pages, midi: [],
-          stdout: '', stderr: '', outputDir: undefined, durationMs: 1,
-        }),
-        export: () => Promise.reject(new Error('no export here')),
-        dispose: async () => {},
-      },
-      candidates: async () => [],
-      emit: (event) => events.push(event),
-    })
-    return { compiler, events }
-  }
-
-  test('the SVG text is read before the outcome is sent', async () => {
-    const first = path.join(scratch, 'score-1.svg')
-    const second = path.join(scratch, 'score-2.svg')
-    await fs.writeFile(first, '<svg>1</svg>')
-    await fs.writeFile(second, '<svg>2</svg>')
-    const { compiler, events } = studio([first, second])
-    const result = await compiler.compile(path.join(scratch, 'score.ly'))
-    assert.deepEqual(result?.svg, ['<svg>1</svg>', '<svg>2</svg>'])
-    assert.deepEqual(events.at(-1), { kind: 'finished', outcome: result })
-  })
-
-  test('pages that are gone already leave none', async () => {
-    const { compiler } = studio([path.join(scratch, 'gone.svg')])
-    const result = await compiler.compile(path.join(scratch, 'score.ly'))
-    assert.equal(result?.state, 'ok')
-    assert.deepEqual(result?.svg, [])
-  })
-})
-
-async function lilypondOrSkip(t: TestContext): Promise<boolean> {
-  try {
-    await locateLilyPond({ configuredPath: process.env.LILYPOND_PATH })
-    return true
-  } catch (error) {
-    if (!(error instanceof LilyPondNotFoundError)) throw error
-    t.skip('lilypond is not installed')
-    return false
-  }
-}
-
+// Reading the pages, and checking a clicked file against the open folder, are
+// the Rust side's (crates/engrave's tests).
 describe('click-to-source with lilypond', () => {
   test("a note's link leads to its place in the included file", async (t) => {
-    if (!(await lilypondOrSkip(t))) return
     const include = path.join(scratch, 'parts', 'tune.ily')
     await fs.mkdir(path.dirname(include), { recursive: true })
     // A tab and an astral character before the note: CHAR counts code points.
@@ -117,32 +67,16 @@ describe('click-to-source with lilypond', () => {
     const score = path.join(scratch, 'song.ly')
     await fs.writeFile(score, '\\version "2.24.0"\n\\include "parts/tune.ily"\n{ \\tune }\n')
 
-    const service = new CompileService()
-    const compiler = new StudioCompiler({
-      compiler: service,
-      candidates: async () => [],
-      emit: () => {},
-      lilypondPath: process.env.LILYPOND_PATH,
-    })
-    try {
-      const result = await compiler.compile(score)
-      assert.equal(result?.state, 'ok', result?.message)
-      const hrefs = [...result!.svg.join('\n').matchAll(/href="(textedit:[^"]*)"/g)].map(([, href]) => href)
-      assert.ok(hrefs.length > 0, 'the pages carry point-and-click links')
+    const result = await realOutcome(t, score)
+    if (!result) return
+    assert.equal(result.state, 'ok', result.message)
+    const hrefs = [...result.svg.join('\n').matchAll(/href="(textedit:[^"]*)"/g)].map(([, href]) => href)
+    assert.ok(hrefs.length > 0, 'the pages carry point-and-click links')
 
-      // As the main process answers a click: parsed, then checked against the open folder.
-      const access = new Access()
-      access.folder = scratch
-      const locations = hrefs.map((href) => parseTextEdit(href)!).map((l) => ({ ...l, file: access.check(l.file) }))
-      const line = '\t%{𝄞%} fis\'4 g'
-      const fis = locations.find((l) => l.file === include && l.line === 2 && line.slice(charToCharacter(line, l.char)).startsWith('fis'))
-      assert.ok(fis, `a link to fis in ${JSON.stringify(locations)}`)
-
-      // A file outside the open folder is refused.
-      access.folder = path.join(scratch, 'elsewhere')
-      assert.throws(() => access.check(include), /outside the open folder/)
-    } finally {
-      await compiler.dispose()
-    }
+    // As the editor takes a click: the link's CHAR is a place in the line.
+    const locations = hrefs.map((href) => parseTextEdit(href)!)
+    const line = '\t%{𝄞%} fis\'4 g'
+    const fis = locations.find((l) => l.file === include && l.line === 2 && line.slice(charToCharacter(line, l.char)).startsWith('fis'))
+    assert.ok(fis, `a link to fis in ${JSON.stringify(locations)}`)
   })
 })
