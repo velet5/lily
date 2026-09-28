@@ -15,6 +15,7 @@
     "test:smoke": "node esbuild.mjs && cargo run -q -p lily-studio -- --smoke-test",
     "test": "npm run test:unit && npm run test:smoke",
     "dist": "tauri build --bundles app && APPLE_KEYCHAIN_PROFILE=lily-notary node scripts/dmg.mjs",
+    "dist:x64": "tauri build --bundles app --target x86_64-apple-darwin && APPLE_KEYCHAIN_PROFILE=lily-notary node scripts/dmg.mjs --target x86_64-apple-darwin",
     "dist:local": "tauri build --bundles app --config src-tauri/tauri.local.json && node scripts/dmg.mjs --local",
     "test:e2e": "npm run dist && node esbuild.mjs --e2e && node --test \"out/test/e2e/*.test.js\""
   },

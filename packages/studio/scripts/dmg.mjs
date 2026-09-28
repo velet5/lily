@@ -8,6 +8,7 @@
 //
 //   node scripts/dmg.mjs            notarized, for `npm run dist`
 //   node scripts/dmg.mjs --local    the ad-hoc signed app as it is, for `npm run dist:local`
+//   --target <triple>               the app of `tauri build --target <triple>`, e.g. x86_64-apple-darwin
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -16,8 +17,11 @@ import { join } from 'node:path'
 const local = process.argv.includes('--local')
 const { productName, version } = JSON.parse(readFileSync('package.json', 'utf8'))
 const identity = JSON.parse(readFileSync('src-tauri/tauri.conf.json', 'utf8')).bundle.macOS.signingIdentity
-const app = `target/release/bundle/macos/${productName}.app`
-const dmg = `release/${productName}-${version}-${process.arch}.dmg`
+const targetAt = process.argv.indexOf('--target')
+const target = targetAt < 0 ? undefined : process.argv[targetAt + 1]
+const arch = { 'x86_64-apple-darwin': 'x64', 'aarch64-apple-darwin': 'arm64' }[target] ?? process.arch
+const app = `target/${target ? `${target}/` : ''}release/bundle/macos/${productName}.app`
+const dmg = `release/${productName}-${version}-${arch}.dmg`
 const run = (command, args) => execFileSync(command, args, { stdio: 'inherit' })
 
 const profile = process.env.APPLE_KEYCHAIN_PROFILE

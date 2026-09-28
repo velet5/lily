@@ -30,6 +30,7 @@ repository's root (an npm workspace), then in `packages/studio`:
 npm start              # run from the sources
 npm test               # Rust and renderer unit tests, then the window's smoke test
 npm run dist           # release/Lily Studio-<version>-<arch>.dmg, signed and notarized
+npm run dist:x64       # the same for Intel Macs (rustup target add x86_64-apple-darwin once)
 npm run dist:local     # the same DMG, ad-hoc signed, for a Mac without the certificate
 npm run test:e2e       # build the DMG, install the app from it, launch it
 ```
