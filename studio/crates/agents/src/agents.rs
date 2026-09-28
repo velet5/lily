@@ -147,6 +147,9 @@ impl Role {
 pub struct ChatEntry {
     pub role: Role,
     pub text: String,
+    /// The images pasted with a user's message, as the studio saved them.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<String>,
 }
 
 impl ChatEntry {
@@ -154,6 +157,7 @@ impl ChatEntry {
         ChatEntry {
             role,
             text: text.into(),
+            images: Vec::new(),
         }
     }
 }
@@ -455,6 +459,8 @@ pub struct TurnOptions {
     /// The LilyPond executable the agent may run to check its edits.
     pub lilypond: Option<String>,
     pub permission: Permission,
+    /// Images pasted with the message, saved as files (see `turn_prompt`).
+    pub images: Vec<String>,
 }
 
 fn non_empty(value: &Option<String>) -> Option<&str> {
@@ -474,6 +480,11 @@ fn non_empty(value: &Option<String>) -> Option<&str> {
 /// runs without a sandbox.
 /// `codex exec resume` takes neither `--sandbox` nor `--cd`, so both are given
 /// as config and working directory.
+///
+/// Pasted images: Codex attaches each with `--image`, which takes several
+/// values, so `--` ends the options before the session and the prompt.
+/// Claude Code is told where they are in the prompt and may read their
+/// directory (`--add-dir`), whatever the permission.
 pub fn agent_args(id: AgentId, turn: &TurnOptions) -> Vec<String> {
     let model = turn
         .model
@@ -522,6 +533,16 @@ pub fn agent_args(id: AgentId, turn: &TurnOptions) -> Vec<String> {
             if let Some(model) = model {
                 push(&["--model", model]);
             }
+            let mut dirs: Vec<&str> = Vec::new();
+            for image in &turn.images {
+                let dir = Path::new(image).parent().and_then(Path::to_str);
+                if let Some(dir) = dir.filter(|dir| !dirs.contains(dir)) {
+                    dirs.push(dir);
+                }
+            }
+            for dir in dirs {
+                push(&["--add-dir", dir]);
+            }
         }
         AgentId::Codex => {
             push(&["exec"]);
@@ -537,6 +558,12 @@ pub fn agent_args(id: AgentId, turn: &TurnOptions) -> Vec<String> {
             push(&["-c", sandbox, "-c", "approval_policy=\"never\""]);
             if let Some(model) = model {
                 push(&["-m", model]);
+            }
+            for image in &turn.images {
+                push(&["--image", image]);
+            }
+            if !turn.images.is_empty() {
+                push(&["--"]);
             }
             if let Some(session) = session {
                 push(&[session]);
@@ -568,6 +595,8 @@ pub struct PromptContext {
     pub first: bool,
     /// The turn may not change files (`Permission::Read`); the agent is told so.
     pub read_only: bool,
+    /// Images pasted with the message, as files.
+    pub images: Vec<String>,
 }
 
 /// Where an agent's check compiles write: in the temp directory, never next to
@@ -629,6 +658,21 @@ pub fn turn_prompt(text: &str, context: &PromptContext) -> String {
     }
     if !place.is_empty() {
         parts.push(format!("<editor>\n{}\n</editor>", place.join("\n")));
+    }
+    if !context.images.is_empty() {
+        let files: Vec<String> = context
+            .images
+            .iter()
+            .map(|image| format!("- {image}"))
+            .collect();
+        let count = match context.images.len() {
+            1 => "an image".to_owned(),
+            n => format!("{n} images"),
+        };
+        parts.push(format!(
+            "<attachments>\nThe user pasted {count} with this message. Look at them before you answer; they are saved as:\n{}\n</attachments>",
+            files.join("\n")
+        ));
     }
     if context.read_only {
         parts.push(

@@ -190,6 +190,13 @@ export const studio = {
     await subscribed
     return call('chat_send', { message })
   },
+  /** A pasted image of a chat (D46) as a data: URL; undefined for any other file. */
+  chatImage: async (file: string): Promise<string | undefined> => {
+    const data = await call<string | null>('chat_image', { file })
+    if (!data) return undefined
+    const type = { jpg: 'jpeg', gif: 'gif', webp: 'webp' }[file.split('.').pop() ?? ''] ?? 'png'
+    return `data:image/${type};base64,${data}`
+  },
   /** Stops the agent of `chatId`, and the commands it started. */
   chatStop: (chatId: string): Promise<void> => call('chat_stop', { chatId }),
   chatDelete: (chatId: string): Promise<void> => call('chat_delete', { chatId }),

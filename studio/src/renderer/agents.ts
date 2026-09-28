@@ -1,11 +1,30 @@
 // The agents' accordion in the sidebar (DECISIONS D40). Agent chats: the chats
 // of the open folder, and one chat at a time with what its agent said and did;
 // a message starts a turn of Claude Code or Codex in the folder. Agent setup:
-// where each agent is, its version, and the model it uses. `textRuns` is pure
-// so the tests can run it without a DOM.
-import type { AgentId, AgentStatus, ChatEntry, ChatEvent, ChatInfo, OpenChat, Permission } from '../ipc'
+// where each agent is, its version, and the model it uses. Images pasted or
+// dropped into the message box go with the message (D46). `textRuns` and
+// `imageRefusal` are pure so the tests can run them without a DOM.
+import type { AgentId, AgentStatus, ChatEntry, ChatEvent, ChatInfo, OpenChat, PastedImage, Permission } from '../ipc'
 import type { StudioApi } from './bridge'
 import { button } from './files'
+
+/** What the Rust side accepts (crates/agents' MAX_IMAGES, MAX_IMAGE_BYTES). */
+export const MAX_IMAGES = 6
+export const MAX_IMAGE_BYTES = 10 << 20
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp']
+
+/** Why an image of `type` and `size` bytes cannot join `count` others; undefined when it can. */
+export function imageRefusal(type: string, size: number, count: number): string | undefined {
+  if (!IMAGE_TYPES.includes(type)) return 'Only PNG, JPEG, GIF and WebP images can be sent to the agent.'
+  if (size > MAX_IMAGE_BYTES) return `The image is too large; the limit is ${MAX_IMAGE_BYTES >> 20} MB.`
+  if (count >= MAX_IMAGES) return `A message can carry at most ${MAX_IMAGES} images.`
+  return undefined
+}
+
+/** An image waiting in the message box: what is sent, and its preview. */
+interface Pending extends PastedImage {
+  url: string
+}
 
 /** A piece of an agent's answer: plain text, `code`, or a fenced block. */
 export type TextRun = { kind: 'text' | 'code' | 'block'; text: string }
@@ -125,6 +144,9 @@ export class AgentPanel {
   private readonly input = document.createElement('textarea')
   /** What goes with the message: the file in the editor, and the selected lines. */
   private readonly attached = document.createElement('div')
+  /** The images pasted into the message box, shown above it (D46). */
+  private readonly imageStrip = document.createElement('div')
+  private images: Pending[] = []
   private readonly sendButton = document.createElement('button')
   private readonly permissionSelect = document.createElement('select')
   /** The model of the agent the next message goes to: the open chat's, or the one chosen for a new chat. */
@@ -162,7 +184,25 @@ export class AgentPanel {
     const bar = document.createElement('div')
     bar.className = 'chat-composer-bar'
     bar.append(this.permissionSelect, this.modelSelect, this.sendButton)
-    this.composer.append(this.attached, this.input, bar)
+    this.imageStrip.className = 'chat-images'
+    this.imageStrip.hidden = true
+    this.composer.append(this.attached, this.imageStrip, this.input, bar)
+    this.input.addEventListener('paste', (event) => {
+      const files = imageFiles(event.clipboardData)
+      if (files.length === 0) return
+      // An image copied from a browser comes with its address as text; the image is what was meant.
+      event.preventDefault()
+      void this.addImages(files)
+    })
+    this.composer.addEventListener('dragover', (event) => {
+      if (event.dataTransfer?.types.includes('Files')) event.preventDefault()
+    })
+    this.composer.addEventListener('drop', (event) => {
+      const files = imageFiles(event.dataTransfer)
+      if (files.length === 0) return
+      event.preventDefault()
+      void this.addImages(files)
+    })
     this.composer.addEventListener('submit', (event) => {
       event.preventDefault()
       void this.sendOrStop()
@@ -258,11 +298,49 @@ export class AgentPanel {
     await this.send(this.input.value, true)
   }
 
+  /** Adds pasted or dropped images to the message, as far as they may go. */
+  private async addImages(files: File[]): Promise<void> {
+    for (const file of files) {
+      const refusal = imageRefusal(file.type, file.size, this.images.length)
+      if (refusal) {
+        this.options.onError(new Error(refusal))
+        return
+      }
+      const url = await dataUrl(file)
+      this.images.push({ mediaType: file.type, data: url.slice(url.indexOf(',') + 1), url })
+      this.renderImages()
+    }
+  }
+
+  private renderImages(): void {
+    this.imageStrip.hidden = this.images.length === 0
+    this.imageStrip.replaceChildren(
+      ...this.images.map((image, index) => {
+        const item = document.createElement('div')
+        item.className = 'chat-image'
+        const img = document.createElement('img')
+        img.src = image.url
+        img.alt = `Pasted image ${index + 1}`
+        const remove = button('✕', () => {
+          this.images.splice(index, 1)
+          this.renderImages()
+          this.input.focus()
+        })
+        remove.title = 'Remove this image'
+        remove.setAttribute('aria-label', `Remove pasted image ${index + 1}`)
+        item.append(img, remove)
+        return item
+      }),
+    )
+  }
+
   /** Sends `text`, from the message box or a menu; the box keeps its draft for a menu's. */
   private async send(value: string, fromInput: boolean): Promise<void> {
     const { studio } = this.options
     const text = value.trim()
-    if (!text || this.sending) return
+    // The images in the box go with a message typed there, and with one from a menu.
+    const images = this.images.map(({ mediaType, data }) => ({ mediaType, data }))
+    if ((!text && images.length === 0) || this.sending) return
     if (this.folder === undefined) return this.options.onError(new Error('Open a score or a folder first; the agent works on its files.'))
     this.sending = true
     this.render()
@@ -275,8 +353,11 @@ export class AgentPanel {
         ...(chatId ? { chatId } : { agent: this.agent }),
         ...this.options.context(),
         permission: this.permission,
+        ...(images.length > 0 ? { images } : {}),
       })
       if (fromInput) this.input.value = ''
+      this.images = []
+      this.renderImages()
       if (chatId === undefined) {
         this.sending = false
         await this.openChat(id)
@@ -297,7 +378,7 @@ export class AgentPanel {
       const log = this.content.querySelector<HTMLElement>('.chat-log')
       if (!log) return
       const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 24
-      log.querySelector('.chat-working')?.before(entryElement(event.entry))
+      log.querySelector('.chat-working')?.before(entryElement(event.entry, this.options.studio.chatImage))
       if (atEnd) log.scrollTop = log.scrollHeight
       return
     }
@@ -346,7 +427,7 @@ export class AgentPanel {
       const log = document.createElement('div')
       log.className = 'chat-log'
       log.setAttribute('role', 'log')
-      for (const entry of chat.entries) log.append(entryElement(entry))
+      for (const entry of chat.entries) log.append(entryElement(entry, this.options.studio.chatImage))
       const working = document.createElement('div')
       working.className = 'chat-working'
       working.textContent = `${agentName(chat.agent)} is working`
@@ -545,11 +626,12 @@ function when(time: number): string {
   return today ? date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : date.toLocaleDateString([], { month: 'short', day: 'numeric' })
 }
 
-function entryElement(entry: ChatEntry): HTMLElement {
+function entryElement(entry: ChatEntry, image: (file: string) => Promise<string | undefined>): HTMLElement {
   const element = document.createElement('div')
   element.className = `chat-entry ${entry.role}`
   if (entry.role !== 'agent') {
     element.textContent = entry.text
+    if (entry.role === 'user' && entry.images?.length) element.append(entryImages(entry.images, image))
     return element
   }
   for (const run of textRuns(entry.text)) {
@@ -561,4 +643,45 @@ function entryElement(entry: ChatEntry): HTMLElement {
     }
   }
   return element
+}
+
+/** A message's pasted images, loaded from where the Rust side saved them. */
+function entryImages(files: string[], image: (file: string) => Promise<string | undefined>): HTMLElement {
+  const strip = document.createElement('div')
+  strip.className = 'chat-images'
+  for (const file of files) {
+    const img = document.createElement('img')
+    img.alt = 'Pasted image'
+    img.title = file
+    strip.append(img)
+    image(file).then(
+      (url) => {
+        if (url) img.src = url
+        else img.replaceWith(Object.assign(document.createElement('span'), { className: 'chat-image-gone', textContent: 'Image no longer available' }))
+      },
+      () => img.remove(),
+    )
+  }
+  return strip
+}
+
+/** The image files of a paste or a drop. */
+function imageFiles(data: DataTransfer | null): File[] {
+  if (!data) return []
+  const files: File[] = []
+  for (const item of data.items) {
+    if (item.kind !== 'file' || !item.type.startsWith('image/')) continue
+    const file = item.getAsFile()
+    if (file) files.push(file)
+  }
+  return files
+}
+
+function dataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => resolve(String(reader.result))
+    reader.onerror = () => reject(reader.error ?? new Error('The image could not be read.'))
+    reader.readAsDataURL(file)
+  })
 }

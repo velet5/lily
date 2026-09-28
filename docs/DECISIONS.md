@@ -2101,3 +2101,35 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   above a part moves its setting to another part. Muted parts' notes are
   still marked on the pages as they pass. There is no solo, per-part volume,
   or setting a mark by clicking on the PDF.
+
+## D46 — Lily Studio: images pasted into the agent chats
+
+**Status:** proposed · **Refines:** D40
+
+- **What.** An image pasted into the chat's message box (⌘V), or dropped on
+  it, shows as a thumbnail above the box with ✕ to remove it. It goes with the
+  next message, and a message may be only images. A paste with an image takes
+  the image and leaves out the text that comes with it, such as the address a
+  browser copies. PNG, JPEG, GIF and WebP up to 10 MB each, six per message;
+  the renderer says why it refuses anything else, and the Rust side checks
+  again.
+- **Kept.** The Rust side saves the images as `chat-images/<chat id>/<uuid>.<ext>`
+  beside chats.json, so they outlive the turn, and the user's entry keeps
+  their paths (`images`). The chat shows them through `chat_image`, which
+  reads only files under `chat-images/`. Deleting the chat deletes them. A
+  new chat of only images is titled "Image".
+- **To the agents.** The prompt lists the files in `<attachments>`. Codex also
+  attaches each with `--image`, which takes several values, so a `--` ends the
+  options before the session and the prompt. Claude Code gets `--add-dir`
+  for the images' directory, so that its Read tool may open them under every
+  permission (D43).
+- **Verified.** `crates/agents/tests/agents.rs`: the arguments for both
+  agents, the prompt, and a send through a stand-in (saved, shown, refused
+  types and counts, deleted with the chat). `test/agents.test.ts`:
+  `imageRefusal`. `npm run test:smoke`: a PNG pasted through a
+  `ClipboardEvent` shows above the box, is sent, shows in the chat, and the
+  stand-in receives `--add-dir`. By hand, with a red PNG: Claude Code
+  (`-p … --add-dir`, read-only tools) and Codex (`exec --image … --`) both
+  answer "Red".
+- **Not done.** Images are not scaled down before they are sent. A file
+  dropped from the Finder that is not an image is ignored without a word.

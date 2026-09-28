@@ -490,6 +490,14 @@ pub async fn chat_send(studio: Studios<'_>, message: Value) -> Answer<String> {
     studio.chats.send(message, &folder).await
 }
 
+/// A pasted image of a chat (D46), as base64; null for a file that is not one.
+#[tauri::command]
+pub async fn chat_image(studio: Studios<'_>, file: String) -> Answer<Option<String>> {
+    use base64::Engine as _;
+    let bytes = studio.chats.image(&file).await;
+    Ok(bytes.map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes)))
+}
+
 #[tauri::command]
 pub fn chat_stop(studio: Studios<'_>, chat_id: Value) {
     if let Some(chat_id) = chat_id.as_str() {

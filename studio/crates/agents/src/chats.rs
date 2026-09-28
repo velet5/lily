@@ -105,9 +105,17 @@ fn valid_chat(value: &Value) -> Option<Chat> {
         .map(|entry| {
             let entry = entry.as_object()?;
             let role = Role::parse(entry.get("role")?.as_str()?)?;
+            let images = match entry.get("images") {
+                Some(Value::Array(images)) => images
+                    .iter()
+                    .filter_map(|image| image.as_str().map(str::to_owned))
+                    .collect(),
+                _ => Vec::new(),
+            };
             Some(ChatEntry {
                 role,
                 text: entry.get("text")?.as_str()?.to_owned(),
+                images,
             })
         })
         .collect::<Option<Vec<_>>>()?;

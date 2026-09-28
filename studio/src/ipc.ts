@@ -128,7 +128,8 @@ export interface AgentStatus {
 
 /** One line of a chat, as the sidebar shows it and chats.json keeps it. */
 export type ChatEntry =
-  | { role: 'user'; text: string }
+  /** `images`: the pasted images, as the Rust side saved them (D46). */
+  | { role: 'user'; text: string; images?: string[] }
   | { role: 'agent'; text: string }
   /** Something the agent did: read or edited a file, ran a command. */
   | { role: 'tool'; text: string }
@@ -170,6 +171,13 @@ export interface ChatMessage {
   selection?: { startLine: number; endLine: number; text: string }
   /** `edit` when not given. */
   permission?: Permission
+  /** Images pasted into the message box (D46): PNG, JPEG, GIF or WebP, in base64. */
+  images?: PastedImage[]
+}
+
+export interface PastedImage {
+  mediaType: string
+  data: string
 }
 
 /**

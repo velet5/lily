@@ -12,7 +12,9 @@
 // sidebar's edge drags wider, and a stand-in for Claude Code answers a chat,
 // writes a score that the file list then shows, and continues its session on
 // the second message (D40). A selection's context menu explains it with the
-// agent, the lines attached (D41).
+// agent, the lines attached (D41), and an image pasted into the message box
+// goes with the next message (D46). The Parts fold mutes the part, puts it on
+// another instrument and starts playback at a bar marked on the pages (D45).
 //
 // The Rust side prepares the folder and the stand-in agent, and answers the
 // smoke_* commands: files on disk as another program sees them, and the menu.
@@ -380,7 +382,7 @@ async function main(): Promise<void> {
   click('[data-fold="chats"] .fold-header button')
   const send = (message: string) => {
     $<HTMLTextAreaElement>('.chat-composer textarea')!.value = message
-    click('.chat-composer button')
+    click('.chat-composer button[type="submit"]')
   }
   const answer = (resumed: string) => () => {
     const log = $('.chat-log')
@@ -425,6 +427,29 @@ async function main(): Promise<void> {
     const answers = $$('.chat-log .chat-entry.agent').map((e) => e.textContent ?? '')
     return users.length === 3 && users[2].startsWith('Explain what the selected lines do') && answers.length === 3 && answers[2].includes('with a selection') ? answers[2] : ''
   }, 20_000)
+
+  // An image pasted into the message box shows above it, goes with the next
+  // message, and the stand-in is given its directory to read (D46).
+  const canvas = Object.assign(document.createElement('canvas'), { width: 40, height: 30 })
+  const paint = canvas.getContext('2d')!
+  paint.fillStyle = '#2f6fb0'
+  paint.fillRect(0, 0, 40, 30)
+  const png = await new Promise<Blob>((resolve, reject) => canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('no PNG'))), 'image/png'))
+  const clipboard = new DataTransfer()
+  clipboard.items.add(new File([png], 'pasted.png', { type: 'image/png' }))
+  $('.chat-composer textarea')!.dispatchEvent(new ClipboardEvent('paste', { clipboardData: clipboard, bubbles: true, cancelable: true }))
+  sidebar.pasted = await until('the pasted image above the message box', () => $$('.chat-composer .chat-image img').length === 1 && !$('.chat-composer .chat-images')?.hidden)
+  send('What is in this image?')
+  sidebar.image = await until('the image sent and shown in the chat', () => {
+    const users = $$('.chat-log .chat-entry.user')
+    const shown = users[3]?.querySelector<HTMLImageElement>('.chat-images img')
+    const answers = $$('.chat-log .chat-entry.agent').map((e) => e.textContent ?? '')
+    const cleared = $$('.chat-composer .chat-image').length === 0
+    return shown?.src.startsWith('data:image/png;base64,') && cleared && answers[3]?.includes('with an image') ? answers[3] : ''
+  }, 20_000)
+  if (!sidebar.image) {
+    problems.push(`after the image: users ${JSON.stringify($$('.chat-log .chat-entry.user').map((e) => e.innerHTML.slice(0, 200)))}, answers ${JSON.stringify($$('.chat-log .chat-entry').map((e) => e.textContent))}, status ${statusMessage()}`)
+  }
 
   const ok = problems.length === 0
   const report = { ok, problems, ...layout, welcome, listed, openedPages, switching, monaco: !!shown, colours, saved, compile, sidebar }

@@ -6,9 +6,11 @@
 
 use std::collections::HashMap;
 use std::future::Future;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
+use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::mpsc;
@@ -40,6 +42,39 @@ pub struct ChatMessage {
     /// What the agent may do in this turn; `Edit` when not given (D43).
     #[serde(default)]
     pub permission: Permission,
+    /// Images pasted into the message box (D46).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub images: Vec<PastedImage>,
+}
+
+/// An image as the renderer sends it: its type and its bytes in base64.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PastedImage {
+    pub media_type: String,
+    pub data: String,
+}
+
+/// Images one message may carry, and the size of each.
+pub const MAX_IMAGES: usize = 6;
+pub const MAX_IMAGE_BYTES: usize = 10 << 20;
+
+/// The file extension of an image type the agents can look at.
+fn image_extension(media_type: &str) -> Option<&'static str> {
+    match media_type {
+        "image/png" => Some("png"),
+        "image/jpeg" => Some("jpg"),
+        "image/gif" => Some("gif"),
+        "image/webp" => Some("webp"),
+        _ => None,
+    }
+}
+
+/// Where a chat's pasted images are kept: `chat-images/<chat id>/` beside
+/// chats.json, so that they outlive the turn and the chat can show them.
+pub fn chat_images_dir(store: &ChatStore) -> PathBuf {
+    let parent = store.file().parent().map(PathBuf::from).unwrap_or_default();
+    parent.join("chat-images")
 }
 
 /// A JavaScript number that `Number.isInteger` accepts.
@@ -83,6 +118,21 @@ impl ChatMessage {
                 .get("permission")
                 .and_then(Value::as_str)
                 .and_then(Permission::parse)
+                .unwrap_or_default(),
+            images: message
+                .get("images")
+                .and_then(Value::as_array)
+                .map(|images| {
+                    images
+                        .iter()
+                        .filter_map(|image| {
+                            Some(PastedImage {
+                                media_type: image.get("mediaType")?.as_str()?.to_owned(),
+                                data: image.get("data")?.as_str()?.to_owned(),
+                            })
+                        })
+                        .collect()
+                })
                 .unwrap_or_default(),
         })
     }
@@ -233,9 +283,10 @@ impl AgentChats {
         let options = &self.inner.options;
         let store = &options.store;
         let text = js::trim(&message.text).to_owned();
-        if text.is_empty() {
+        if text.is_empty() && message.images.is_empty() {
             return Err("Write a message first.".to_owned());
         }
+        let images = decode_images(&message.images)?;
         let chat = match &message.chat_id {
             Some(chat_id) => {
                 let found = self
@@ -252,15 +303,20 @@ impl AgentChats {
             }
             None => {
                 let agent = message.agent.ok_or("Choose an agent first.")?;
-                store.create(agent, folder, &text).await
+                let title = if text.is_empty() { "Image" } else { &text };
+                store.create(agent, folder, title).await
             }
         };
         let chat_id = chat.id.clone();
+        let images = save_images(&chat_images_dir(store).join(&chat_id), images).await?;
         add(
             store,
             &options.emit,
             &chat_id,
-            ChatEntry::new(Role::User, text.clone()),
+            ChatEntry {
+                images: images.clone(),
+                ..ChatEntry::new(Role::User, text.clone())
+            },
         )
         .await;
 
@@ -304,6 +360,7 @@ impl AgentChats {
                 lilypond: lilypond.clone(),
                 first: chat.session_id.is_none(),
                 read_only: message.permission == Permission::Read,
+                images: images.clone(),
             },
         );
         let args = agent_args(
@@ -314,6 +371,7 @@ impl AgentChats {
                 model: status.model.clone(),
                 lilypond,
                 permission: message.permission,
+                images,
             },
         );
         // Entries are kept in the order they came, each after the one before:
@@ -364,6 +422,19 @@ impl AgentChats {
         Ok(chat_id)
     }
 
+    /// A pasted image of a chat, to show it; `None` for any other file.
+    pub async fn image(&self, file: &str) -> Option<Vec<u8>> {
+        let dir = tokio::fs::canonicalize(chat_images_dir(&self.inner.options.store))
+            .await
+            .ok()?;
+        let file = tokio::fs::canonicalize(file).await.ok()?;
+        let extension = file.extension()?.to_str()?;
+        if !file.starts_with(&dir) || !["png", "jpg", "gif", "webp"].contains(&extension) {
+            return None;
+        }
+        tokio::fs::read(file).await.ok()
+    }
+
     pub fn stop(&self, chat_id: &str) {
         let run = self.runs().get(chat_id).cloned();
         if let Some(run) = run {
@@ -387,7 +458,9 @@ impl AgentChats {
             return;
         }
         self.stop(chat_id);
-        self.inner.options.store.delete(chat_id).await;
+        let store = &self.inner.options.store;
+        store.delete(chat_id).await;
+        let _ = tokio::fs::remove_dir_all(chat_images_dir(store).join(chat_id)).await;
     }
 
     /// Stops every running turn.
@@ -406,4 +479,48 @@ async fn add(store: &ChatStore, emit: &EmitFn, chat_id: &str, entry: ChatEntry) 
         chat_id: chat_id.to_owned(),
         entry,
     });
+}
+
+/// The pasted images' bytes and extensions, checked before anything is kept.
+fn decode_images(images: &[PastedImage]) -> Result<Vec<(Vec<u8>, &'static str)>, String> {
+    if images.len() > MAX_IMAGES {
+        return Err(format!("A message can carry at most {MAX_IMAGES} images."));
+    }
+    images
+        .iter()
+        .map(|image| {
+            let extension = image_extension(&image.media_type).ok_or(
+                "Only PNG, JPEG, GIF and WebP images can be sent to the agent.".to_owned(),
+            )?;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(&image.data)
+                .map_err(|_| "A pasted image could not be read.".to_owned())?;
+            if bytes.is_empty() || bytes.len() > MAX_IMAGE_BYTES {
+                return Err(format!(
+                    "A pasted image is too large; the limit is {} MB.",
+                    MAX_IMAGE_BYTES >> 20
+                ));
+            }
+            Ok((bytes, extension))
+        })
+        .collect()
+}
+
+/// Writes the images into `dir`, each under a new name; gives their paths.
+async fn save_images(
+    dir: &std::path::Path,
+    images: Vec<(Vec<u8>, &'static str)>,
+) -> Result<Vec<String>, String> {
+    if images.is_empty() {
+        return Ok(Vec::new());
+    }
+    let failed = |error: std::io::Error| format!("The pasted image could not be saved: {error}");
+    tokio::fs::create_dir_all(dir).await.map_err(failed)?;
+    let mut paths = Vec::with_capacity(images.len());
+    for (bytes, extension) in images {
+        let file = dir.join(format!("{}.{extension}", uuid::Uuid::new_v4()));
+        tokio::fs::write(&file, bytes).await.map_err(failed)?;
+        paths.push(file.to_string_lossy().into_owned());
+    }
+    Ok(paths)
 }

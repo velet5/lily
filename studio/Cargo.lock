@@ -2023,6 +2023,7 @@ dependencies = [
 name = "lily-agents"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "futures",
  "libc",
  "regex",
@@ -2053,6 +2054,7 @@ dependencies = [
 name = "lily-studio"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "futures",
  "lily-agents",
  "lily-engrave",

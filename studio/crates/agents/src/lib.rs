@@ -8,7 +8,10 @@ pub mod agents;
 pub mod chats;
 mod js;
 
-pub use agent_chats::{AgentChats, AgentChatsOptions, ChatEvent, ChatInfo, ChatMessage, OpenChat};
+pub use agent_chats::{
+    AgentChats, AgentChatsOptions, ChatEvent, ChatInfo, ChatMessage, MAX_IMAGE_BYTES, MAX_IMAGES,
+    OpenChat, PastedImage, chat_images_dir,
+};
 pub use agents::{
     AGENTS, Agent, AgentEvent, AgentId, AgentRun, AgentState, AgentStatus, ChatEntry,
     DetectAgentOptions, Env, Permission, Role, RunOptions, Selection, TurnOptions, agent_args,

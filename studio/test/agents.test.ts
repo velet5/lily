@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict'
 import * as path from 'node:path'
 import { describe, test } from 'node:test'
-import { contextLabel, modelChoices, PERMISSIONS, SELECTION_ACTIONS, textRuns } from '../src/renderer/agents'
+import { contextLabel, imageRefusal, MAX_IMAGE_BYTES, MAX_IMAGES, modelChoices, PERMISSIONS, SELECTION_ACTIONS, textRuns } from '../src/renderer/agents'
 import { clampHeight, clampWidth, FILES_MIN, SIDEBAR_WIDTH } from '../src/renderer/sidebar'
 
 // Runs under `node --test` from out/test/ (npm run test:unit in studio/): the
@@ -64,5 +64,14 @@ describe('the selection and the agent', () => {
     assert.deepEqual(modelChoices('claude', 'sonnet').map((c) => c.value), ['', 'opus', 'sonnet', 'haiku'])
     assert.deepEqual(modelChoices('codex', 'o4-mini').map((c) => c.value), ['', 'gpt-5-codex', 'gpt-5', 'o4-mini'])
     assert.equal(modelChoices('codex')[0]!.label, 'Default model')
+  })
+})
+
+describe('imageRefusal', () => {
+  test('PNG, JPEG, GIF and WebP up to the limits go; anything else is said why not', () => {
+    for (const type of ['image/png', 'image/jpeg', 'image/gif', 'image/webp']) assert.equal(imageRefusal(type, 1000, 0), undefined)
+    assert.match(imageRefusal('image/svg+xml', 10, 0)!, /PNG, JPEG, GIF and WebP/)
+    assert.match(imageRefusal('image/png', MAX_IMAGE_BYTES + 1, 0)!, /too large/)
+    assert.match(imageRefusal('image/png', 10, MAX_IMAGES)!, /at most 6/)
   })
 })

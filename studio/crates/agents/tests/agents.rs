@@ -15,7 +15,8 @@ use lily_agents::agents::{
     unwrap_shell,
 };
 use lily_agents::{
-    AgentChats, AgentChatsOptions, ChatEvent, ChatMessage, ChatStore, chat_title, process_env,
+    AgentChats, AgentChatsOptions, ChatEvent, ChatMessage, ChatStore, PastedImage, chat_images_dir,
+    chat_title, process_env,
 };
 use serde_json::json;
 
@@ -208,6 +209,59 @@ fn a_message_without_a_permission_edits() {
     assert_eq!(message.permission, Permission::Read);
 }
 
+#[test]
+fn pasted_images_are_attached_to_codex_and_readable_by_claude() {
+    let turn = TurnOptions {
+        prompt: "What is this?".into(),
+        session_id: Some("t-1".into()),
+        images: strings(&["/data/chat-images/c/a.png", "/data/chat-images/c/b.jpg"]),
+        ..Default::default()
+    };
+    let codex = agent_args(AgentId::Codex, &turn);
+    assert_eq!(
+        codex[codex.len() - 7..],
+        strings(&[
+            "--image",
+            "/data/chat-images/c/a.png",
+            "--image",
+            "/data/chat-images/c/b.jpg",
+            "--",
+            "t-1",
+            "What is this?",
+        ])
+    );
+    let claude = agent_args(AgentId::Claude, &turn);
+    let add = claude
+        .iter()
+        .position(|arg| arg == "--add-dir")
+        .expect("--add-dir");
+    assert_eq!(claude[add + 1], "/data/chat-images/c");
+    assert_eq!(claude.iter().filter(|arg| *arg == "--add-dir").count(), 1);
+    // Without images, nothing changes.
+    let plain = TurnOptions {
+        images: Vec::new(),
+        ..turn
+    };
+    assert!(!agent_args(AgentId::Codex, &plain).contains(&"--".to_owned()));
+    assert!(!agent_args(AgentId::Claude, &plain).contains(&"--add-dir".to_owned()));
+}
+
+#[test]
+fn chat_message_reads_its_images() {
+    let message = ChatMessage::from_value(json!({
+        "text": "",
+        "images": [{ "mediaType": "image/png", "data": "AAAA" }, { "mediaType": 1 }],
+    }))
+    .expect("a message");
+    assert_eq!(
+        message.images,
+        [PastedImage {
+            media_type: "image/png".into(),
+            data: "AAAA".into()
+        }]
+    );
+}
+
 // ---------------------------------------------------------------------------
 // turn_prompt
 
@@ -219,6 +273,7 @@ fn context(first: bool) -> PromptContext {
         first,
         selection: None,
         read_only: false,
+        images: Vec::new(),
     }
 }
 
@@ -864,6 +919,7 @@ fn chat_message_is_read_leniently() {
                 text: "c".into()
             }),
             permission: Permission::Edit,
+            images: Vec::new(),
         }
     );
     let message: ChatMessage =
@@ -1167,4 +1223,104 @@ async fn login_shell_path_is_asked_once() {
     );
     assert!(first.is_empty() || first.contains('/'), "{first}");
     assert_eq!(lily_agents::login_shell_path().await, first);
+}
+
+#[test]
+fn the_prompt_lists_the_pasted_images() {
+    let prompt = turn_prompt(
+        "Like this",
+        &PromptContext {
+            images: strings(&["/d/chat-images/c/a.png"]),
+            ..context(false)
+        },
+    );
+    assert!(
+        prompt.contains("<attachments>\nThe user pasted an image with this message. Look at them before you answer; they are saved as:\n- /d/chat-images/c/a.png\n</attachments>\n\nLike this"),
+        "{prompt}"
+    );
+}
+
+#[tokio::test]
+async fn pasted_images_are_saved_with_the_chat_and_go_with_the_turn() {
+    let (_dir, scratch) = scratch();
+    let folder = scratch.join("score");
+    std::fs::create_dir_all(&folder).expect("folder");
+    let folder = folder.to_string_lossy().into_owned();
+    // Answers with the directory it may read, so the test sees it was given.
+    let binary = script(
+        &scratch.join("image-agent"),
+        r#"#!/bin/sh
+dir=none
+while [ $# -gt 0 ]; do [ "$1" = "--add-dir" ] && dir="$2"; shift; done
+echo '{"type":"assistant","message":{"content":[{"type":"text","text":"'"$dir"'"}]}}'
+echo '{"type":"result","subtype":"success","is_error":false,"result":"ok"}'
+"#,
+    );
+    let store = ChatStore::new(scratch.join("chats-images.json"));
+    let images_dir = chat_images_dir(&store);
+    let chats = AgentChats::new(AgentChatsOptions::new(
+        store,
+        |_| {},
+        ready(binary),
+        || async { None },
+        || async { process_env() },
+    ));
+    // A PNG's first bytes are enough: nothing looks inside.
+    let png = PastedImage {
+        media_type: "image/png".into(),
+        data: "iVBORw0KGgo=".into(),
+    };
+    let message = ChatMessage {
+        agent: Some(AgentId::Claude),
+        text: " ".into(),
+        images: vec![png.clone()],
+        ..Default::default()
+    };
+    let id = chats.send(message, &folder).await.expect("sent");
+    chats.settled(&id).await;
+    let chat = chats.get(&id, &folder).await.expect("the chat").chat;
+    assert_eq!(chat.title, "Image");
+    let saved = &chat.entries[0].images;
+    assert_eq!(saved.len(), 1);
+    let chat_dir = images_dir.join(&id);
+    assert!(saved[0].starts_with(&*chat_dir.to_string_lossy()) && saved[0].ends_with(".png"));
+    assert_eq!(
+        chats.image(&saved[0]).await.as_deref(),
+        Some(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a][..])
+    );
+    assert_eq!(chat.entries[1].text, chat_dir.to_string_lossy());
+    // Only the chats' images can be read back.
+    assert!(
+        chats
+            .image(&format!("{folder}/../chats-images.json"))
+            .await
+            .is_none()
+    );
+
+    let wrong = ChatMessage {
+        chat_id: Some(id.clone()),
+        text: "And this?".into(),
+        images: vec![PastedImage {
+            media_type: "image/svg+xml".into(),
+            data: "PHN2Zy8+".into(),
+        }],
+        ..Default::default()
+    };
+    assert!(
+        chats
+            .send(wrong, &folder)
+            .await
+            .expect_err("refused")
+            .contains("PNG, JPEG, GIF and WebP")
+    );
+    let many = ChatMessage {
+        chat_id: Some(id.clone()),
+        text: "All of them".into(),
+        images: vec![png; 7],
+        ..Default::default()
+    };
+    assert!(chats.send(many, &folder).await.is_err());
+
+    chats.delete(&id, &folder).await;
+    assert!(!chat_dir.exists());
 }

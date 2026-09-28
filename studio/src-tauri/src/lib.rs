@@ -107,6 +107,7 @@ pub fn run() {
             commands::chat_list,
             commands::chat_get,
             commands::chat_send,
+            commands::chat_image,
             commands::chat_stop,
             commands::chat_delete,
             commands::playback_setup,
