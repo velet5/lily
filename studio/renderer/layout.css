@@ -602,6 +602,211 @@ button:focus-visible,
   text-align: right;
 }
 
+/* The playback setup (D45): the Parts fold above the transport, the start
+   mark in the transport and on the pages, and the pages' right-click menu. */
+
+.preview {
+  --lily-start: #2b8a3e;
+}
+
+@media (prefers-color-scheme: dark) {
+  .preview {
+    --lily-start: #51cf66;
+  }
+}
+
+.transport .transport-parts {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.transport .transport-parts::before {
+  content: '›';
+  display: inline-block;
+  width: 8px;
+  font-size: 14px;
+  line-height: 1;
+  transform: rotate(-90deg);
+  transition: transform 0.1s;
+}
+
+.transport .transport-parts[aria-expanded='true']::before {
+  transform: rotate(90deg);
+}
+
+.transport .transport-mark {
+  border-color: var(--lily-start);
+  color: var(--lily-start);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.transport .transport-mark.invalid {
+  border-color: var(--warning);
+  color: var(--warning);
+  text-decoration: line-through;
+}
+
+.playback-setup {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 40%;
+  overflow: auto;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+  color: var(--fg-muted);
+}
+
+.playback-setup[hidden] {
+  display: none;
+}
+
+.playback-setup .part {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 26px;
+}
+
+.playback-setup .part-name {
+  flex: none;
+  min-width: 72px;
+  color: var(--fg);
+}
+
+.playback-setup .part.muted .part-name,
+.playback-setup .part.muted select {
+  opacity: 0.5;
+}
+
+.playback-setup select,
+.playback-setup input,
+.playback-setup button {
+  height: 22px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+}
+
+.playback-setup select {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 260px;
+}
+
+.playback-setup input[type='number'] {
+  width: 64px;
+  padding: 0 4px;
+}
+
+.playback-setup button {
+  padding: 0 8px;
+  cursor: pointer;
+}
+
+.playback-setup button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.playback-setup button:disabled,
+.playback-setup input:disabled,
+.playback-setup select:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.playback-setup .part-mute {
+  flex: none;
+  width: 60px;
+}
+
+.playback-setup .part-mute[aria-pressed='true'] {
+  border-color: var(--warning);
+  color: var(--warning);
+}
+
+.playback-setup .part.start {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.playback-setup .part-hint {
+  margin: 0;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.playback-setup .part-reset {
+  align-self: flex-start;
+  margin-top: 4px;
+}
+
+.start-mark {
+  position: absolute;
+  width: 2px;
+  margin-left: -8px;
+  background: var(--lily-start);
+  pointer-events: none;
+}
+
+.start-mark::before {
+  content: '▶ ' attr(data-bar);
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  padding: 0 4px;
+  border-radius: 3px 3px 3px 0;
+  background: var(--lily-start);
+  color: #ffffff;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+.preview-menu {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 4px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+.preview-menu[hidden] {
+  display: none;
+}
+
+.preview-menu button {
+  padding: 6px 8px;
+  border: none;
+  border-radius: 4px;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.preview-menu button:hover,
+.preview-menu button:focus {
+  background: var(--hover);
+  outline: none;
+}
+
 /* Welcome screen, LilyPond setup and the problem banner (DECISIONS D37). */
 
 button.primary {

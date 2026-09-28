@@ -172,6 +172,15 @@ export interface ChatMessage {
   permission?: Permission
 }
 
+/**
+ * How a score is played (D45), kept by the Rust side per score: `parts` by the
+ * index of their MIDI track, and the bar ▶ starts from.
+ */
+export interface PlaybackSetup {
+  parts?: Record<string, { program?: number; muted?: boolean }>
+  startBar?: number
+}
+
 export type ChatEvent =
   | { kind: 'entry'; chatId: string; entry: ChatEntry }
   | { kind: 'running'; chatId: string; running: boolean }

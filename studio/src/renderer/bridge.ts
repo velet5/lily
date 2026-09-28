@@ -19,6 +19,7 @@ import type {
   OpenChat,
   Opened,
   PdfOutcome,
+  PlaybackSetup,
   SetupLink,
   SourceLocation,
   TemplateId,
@@ -192,6 +193,11 @@ export const studio = {
   /** Stops the agent of `chatId`, and the commands it started. */
   chatStop: (chatId: string): Promise<void> => call('chat_stop', { chatId }),
   chatDelete: (chatId: string): Promise<void> => call('chat_delete', { chatId }),
+  /** The playback setup kept for the score `rootFile` (D45); undefined when there is none. */
+  playbackSetup: (rootFile: string): Promise<PlaybackSetup | undefined> =>
+    call<PlaybackSetup | null>('playback_setup', { rootFile }).then(orUndefined),
+  /** Keeps the playback setup of `rootFile`; an empty one is forgotten. */
+  setPlaybackSetup: (rootFile: string, setup: PlaybackSetup): Promise<void> => call('set_playback_setup', { rootFile, setup }),
   /** Runs `listener` for each entry of a chat and each start and end of a turn. */
   onChatEvent: (listener: Listener<ChatEvent>): (() => void) => subscribe(listeners.chat, listener),
   /** Runs `listener` for each menu command; returns a function that removes it. */

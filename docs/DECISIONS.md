@@ -2058,3 +2058,46 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   compile's MIDI enables ▶ (the sidebar-drag step fails on `main` too).
 - **Not done.** The extension's preview only names the block to add. A
   `\score` in an `\include`d file is not looked for.
+
+## D45 — Lily Studio: parts, mutes and a start bar for playback
+
+**Status:** proposed · **Refines:** D35, D26
+
+- **What.** **Parts** at the right of the transport opens a fold above it.
+  It has one row per part. A part is a MIDI track with notes, which lilypond
+  writes one per staff; the tracks have no names, so the rows say "Part N"
+  and the instrument the score gives them. Each row has **On/Muted** and an
+  instrument: *As written* or a General MIDI program from a short list by
+  family (piano, harpsichord, organ, mallets, strings, guitars, woodwinds,
+  brass, choir, synths). A drum kit keeps its kit and can only be muted.
+  Below the parts is **Start at bar**, and **Play as written** clears
+  everything.
+- **Start bar.** Right-click a bar in the SVG preview to get *Play from bar
+  N*, *Start playback at bar N* and, when a mark is set, *Start from the
+  beginning*. The bar is found from the moment on the system under the
+  pointer that is at or left of it (`momentAt`), and the mark then snaps to
+  that bar's start. A green flag marks it on the pages, and `from bar N ✕` in
+  the transport clears it. ▶ from stopped starts there, so Stop and the end
+  of the music go back to it. A bar that is played twice starts where it is
+  first played. A bar that no longer exists is shown struck through and is
+  ignored.
+- **How it plays.** `mixMidi` (`studio/src/renderer/playbackSetup.ts`, pure)
+  leaves out the muted parts' notes and gives the others the chosen program.
+  The player loads the result, and a change during playback reloads it and
+  seeks back to where it was. `media/midi.js`, which the extension shares, is
+  unchanged.
+- **Kept.** Each score's setup is saved in `playback.json` in the studio's
+  data folder, beside `settings.json`, keyed by the root file's path (only as
+  a key; nothing is read from it). It holds parts by track index and the
+  start bar, and is read when the score's music is next loaded. The Rust side
+  keeps only that shape and the 200 setups changed most recently. Nothing is
+  written next to the score.
+- **Verified.** `studio/test/playbackSetup.test.ts` (with a real compile's
+  MIDI and bar map) and `playback.rs`'s tests. `npm run test:smoke`: the fold
+  lists the part, mutes it and sets a flute. A right-click on the last note
+  offers bar 2, and ▶ then starts at 0:04. The setup is read back from the
+  Rust side, and *Play as written* forgets it.
+- **Not done.** Parts are keyed by track index, so adding or removing a staff
+  above a part moves its setting to another part. Muted parts' notes are
+  still marked on the pages as they pass. There is no solo, per-part volume,
+  or setting a mark by clicking on the PDF.

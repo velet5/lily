@@ -142,12 +142,15 @@ const player = new ScorePlayer({
   body: previewBody,
   onError: status,
   onAddMidi: () => void addMidi(),
+  panel: previewPane.querySelector<HTMLElement>('.playback-setup')!,
+  loadSetup: (rootFile) => studio.playbackSetup(rootFile),
+  saveSetup: (rootFile, setup) => studio.setPlaybackSetup(rootFile, setup),
 })
 // Space plays or pauses when the preview has the focus; a click on the pages gives it.
 previewBody.tabIndex = -1
 previewPane.addEventListener('keydown', (event) => {
   const target = event.target as HTMLElement
-  if (event.key !== ' ' || event.repeat || target.closest('button, input')) return
+  if (event.key !== ' ' || event.repeat || target.closest('button, input, select')) return
   event.preventDefault()
   player.toggle()
 })

@@ -1,8 +1,9 @@
 //! The commands behind src/renderer/bridge.ts (DECISIONS D42), one per call,
 //! as main.ts's IPC handlers were: file access (D29), compiling (D31, D33,
 //! D36, D39), point-and-click (D32), changes on disk (D34), LilyPond's setup
-//! and the sample (D37), and the agents (D40). Every path from the page is
-//! checked against what the user opened; only the window "main" may call.
+//! and the sample (D37), the agents (D40) and each score's playback setup
+//! (D45). Every path from the page is checked against what the user opened;
+//! only the window "main" may call.
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -504,4 +505,21 @@ pub async fn chat_delete(studio: Studios<'_>, chat_id: Value) -> Answer<()> {
     let folder = chat_folder(&studio)?;
     studio.chats.delete(chat_id, &folder).await;
     Ok(())
+}
+
+/// The playback setup kept for `root_file` (D45); null when there is none.
+/// The path is only a key: nothing is read from it.
+#[tauri::command]
+pub async fn playback_setup(studio: Studios<'_>, root_file: String) -> Answer<Option<Value>> {
+    Ok(studio.playback.get(&root_file).await)
+}
+
+/// Keeps the playback setup of `root_file`; null or an empty one forgets it.
+#[tauri::command]
+pub async fn set_playback_setup(
+    studio: Studios<'_>,
+    root_file: String,
+    setup: Value,
+) -> Answer<()> {
+    studio.playback.set(&root_file, &setup).await
 }

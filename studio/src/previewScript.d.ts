@@ -65,15 +65,34 @@ declare module '*/media/preview.js' {
 
 // The parser and player the extension's webviews play with (D24).
 declare module '*/media/midi.js' {
+  export interface Note {
+    time: number
+    duration: number
+    /** The index of its track in `tracks`. */
+    track: number
+    channel: number
+    key: number
+    program: number
+  }
+  export interface Track {
+    name: string
+    channels: number[]
+    programs: number[]
+    notes: number
+  }
   export interface Midi {
     title: string
     duration: number
-    notes: { time: number; duration: number }[]
+    notes: Note[]
+    tracks: Track[]
     division: number
   }
   export type PlayerState = 'stopped' | 'playing' | 'paused'
   export function parseMidi(bytes: Uint8Array): Midi
   export function formatTime(seconds: number): string
+  export function instrumentName(program: number): string
+  /** What a track plays: its programs' names, and `drums`. */
+  export function trackInstruments(track: Track): string
   export function momentTime(midi: Midi, at: number, grace?: number): number
   export class Player {
     constructor(options?: { onChange?: () => void; createContext?: () => BaseAudioContext })

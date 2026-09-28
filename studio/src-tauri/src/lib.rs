@@ -5,6 +5,7 @@
 mod commands;
 mod dialogs;
 mod menu;
+mod playback;
 mod smoke;
 mod state;
 
@@ -108,6 +109,8 @@ pub fn run() {
             commands::chat_send,
             commands::chat_stop,
             commands::chat_delete,
+            commands::playback_setup,
+            commands::set_playback_setup,
             smoke::smoke_folder,
             smoke::smoke_read,
             smoke::smoke_write,

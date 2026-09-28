@@ -80,11 +80,12 @@ async function main(): Promise<void> {
   const smoke = await invoke<SmokeFolder>('smoke_folder')
   const problems: string[] = []
   /** Polls `probe` until it returns something truthy. */
-  const until = async <T>(what: string, probe: () => T | null | undefined | false | '' | 0, ms = 10_000): Promise<T | undefined> => {
+  type Probed<T> = T | null | undefined | false | '' | 0
+  const until = async <T>(what: string, probe: () => Probed<T> | Promise<Probed<T>>, ms = 10_000): Promise<T | undefined> => {
     const started = Date.now()
     while (Date.now() - started < ms) {
       try {
-        const value = probe()
+        const value = await probe()
         if (value) {
           void invoke('smoke_log', { level: 'info', message: `${what}: ${Date.now() - started} ms` })
           return value
@@ -255,6 +256,42 @@ async function main(): Promise<void> {
     })
     click('.transport button[aria-label="Stop"]')
     playback.stopped = await until('the marks to clear on stop', () => !$('.preview-page a.playing, .playhead') && $('.transport')?.dataset.state === 'stopped')
+
+    // The Parts fold (D45): the one part muted and put on a flute; a
+    // right-click on the last note starts playback at its bar, 2, which ▶
+    // then starts from. The setup is kept by the Rust side.
+    click('.transport-parts')
+    playback.parts = await until('the Parts fold with its part', () => {
+      const selects = $$<HTMLSelectElement>('.playback-setup:not([hidden]) .part select')
+      return selects.length === 1 ? selects[0].options[0].textContent : ''
+    })
+    click('.playback-setup .part-mute')
+    const flute = $<HTMLSelectElement>('.playback-setup .part select')!
+    flute.value = '73'
+    flute.dispatchEvent(new Event('change'))
+    const notes = $$<SVGAElement>('.preview-page a.source')
+    const last = notes[notes.length - 1].getBoundingClientRect()
+    notes[notes.length - 1].dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: last.left + last.width / 2, clientY: last.top + last.height / 2, button: 2 }),
+    )
+    playback.menu = await until('the pages\' menu', () => ($('.preview-menu:not([hidden])') ? $$('.preview-menu button').map((b) => b.textContent) : null))
+    $$<HTMLButtonElement>('.preview-menu button')[1].click()
+    playback.mark = await until('the start mark on the pages', () => {
+      const mark = $('.preview-page > .start-mark')
+      return mark && mark.offsetHeight > 0 && !$('.transport-mark')?.hidden ? text('.transport-mark') : ''
+    })
+    click('.transport-play')
+    playback.fromMark = await until('the music to start at bar 2', () => ($('.transport')?.dataset.state === 'playing' && text('.transport-bar') === 'bar 2' ? text('.transport-time') : ''))
+    click('.transport button[aria-label="Stop"]')
+    playback.kept = await until('the setup to be kept', async () => {
+      const setup = await invoke<{ parts?: Record<string, unknown>; startBar?: number } | null>('playback_setup', { rootFile: smoke.score })
+      return setup?.startBar === 2 && JSON.stringify(Object.values(setup.parts ?? {})) === '[{"muted":true,"program":73}]' ? setup : null
+    })
+    click('.playback-setup .part-reset')
+    click('.transport-parts')
+    playback.reset = await until('the setup to be cleared', async () =>
+      $('.playback-setup')?.hidden && (await invoke('playback_setup', { rootFile: smoke.score })) === null && !$('.start-mark') ? 'cleared' : '',
+    )
     external.playback = playback
   }
   // With unsaved edits it asks first; the smoke test's answer keeps them.

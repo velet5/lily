@@ -2,10 +2,13 @@
 // played by media/midi.js's parser, synthesizer and player (D24) behind the
 // transport of media/player.js, and the notes marked as they sound, with a
 // playhead through the system (D26), from media/preview.js's pure half. The
-// main process reads the MIDI and its map together with the pages.
-import { formatTime, momentTime, parseMidi, Player } from '../../../media/midi.js'
+// main process reads the MIDI and its map together with the pages. The Parts
+// fold plays each part on an instrument of its own or mutes it, and ▶ starts
+// from a marked bar (D45).
+import { formatTime, instrumentName, momentTime, parseMidi, Player, type Midi } from '../../../media/midi.js'
 import { barAt, cursorAt, scrollToShow, soundingAt, timelineOf, type Box, type Timeline } from '../../../media/preview.js'
-import type { CompileEvent, CompileOutcome, PlaybackTiming } from '../ipc'
+import type { CompileEvent, CompileOutcome, PlaybackSetup, PlaybackTiming } from '../ipc'
+import { barTime, INSTRUMENT_GROUPS, mixMidi, momentAt, partsOf, withPart, withStartBar } from './playbackSetup'
 
 /** The music the player has: the score, the MIDI bytes and their map. */
 export interface Loaded {
@@ -55,6 +58,11 @@ export interface ScorePlayerOptions {
   onError(message: string): void
   /** Add MIDI (D44): puts a `\midi` block in the score, shown while it has none. */
   onAddMidi(): void
+  /** Where the Parts fold opens, above the transport (D45). */
+  panel: HTMLElement
+  /** The setup kept for a score, and keeping it (D45). */
+  loadSetup(rootFile: string): Promise<PlaybackSetup | undefined>
+  saveSetup(rootFile: string, setup: PlaybackSetup): Promise<void>
 }
 
 export class ScorePlayer {
@@ -65,8 +73,17 @@ export class ScorePlayer {
   private readonly time = document.createElement('span')
   private readonly bar = document.createElement('span')
   private readonly addButton = document.createElement('button')
+  private readonly markChip = document.createElement('button')
+  private readonly partsButton = document.createElement('button')
+  private readonly menu = document.createElement('div')
   private loaded: Loaded | undefined
   private unplayable = ''
+  /** The MIDI as parsed, before the setup mutes or changes its parts. */
+  private parsed: Midi | undefined
+  /** How the loaded score is played (D45); the score's setup arrives after its music. */
+  private setup: PlaybackSetup = {}
+  private setupFor: string | undefined
+  private readonly startMark = document.createElement('div')
   /** While the slider is dragged it shows where the drag is, not where the music is. */
   private seeking = false
 
@@ -103,11 +120,35 @@ export class ScorePlayer {
     this.bar.className = 'transport-bar'
     transport.setAttribute('role', 'toolbar')
     transport.setAttribute('aria-label', 'Playback')
-    transport.replaceChildren(this.playButton, this.stopButton, this.addButton, this.seek, this.bar, this.time)
+    this.markChip.type = this.partsButton.type = 'button'
+    this.markChip.className = 'transport-mark'
+    this.markChip.hidden = true
+    this.partsButton.className = 'transport-parts'
+    this.partsButton.textContent = 'Parts'
+    this.partsButton.title = 'Instruments, mutes and where playback starts'
+    this.partsButton.setAttribute('aria-expanded', 'false')
+    this.partsButton.setAttribute('aria-controls', 'playback-setup')
+    options.panel.id = 'playback-setup'
+    options.panel.hidden = true
+    this.startMark.className = 'start-mark'
+    this.menu.className = 'preview-menu'
+    this.menu.setAttribute('role', 'menu')
+    this.menu.hidden = true
+    document.body.append(this.menu)
+    transport.replaceChildren(this.playButton, this.stopButton, this.addButton, this.seek, this.bar, this.time, this.markChip, this.partsButton)
 
     this.playButton.addEventListener('click', () => this.toggle())
     this.stopButton.addEventListener('click', () => this.player.stop())
     this.addButton.addEventListener('click', () => options.onAddMidi())
+    this.markChip.addEventListener('click', () => this.setStartBar(undefined))
+    this.partsButton.addEventListener('click', () => this.showPanel(options.panel.hidden === true))
+    options.body.addEventListener('contextmenu', (event) => this.openMenu(event))
+    this.menu.addEventListener('focusout', (event) => {
+      if (!this.menu.contains(event.relatedTarget as Node | null)) this.menu.hidden = true
+    })
+    this.menu.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') this.menu.hidden = true
+    })
     this.seek.addEventListener('input', () => {
       this.seeking = true
       this.time.textContent = this.times((Number(this.seek.value) / SEEK_STEPS) * this.player.duration)
@@ -141,7 +182,22 @@ export class ScorePlayer {
     } catch (error) {
       this.unplayable = error instanceof Error ? error.message : String(error)
     }
-    this.player.load(midi)
+    this.parsed = midi
+    if (this.setupFor !== rootFile) {
+      // Another score: its own setup, once the Rust side has it.
+      this.setup = {}
+      this.setupFor = rootFile
+      this.options.loadSetup(rootFile).then(
+        (setup) => {
+          if (this.setupFor !== rootFile || !setup) return
+          this.setup = setup
+          this.remix()
+        },
+        (error: unknown) => console.error('playback setup:', error),
+      )
+    }
+    this.player.load(midi && mixMidi(midi, this.setup))
+    this.fillPanel()
   }
 
   /** Stops the music; the score it belongs to left the preview (D39). */
@@ -160,13 +216,17 @@ export class ScorePlayer {
     this.refresh()
   }
 
-  /** Draws the playhead again after the pages moved or were shown, unless a frame will. */
+  /** Draws the playhead and the start mark again after the pages moved or were shown, unless a frame will. */
   refresh(): void {
     if (this.player.state !== 'playing') this.drawPlayhead()
+    this.drawStartMark()
   }
 
   private async play(): Promise<void> {
     if (!this.player.midi) return
+    // From the start means from the start mark.
+    const start = this.player.state === 'stopped' ? this.startTime() : undefined
+    if (start !== undefined) await this.player.seek(start)
     // Play is a click, which lets the page make sound; this is a device that failed.
     if (!(await this.player.play()) && this.player.suspended) this.options.onError('The sound could not be started.')
   }
@@ -186,6 +246,8 @@ export class ScorePlayer {
     this.time.textContent = ready ? this.times(position) : ''
     if (!this.seeking) this.seek.value = String(duration > 0 ? Math.round((position / duration) * SEEK_STEPS) : 0)
     this.options.transport.dataset.state = ready ? state : 'empty'
+    this.partsButton.disabled = !ready
+    if (!ready && !this.options.panel.hidden) this.showPanel(false)
     // Only once a compile has shown that the score has no MIDI, not before the first.
     this.addButton.hidden = ready || !this.loaded || !!this.unplayable
 
@@ -276,6 +338,212 @@ export class ScorePlayer {
     }
   }
 
+  // ---- the playback setup (D45) ----
+
+  /** Plays the music as the setup now has it, from where it is. */
+  private remix(): void {
+    const { state, position } = this.player
+    this.player.load(this.parsed && mixMidi(this.parsed, this.setup))
+    this.fillPanel()
+    this.drawStartMark()
+    if (state === 'stopped' || !this.player.midi) return
+    void this.player.seek(position).then(() => (state === 'playing' ? this.play() : undefined))
+  }
+
+  private changeSetup(setup: PlaybackSetup): void {
+    this.setup = setup
+    const rootFile = this.setupFor
+    if (rootFile) this.options.saveSetup(rootFile, setup).catch((error: unknown) => this.options.onError(error instanceof Error ? error.message : String(error)))
+  }
+
+  private setStartBar(bar: number | undefined): void {
+    this.changeSetup(withStartBar(this.setup, bar))
+    this.fillPanel()
+    this.drawStartMark()
+  }
+
+  /** The bars of the music with their times; empty without a map. */
+  private bars(): { time: number; number: number }[] {
+    const timing = this.loaded?.timing
+    const midi = this.player.midi
+    if (!timing || !midi) return []
+    return timing.bars.map(({ at, number }) => ({ time: momentTime(midi, at), number })).sort((a, b) => a.time - b.time)
+  }
+
+  /** When the start bar begins; undefined without one, or when the music has no such bar. */
+  private startTime(): number | undefined {
+    const bar = this.setup.startBar
+    return bar === undefined ? undefined : barTime(this.bars(), bar)
+  }
+
+  private showPanel(open: boolean): void {
+    this.options.panel.hidden = !open
+    this.partsButton.setAttribute('aria-expanded', String(open))
+    if (open) this.fillPanel()
+  }
+
+  /** The start mark's chip in the transport, and the fold's rows when it is open. */
+  private fillPanel(): void {
+    const bar = this.setup.startBar
+    const valid = bar !== undefined && this.startTime() !== undefined
+    this.markChip.hidden = bar === undefined || !this.player.midi
+    this.markChip.textContent = `from bar ${bar} ✕`
+    this.markChip.classList.toggle('invalid', !valid)
+    this.markChip.title = valid ? 'Playback starts at this bar. Click to start from the beginning again.' : `The score has no bar ${bar}: playback starts from the beginning. Click to clear.`
+    const { panel } = this.options
+    if (panel.hidden) return
+    const midi = this.parsed
+    if (!midi) {
+      panel.replaceChildren(paragraph('The score has no MIDI to play.'))
+      return
+    }
+    const rows = partsOf(midi).map((part) => {
+      const setting = this.setup.parts?.[part.track] ?? {}
+      const row = document.createElement('div')
+      row.className = 'part'
+      row.classList.toggle('muted', !!setting.muted)
+      const mute = document.createElement('button')
+      mute.type = 'button'
+      mute.className = 'part-mute'
+      mute.textContent = setting.muted ? 'Muted' : 'On'
+      mute.setAttribute('aria-pressed', String(!!setting.muted))
+      mute.title = setting.muted ? `Play part ${part.number} again` : `Mute part ${part.number}`
+      mute.addEventListener('click', () => {
+        this.changeSetup(withPart(this.setup, part.track, { muted: !setting.muted }))
+        this.remix()
+      })
+      const label = document.createElement('span')
+      label.className = 'part-name'
+      label.textContent = `Part ${part.number}`
+      label.title = `Written for ${part.written}`
+      const select = document.createElement('select')
+      select.setAttribute('aria-label', `Instrument of part ${part.number}`)
+      select.append(new Option(part.drums ? 'Drums' : `As written (${part.written})`, ''))
+      for (const group of INSTRUMENT_GROUPS) {
+        const optgroup = document.createElement('optgroup')
+        optgroup.label = group.label
+        for (const instrument of group.instruments) optgroup.append(new Option(instrument.label, String(instrument.program)))
+        select.append(optgroup)
+      }
+      if (setting.program !== undefined && !select.querySelector(`option[value="${setting.program}"]`)) {
+        select.append(new Option(instrumentName(setting.program), String(setting.program)))
+      }
+      select.value = setting.program === undefined ? '' : String(setting.program)
+      // A drum kit has no pitches to play on another instrument.
+      select.disabled = part.drums
+      select.addEventListener('change', () => {
+        this.changeSetup(withPart(this.setup, part.track, { program: select.value === '' ? null : Number(select.value) }))
+        this.remix()
+      })
+      row.append(mute, label, select)
+      return row
+    })
+
+    const start = document.createElement('div')
+    start.className = 'part start'
+    const startLabel = document.createElement('label')
+    startLabel.className = 'part-name'
+    startLabel.textContent = 'Start at bar'
+    const input = document.createElement('input')
+    input.type = 'number'
+    input.min = '1'
+    input.step = '1'
+    input.placeholder = '1'
+    input.value = bar === undefined ? '' : String(bar)
+    input.id = 'playback-start-bar'
+    startLabel.htmlFor = input.id
+    input.addEventListener('change', () => {
+      const value = Math.floor(Number(input.value))
+      this.setStartBar(input.value.trim() !== '' && value > 1 ? value : undefined)
+    })
+    const hasBars = this.bars().length > 0
+    input.disabled = !hasBars
+    const hint = document.createElement('span')
+    hint.className = 'part-hint'
+    hint.textContent = hasBars ? 'or right-click a bar in the SVG preview' : 'the score has no bar map'
+    start.append(startLabel, input, hint)
+
+    const reset = document.createElement('button')
+    reset.type = 'button'
+    reset.className = 'part-reset'
+    reset.textContent = 'Play as written'
+    reset.title = 'Every part on its own instrument, none muted, from the beginning'
+    reset.disabled = Object.keys(this.setup).length === 0
+    reset.addEventListener('click', () => {
+      this.changeSetup({})
+      this.remix()
+    })
+    panel.replaceChildren(...rows, start, reset)
+  }
+
+  /** Right-click on the pages: start playback at the bar under the pointer. */
+  private openMenu(event: MouseEvent): void {
+    const target = event.target instanceof Element ? event.target.closest('.preview-page') : null
+    if (!target || !this.player.midi) return
+    const pages = [...this.options.preview.pageElements]
+    const page = pages.indexOf(target)
+    this.timeline ??= this.buildTimeline()
+    const line = this.timeline
+    if (page < 0 || !line) return
+    const rect = target.getBoundingClientRect()
+    const moment = momentAt(line, page, (event.clientX - rect.left) / rect.width, (event.clientY - rect.top) / rect.height)
+    const bar = moment && barAt(line.bars, moment.time)
+    if (bar === undefined) return
+    event.preventDefault()
+    const item = (label: string, action: () => void) => {
+      const button = document.createElement('button')
+      button.type = 'button'
+      button.setAttribute('role', 'menuitem')
+      button.textContent = label
+      button.addEventListener('click', () => {
+        this.menu.hidden = true
+        action()
+      })
+      return button
+    }
+    const items = [
+      item(`Play from bar ${bar}`, () => {
+        this.setStartBar(bar)
+        const time = this.startTime()
+        if (time !== undefined) void this.player.seek(time).then(() => this.play())
+      }),
+      item(`Start playback at bar ${bar}`, () => this.setStartBar(bar)),
+    ]
+    if (this.setup.startBar !== undefined) items.push(item('Start from the beginning', () => this.setStartBar(undefined)))
+    this.menu.replaceChildren(...items)
+    this.menu.hidden = false
+    const { innerWidth, innerHeight } = window
+    this.menu.style.left = `${Math.min(event.clientX, innerWidth - this.menu.offsetWidth - 4)}px`
+    this.menu.style.top = `${Math.min(event.clientY, innerHeight - this.menu.offsetHeight - 4)}px`
+    items[0].focus()
+  }
+
+  /** A flag on the pages where playback starts; only measured while there is a mark. */
+  private drawStartMark(): void {
+    const time = this.startTime()
+    if (time === undefined || !this.options.preview.pageElements.length) {
+      this.startMark.remove()
+      return
+    }
+    this.timeline ??= this.buildTimeline()
+    const line = this.timeline
+    const cursor = line ? cursorAt(line.moments, time) : undefined
+    const moment = cursor && line!.moments[cursor.index]
+    const system = moment && line!.systems[moment.system]
+    const page = system && (this.options.preview.pageElements[system.page] as HTMLElement | undefined)
+    if (!page || !cursor || !system) {
+      this.startMark.remove()
+      return
+    }
+    if (this.startMark.parentNode !== page) page.append(this.startMark)
+    const { clientWidth, clientHeight } = page
+    this.startMark.dataset.bar = String(this.setup.startBar)
+    this.startMark.title = `Playback starts at bar ${this.setup.startBar}`
+    this.startMark.style.left = `${cursor.x * clientWidth}px`
+    this.startMark.style.top = `${system.top * clientHeight}px`
+    this.startMark.style.height = `${(system.bottom - system.top) * clientHeight}px`
+  }
+
   private showBar(number: number | undefined): void {
     const text = number === undefined ? '' : `bar ${number}`
     if (this.bar.textContent !== text) this.bar.textContent = text
@@ -290,4 +558,11 @@ export class ScorePlayer {
     const dy = scrollToShow(rect.top - view.top + system.top * rect.height, (system.bottom - system.top) * rect.height, body.clientHeight)
     if (dx !== 0 || dy !== 0) body.scrollBy(dx, dy)
   }
+}
+
+function paragraph(text: string): HTMLElement {
+  const p = document.createElement('p')
+  p.className = 'part-hint'
+  p.textContent = text
+  return p
 }
