@@ -32,6 +32,8 @@ interface Midi {
 interface Player {
   state: 'stopped' | 'playing' | 'paused'
   position: number
+  scheduled: number
+  latency: number
   duration: number
   suspended: boolean
   load(midi: Midi | undefined): void
@@ -328,6 +330,48 @@ describe('Player', () => {
       mock.timers.tick(50)
       assert.deepStrictEqual([player.state, player.position], ['stopped', 0])
       assert.deepStrictEqual([...new Set(states)].sort(), ['paused', 'playing', 'stopped'])
+    } finally {
+      mock.timers.reset()
+    }
+  })
+
+  test('shows the position as heard, the output latency behind the audio clock', async () => {
+    mock.timers.enable({ apis: ['setInterval', 'setTimeout'] })
+    try {
+      const { context, starts } = fakeContext('running')
+      // What WebKit reports for AirPods on macOS (D51).
+      Object.assign(context, { outputLatency: 0.16, baseLatency: 0.0025 })
+      const player = new midi.Player({ createContext: () => context })
+      player.load(song())
+      assert.strictEqual(await player.play(), true)
+      assert.deepStrictEqual(starts, [10.06], 'the schedule does not move')
+      const near = (a: number, b: number) => Math.abs(a - b) < 1e-9
+
+      // Beat one is rendered but not heard yet: the position waits at the start.
+      context.currentTime = 10.06 + 0.1
+      assert.ok(near(player.scheduled, 0.1) && player.position === 0)
+      context.currentTime = 10.06 + 1.5
+      mock.timers.tick(50)
+      assert.ok(near(player.latency, 0.1625))
+      assert.ok(near(player.scheduled, 1.5) && near(player.position, 1.3375))
+      assert.deepStrictEqual(starts, [10.06, 11.06], "scheduled on the clock, not on what is heard")
+
+      // A pause goes on from what was rendered, which is heard out after it.
+      player.pause()
+      assert.ok(near(player.position, 1.5))
+      await player.seek(2.9)
+      assert.strictEqual(await player.play(), true)
+      // The clock has passed the end; the last of it has not been heard yet.
+      context.currentTime += 0.06 + 0.25
+      mock.timers.tick(50)
+      assert.ok(player.state === 'playing' && player.scheduled > 3 && near(player.position, 2.9875))
+      context.currentTime += 0.1
+      mock.timers.tick(50)
+      assert.strictEqual(player.state, 'stopped')
+
+      // Where the browser does not say, as in older engines, there is none.
+      Object.assign(context, { outputLatency: undefined, baseLatency: NaN })
+      assert.strictEqual(player.latency, 0)
     } finally {
       mock.timers.reset()
     }

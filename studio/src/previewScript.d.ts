@@ -98,7 +98,11 @@ declare module '*/media/midi.js' {
     constructor(options?: { onChange?: () => void; createContext?: () => BaseAudioContext })
     readonly midi: Midi | undefined
     readonly state: PlayerState
+    /** Where the music is as it is heard: the audio clock less the output latency (D51). */
     readonly position: number
+    /** Where the music is on the audio clock, `latency` ahead of `position`; a pause goes on from here. */
+    readonly scheduled: number
+    readonly latency: number
     readonly duration: number
     readonly suspended: boolean
     load(midi: Midi | undefined): void

@@ -2233,3 +2233,41 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   was denied.
 - **Smoke test.** The stand-in agent says "with an image" only for an
   `--add-dir` of `chat-images`, since every edit turn now has one.
+
+## D51 — Playback position: what is heard, not what is rendered
+
+**Status:** accepted · **Refines:** D24, D26, D35, D45
+
+- **Symptom.** During playback the marked notes and the playhead ran ahead of
+  the sound, by a constant amount that depends on the output device.
+- **Cause [measured].** `Player.position` was the audio clock,
+  `context.currentTime`, which is when a sample is rendered; it is heard
+  `outputLatency + baseLatency` later. In Lily Studio's WKWebView on macOS
+  with AirPods (Bluetooth) as the output, `outputLatency` is 0.160 s and
+  `baseLatency` 0.0027 s, so everything the position drives (marks,
+  playhead, bar, time, slider) was 163 ms early. `getOutputTimestamp()` does
+  not help there: its `contextTime` trails `currentTime` by one render
+  quantum only. The map is not at fault: for scores with `\tempo` changes,
+  a fermata, grace notes (`\acciaccatura`, `\appoggiatura`, `\grace`),
+  tuplets and `\unfoldRepeats` in two staves, every event's `momentTime` was
+  within 0.01 ms of a note-on in the MIDI, so there is no drift with time or
+  tempo.
+- **Decision.** `media/midi.js`'s `Player` has three clocks: `scheduled`, the
+  music on the audio clock, which notes are scheduled against (unchanged);
+  `latency`, `outputLatency + baseLatency`, read every time because the
+  device can change, and 0 where the browser does not report it; and
+  `position`, `scheduled − latency`, held at the start of playback until the
+  first sample is heard and at most the duration. Everything shown uses
+  `position`, so the extension's preview, its `.mid` player and the studio
+  are fixed together. A pause and the studio's remix (D45) go on from
+  `scheduled`: what was rendered up to there is still heard after the stop,
+  so going on from `position` would play the last `latency` twice. Playback
+  stops when the end is heard, not when it is rendered, so the last notes
+  keep their marks.
+- **Rejected.** A user setting for the offset (the browser knows the device's
+  latency and a setting would be wrong after switching to the speakers);
+  `getOutputTimestamp()` (see above).
+- **Verified.** `test/midi/midi.test.ts`: with `outputLatency` 0.16 the
+  schedule is unchanged, the position waits at the start and then trails the
+  clock by the latency, a pause keeps the clock position, playback ends only
+  once the end is heard, and an unreported latency counts as 0.

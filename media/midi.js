@@ -531,10 +531,35 @@
       return this.midi?.duration ?? 0
     }
 
+    /**
+     * Where the music is as it is heard, which is what the time, the slider and
+     * the notes marked on the pages show: the audio clock less the output
+     * latency (DECISIONS D51). Before the first sample arrives it is where
+     * playback began.
+     */
     get position() {
       if (this.state !== 'playing') return this.offset
-      const elapsed = Math.max(this.context.currentTime - this.startedAt, 0)
-      return Math.min(this.offset + elapsed, this.duration)
+      return Math.min(Math.max(this.scheduled - this.latency, this.offset), this.duration)
+    }
+
+    /**
+     * Where the music is on the audio clock, which the notes are scheduled
+     * against: `latency` ahead of what is heard. What was rendered up to here
+     * still sounds after a pause, so a pause goes on from here.
+     */
+    get scheduled() {
+      if (this.state !== 'playing') return this.offset
+      return this.offset + Math.max(this.context.currentTime - this.startedAt, 0)
+    }
+
+    /**
+     * Seconds from a sample leaving the audio graph to its being heard: large
+     * on Bluetooth (0.16 s measured with AirPods on macOS), 0 where the browser
+     * does not say. Read every time, as the output device may change.
+     */
+    get latency() {
+      const latency = (this.context?.outputLatency ?? 0) + (this.context?.baseLatency ?? 0)
+      return Number.isFinite(latency) && latency > 0 ? latency : 0
     }
 
     /** Whether the last play() was refused: no sound before a click, says the browser. */
@@ -588,7 +613,7 @@
 
     pause() {
       if (this.state !== 'playing') return
-      this.offset = this.position
+      this.offset = Math.min(this.scheduled, this.duration)
       this.halt()
       this.state = 'paused'
       this.onChange()
@@ -628,12 +653,13 @@
 
     tick() {
       const { notes } = this.midi
-      const position = this.position
-      if (position >= this.duration) {
+      const scheduled = this.scheduled
+      // Not before the end is heard, or the last notes would lose their marks.
+      if (scheduled - this.latency >= this.duration) {
         this.stop()
         return
       }
-      const horizon = position + LOOKAHEAD
+      const horizon = scheduled + LOOKAHEAD
       while (this.next < notes.length && notes[this.next].time < horizon) {
         const note = notes[this.next++]
         this.synth.play(note, this.startedAt + note.time - this.offset)

@@ -342,7 +342,8 @@ export class ScorePlayer {
 
   /** Plays the music as the setup now has it, from where it is. */
   private remix(): void {
-    const { state, position } = this.player
+    // From what the audio clock reached: what was rendered before still sounds.
+    const { state, scheduled: position } = this.player
     this.player.load(this.parsed && mixMidi(this.parsed, this.setup))
     this.fillPanel()
     this.drawStartMark()
