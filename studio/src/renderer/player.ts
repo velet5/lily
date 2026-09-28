@@ -42,7 +42,7 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
   return a.length === b.length && a.every((byte, i) => byte === b[i])
 }
 
-const NO_MIDI = 'Add a \\midi { } block to the \\score to hear it'
+const NO_MIDI = 'The score has no MIDI: press Add MIDI to hear it'
 const SEEK_STEPS = 1000
 
 export interface ScorePlayerOptions {
@@ -53,6 +53,8 @@ export interface ScorePlayerOptions {
   /** The preview's scrolling body, scrolled to the system being played. */
   body: HTMLElement
   onError(message: string): void
+  /** Add MIDI (D44): puts a `\midi` block in the score, shown while it has none. */
+  onAddMidi(): void
 }
 
 export class ScorePlayer {
@@ -62,6 +64,7 @@ export class ScorePlayer {
   private readonly seek = document.createElement('input')
   private readonly time = document.createElement('span')
   private readonly bar = document.createElement('span')
+  private readonly addButton = document.createElement('button')
   private loaded: Loaded | undefined
   private unplayable = ''
   /** While the slider is dragged it shows where the drag is, not where the music is. */
@@ -82,7 +85,11 @@ export class ScorePlayer {
   constructor(private readonly options: ScorePlayerOptions) {
     const { transport } = options
     this.playhead.className = 'playhead'
-    this.playButton.type = this.stopButton.type = 'button'
+    this.playButton.type = this.stopButton.type = this.addButton.type = 'button'
+    this.addButton.className = 'transport-add'
+    this.addButton.textContent = 'Add MIDI'
+    this.addButton.title = 'Add a \\midi { } block to the score, so it can be played'
+    this.addButton.hidden = true
     this.playButton.className = 'transport-play'
     this.stopButton.textContent = '■︎'
     this.stopButton.title = 'Stop'
@@ -96,10 +103,11 @@ export class ScorePlayer {
     this.bar.className = 'transport-bar'
     transport.setAttribute('role', 'toolbar')
     transport.setAttribute('aria-label', 'Playback')
-    transport.replaceChildren(this.playButton, this.stopButton, this.seek, this.bar, this.time)
+    transport.replaceChildren(this.playButton, this.stopButton, this.addButton, this.seek, this.bar, this.time)
 
     this.playButton.addEventListener('click', () => this.toggle())
     this.stopButton.addEventListener('click', () => this.player.stop())
+    this.addButton.addEventListener('click', () => options.onAddMidi())
     this.seek.addEventListener('input', () => {
       this.seeking = true
       this.time.textContent = this.times((Number(this.seek.value) / SEEK_STEPS) * this.player.duration)
@@ -178,6 +186,8 @@ export class ScorePlayer {
     this.time.textContent = ready ? this.times(position) : ''
     if (!this.seeking) this.seek.value = String(duration > 0 ? Math.round((position / duration) * SEEK_STEPS) : 0)
     this.options.transport.dataset.state = ready ? state : 'empty'
+    // Only once a compile has shown that the score has no MIDI, not before the first.
+    this.addButton.hidden = ready || !this.loaded || !!this.unplayable
 
     // The playhead follows the audio clock frame by frame while playing.
     if (playing) {

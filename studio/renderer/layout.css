@@ -576,6 +576,14 @@ button:focus-visible,
   color: var(--lily-playing);
 }
 
+/* Add MIDI (D44): the one live control while the score has no \midi. */
+.transport .transport-add {
+  padding: 0 8px;
+  border-color: var(--accent);
+  color: var(--accent);
+  white-space: nowrap;
+}
+
 .transport input[type='range'] {
   flex: 1 1 80px;
   min-width: 40px;

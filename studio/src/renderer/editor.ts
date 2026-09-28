@@ -201,6 +201,33 @@ export class ScoreEditor {
     this.options.onChange()
   }
 
+  /** The text of `file` as the editor has it, saved or not; undefined when it is not open. */
+  textOf(file: string): string | undefined {
+    return this.documents.get(file)?.model.getValue()
+  }
+
+  /**
+   * Applies `edits` (offsets into the text as it is now) to `file` as one
+   * undoable step, and puts the cursor at `reveal`, an offset into the text after them.
+   */
+  applyEdits(file: string, edits: { offset: number; length: number; text: string }[], reveal: number): void {
+    const doc = this.documents.get(file)
+    if (!doc) return
+    const { model } = doc
+    const operations = edits.map((edit) => {
+      const start = model.getPositionAt(edit.offset)
+      const end = model.getPositionAt(edit.offset + edit.length)
+      return { range: new monaco.Range(start.lineNumber, start.column, end.lineNumber, end.column), text: edit.text }
+    })
+    model.pushStackElement()
+    model.pushEditOperations([], operations, () => null)
+    model.pushStackElement()
+    if (this.current !== file) return
+    const position = model.getPositionAt(reveal)
+    this.editor.setPosition(position)
+    this.editor.revealPositionInCenterIfOutsideViewport(position)
+  }
+
   /** Writes `file` (the one shown by default). Rejects when the write fails. */
   async save(file = this.current): Promise<void> {
     const doc = file && this.documents.get(file)

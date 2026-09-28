@@ -2020,3 +2020,41 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   `npm run test:smoke`: every agent step passes with the menus in place (the
   sidebar-drag step fails on `main` too). Not covered: the real agents in
   each mode.
+
+---
+
+## D44 — Lily Studio: Add MIDI
+
+**Status:** proposed · **Refines:** D35
+
+- **What.** While the score shown has no MIDI, the transport under the preview
+  shows **Add MIDI** beside its disabled ▶. It appears only after a compile of
+  that score came back without MIDI, never before the first, and not when the
+  MIDI could not be read. ▶'s tooltip points to it.
+- **Where the block goes** (`addMidiBlock` in `studio/src/renderer/midiBlock.ts`,
+  pure, found without compiling). Every `\score` without a `\midi` of its own
+  (at the score's top level, not inside its music or in a `\markup \score`)
+  gets `\midi { }`: on its own line after the score's last `\layout { … }`,
+  indented as that line is; before the closing `}`, together with
+  `\layout { }`, when there is no `\layout`, because a score with only `\midi`
+  is no longer engraved; on the same line when the score is on one line.
+  Music outside any `\score` is engraved but not played, and **[verified]** a
+  top-level `\midi { }` does not change that on 2.26, so each top-level music
+  expression is wrapped in `\score { … \layout { } \midi { } }`, indented two
+  spaces. A tokenizer that knows comments, strings, Scheme and `#{ #}` finds
+  the blocks; it does not parse music. Top-level assignments, `\version`,
+  `\header`, `\paper`, `\markup` and the like are not music. A file with
+  neither `\score` nor music (its score is in an `\include`) is told where the
+  block goes instead; a score that has `\midi` already is told so.
+- **How.** The root file is opened in the editor and changed there as one
+  undoable edit, with the cursor on the new `\midi`. With live preview on, the
+  live compile picks it up; off, the file is saved, which compiles it. The
+  music does not start by itself: the click that added the block is spent
+  before the compile ends, and ▶ is next to it.
+- **Verified.** `studio/test/midiBlock.test.ts`: the placements, comments and
+  strings, several scores, top-level music and assignments, CRLF, and two
+  results compiled by lilypond with MIDI and pages. `npm run test:smoke`: Add
+  MIDI shows for the unsaved `{ c4 … }`, a click wraps it, and the live
+  compile's MIDI enables ▶ (the sidebar-drag step fails on `main` too).
+- **Not done.** The extension's preview only names the block to add. A
+  `\score` in an `\include`d file is not looked for.

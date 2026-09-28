@@ -283,6 +283,19 @@ async function main(): Promise<void> {
     // Back on, as the switch is remembered.
     click('.status-live')
     live.on = await until('the unsaved notes after switching it on again', () => (notes() === 8 ? 8 : 0), 30_000)
+    // Add MIDI (D44): the score has none, so the transport offers it; a
+    // click wraps the music in a \score with \midi, and the live compile
+    // gives the player something to play.
+    live.addMidi = await until('Add MIDI in the transport', () => {
+      const add = $<HTMLButtonElement>('.transport-add')
+      return add && !add.hidden && $<HTMLButtonElement>('.transport-play')?.disabled ? add.textContent : ''
+    })
+    click('.transport-add')
+    live.midiAdded = await until('the MIDI of the added \\midi block', () => {
+      const play = $<HTMLButtonElement>('.transport-play')
+      const added = editorLines().includes('\\midi { }') && $('.transport-add')?.hidden
+      return added && play && !play.disabled && linksTo(/smoke\.ly:3:/) === 8 ? text('.transport-time') : ''
+    }, 30_000)
     compile.live = live
   }
 

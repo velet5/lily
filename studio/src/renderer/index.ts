@@ -8,6 +8,7 @@ import { studio, type StudioApi } from './bridge'
 import { compileStatus, DiagnosticStore, problemSummary } from './diagnostics'
 import { ScoreEditor } from './editor'
 import { button, FileList } from './files'
+import { addMidiBlock } from './midiBlock'
 import { PdfView } from './pdfView'
 import { ScorePlayer } from './player'
 import { ScorePreview } from './preview'
@@ -140,6 +141,7 @@ const player = new ScorePlayer({
   preview,
   body: previewBody,
   onError: status,
+  onAddMidi: () => void addMidi(),
 })
 // Space plays or pauses when the preview has the focus; a click on the pages gives it.
 previewBody.tabIndex = -1
@@ -336,6 +338,28 @@ async function previewFor(file: string): Promise<void> {
   banner.hidden = true
   preview.showScore(rootFile)
   pdfView.showScore(rootFile)
+}
+
+/**
+ * Add MIDI (D44): the score shown gets its `\midi { }`, in the editor as one
+ * undoable edit. Live preview compiles it from there; without it, it is saved,
+ * which compiles it.
+ */
+async function addMidi(): Promise<void> {
+  const rootFile = previewRoot
+  if (!rootFile) return
+  await open(rootFile)
+  const text = editor.textOf(rootFile)
+  if (text === undefined) return
+  const name = displayName(rootFile)
+  const insertion = addMidiBlock(text)
+  if (insertion.kind === 'has-midi') return status(`${name} has its \\midi block already`)
+  if (insertion.kind === 'no-score') {
+    return status(`No \\score in ${name} to add MIDI to. Put \\midi { } inside the \\score, next to \\layout { }.`)
+  }
+  editor.applyEdits(rootFile, insertion.edits, insertion.reveal)
+  if (liveButton.getAttribute('aria-pressed') !== 'true') await save(false)
+  status(`Added \\midi { } to ${name}. Press ▶ once it is engraved.`)
 }
 
 async function open(file: string): Promise<void> {
