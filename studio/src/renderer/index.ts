@@ -98,6 +98,7 @@ const welcome = new Welcome({
   onNewScore: () => showTemplates(),
   onOpenFile: () => void run(studio.openFile()),
   onOpenFolder: () => void run(studio.openFolder()),
+  onOpenRecent: (path) => openRecent(path),
   onBack: () => showEditor(),
 })
 
@@ -392,6 +393,12 @@ async function run(opening: Promise<Opened | undefined>): Promise<void> {
   }
 }
 
+/** Opens an entry of the recent list (D49); rejects when it is gone, saying where it was. */
+async function openRecent(path: string): Promise<void> {
+  const opened = await studio.openRecent(path)
+  await run(Promise.resolve(opened))
+}
+
 async function save(all: boolean): Promise<void> {
   if (!editor.file) return
   try {
@@ -496,6 +503,9 @@ studio.onCommand((command) => {
       return welcome.openSetup()
   }
 })
+
+// File › Open Recent; a gone entry says so in the status line.
+studio.onOpenRecent((path) => void openRecent(path).catch(report))
 
 welcome.show(false)
 // First run, and every run after it: when LilyPond cannot be found, the setup opens.

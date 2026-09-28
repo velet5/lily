@@ -18,7 +18,11 @@ case " $* " in *" --version "*) echo "9.9.9 (Claude Code)"; exit 0;; esac
 resumed=no
 for arg in "$@"; do [ "$arg" = "--resume" ] && resumed=yes; done
 case "$*" in *"The user has selected"*) resumed="$resumed, with a selection";; esac
-case "$*" in *"--add-dir"*) resumed="$resumed, with an image";; esac
+previous=
+for arg in "$@"; do
+  case "$previous:$arg" in --add-dir:*chat-images*) resumed="$resumed, with an image";; esac
+  previous=$arg
+done
 echo '{"type":"system","subtype":"init","session_id":"smoke-session"}'
 printf '%s\n' '\version "2.24.0"' '{ a4 b c d }' > agent.ly
 echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"file_path":"'"$PWD"'/agent.ly"}}]}}'

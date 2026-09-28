@@ -45,6 +45,10 @@ pub enum CompileState {
 pub struct PlaybackTiming {
     pub events: Vec<serde_json::Value>,
     pub bars: Vec<serde_json::Value>,
+    /// What each staff says about its MIDI track (D48); empty from a map
+    /// written before staves were recorded.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub staves: Vec<serde_json::Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -567,7 +571,16 @@ pub async fn read_timing(file: &Path, index: usize) -> Option<PlaybackTiming> {
     let entry = parsed.as_array()?.get(index)?;
     let events = entry.get("events")?.as_array()?.clone();
     let bars = entry.get("bars")?.as_array()?.clone();
-    Some(PlaybackTiming { events, bars })
+    let staves = entry
+        .get("staves")
+        .and_then(serde_json::Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    Some(PlaybackTiming {
+        events,
+        bars,
+        staves,
+    })
 }
 
 fn empty(state: CompileState, root_file: PathBuf) -> CompileOutcome {

@@ -20,6 +20,7 @@ import type {
   Opened,
   PdfOutcome,
   PlaybackSetup,
+  RecentList,
   SetupLink,
   SourceLocation,
   TemplateId,
@@ -36,6 +37,8 @@ type StudioEvent =
   | { type: 'compile'; event: WireCompileEvent }
   | { type: 'filesChanged'; changes: FileChange[] }
   | { type: 'chat'; event: ChatEvent }
+  | { type: 'recentChanged' }
+  | { type: 'openRecent'; path: string }
 
 function bytes(base64: string): Uint8Array {
   const binary = atob(base64)
@@ -76,6 +79,8 @@ const listeners = {
   compile: new Set<Listener<CompileEvent>>(),
   filesChanged: new Set<Listener<FileChange[]>>(),
   chat: new Set<Listener<ChatEvent>>(),
+  recentChanged: new Set<Listener<void>>(),
+  openRecent: new Set<Listener<string>>(),
 }
 
 function dispatch(event: StudioEvent): void {
@@ -90,6 +95,10 @@ function dispatch(event: StudioEvent): void {
       return listeners.filesChanged.forEach((listener) => listener(event.changes))
     case 'chat':
       return listeners.chat.forEach((listener) => listener(event.event))
+    case 'recentChanged':
+      return listeners.recentChanged.forEach((listener) => listener())
+    case 'openRecent':
+      return listeners.openRecent.forEach((listener) => listener(event.path))
   }
 }
 
@@ -205,6 +214,17 @@ export const studio = {
     call<PlaybackSetup | null>('playback_setup', { rootFile }).then(orUndefined),
   /** Keeps the playback setup of `rootFile`; an empty one is forgotten. */
   setPlaybackSetup: (rootFile: string, setup: PlaybackSetup): Promise<void> => call('set_playback_setup', { rootFile, setup }),
+  /** The folders and scores opened last, newest first (D49). */
+  recentList: (): Promise<RecentList> => call('recent_list'),
+  /** Opens an entry of the recent list; rejects, saying where it was, when it is gone. */
+  openRecent: (path: string): Promise<Opened> => call('open_recent', { path }),
+  /** Takes one entry off the recent list. */
+  forgetRecent: (path: string): Promise<void> => call('forget_recent', { path }),
+  clearRecent: (): Promise<void> => call('clear_recent'),
+  /** Runs `listener` whenever the recent list changes, from an open, the list or the menu. */
+  onRecentChanged: (listener: Listener<void>): (() => void) => subscribe(listeners.recentChanged, listener),
+  /** Runs `listener` with the path of an entry chosen in File › Open Recent. */
+  onOpenRecent: (listener: Listener<string>): (() => void) => subscribe(listeners.openRecent, listener),
   /** Runs `listener` for each entry of a chat and each start and end of a turn. */
   onChatEvent: (listener: Listener<ChatEvent>): (() => void) => subscribe(listeners.chat, listener),
   /** Runs `listener` for each menu command; returns a function that removes it. */

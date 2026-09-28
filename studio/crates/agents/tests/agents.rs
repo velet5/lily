@@ -10,9 +10,9 @@ use std::time::Duration;
 
 use lily_agents::agents::{
     AgentEvent, AgentId, AgentState, AgentStatus, ChatEntry, DetectAgentOptions, Permission,
-    PromptContext, Role, RunOptions, Selection, TurnOptions, agent_args, agent_env, agent_path,
-    detect_agent, parse_claude_line, parse_codex_line, relative_to, run_agent, turn_prompt,
-    unwrap_shell,
+    PromptContext, Role, RunOptions, Selection, TurnOptions, agent_args, agent_env, agent_out_dir,
+    agent_path, detect_agent, instructions, parse_claude_line, parse_codex_line, relative_to,
+    run_agent, turn_prompt, unwrap_shell,
 };
 use lily_agents::{
     AgentChats, AgentChatsOptions, ChatEvent, ChatMessage, ChatStore, PastedImage, chat_images_dir,
@@ -230,20 +230,51 @@ fn pasted_images_are_attached_to_codex_and_readable_by_claude() {
             "What is this?",
         ])
     );
-    let claude = agent_args(AgentId::Claude, &turn);
-    let add = claude
-        .iter()
-        .position(|arg| arg == "--add-dir")
-        .expect("--add-dir");
-    assert_eq!(claude[add + 1], "/data/chat-images/c");
-    assert_eq!(claude.iter().filter(|arg| *arg == "--add-dir").count(), 1);
+    let out_dir = agent_out_dir().to_string_lossy().into_owned();
+    assert_eq!(
+        added_dirs(&agent_args(AgentId::Claude, &turn)),
+        vec![out_dir.clone(), "/data/chat-images/c".to_owned()]
+    );
     // Without images, nothing changes.
     let plain = TurnOptions {
         images: Vec::new(),
         ..turn
     };
     assert!(!agent_args(AgentId::Codex, &plain).contains(&"--".to_owned()));
-    assert!(!agent_args(AgentId::Claude, &plain).contains(&"--add-dir".to_owned()));
+    assert_eq!(
+        added_dirs(&agent_args(AgentId::Claude, &plain)),
+        vec![out_dir]
+    );
+}
+
+fn added_dirs(args: &[String]) -> Vec<String> {
+    args.windows(2)
+        .filter(|pair| pair[0] == "--add-dir")
+        .map(|pair| pair[1].clone())
+        .collect()
+}
+
+#[test]
+fn claude_edit_may_make_the_check_directory_and_nothing_else() {
+    let out_dir = agent_out_dir().to_string_lossy().into_owned();
+    let edit = agent_args(AgentId::Claude, &TurnOptions::default());
+    assert!(edit.contains(&format!("Bash(mkdir -p {out_dir}:*)")));
+    assert_eq!(added_dirs(&edit), vec![out_dir.clone()]);
+    assert!(
+        !edit
+            .iter()
+            .any(|arg| arg == "Bash(mkdir:*)" || arg == "Bash(cd:*)")
+    );
+    let read = agent_args(
+        AgentId::Claude,
+        &TurnOptions {
+            permission: Permission::Read,
+            ..Default::default()
+        },
+    );
+    assert!(added_dirs(&read).is_empty());
+    assert!(!read.iter().any(|arg| arg.starts_with("Bash(")));
+    assert!(instructions(None).contains(&format!("{out_dir} exists already")));
 }
 
 #[test]

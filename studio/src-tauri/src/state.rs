@@ -22,6 +22,7 @@ use serde::Serialize;
 use tauri::ipc::Channel;
 
 use crate::playback::PlaybackSetups;
+use crate::recent::RecentList;
 use crate::smoke::SmokeFolder;
 
 /// What the page hears without asking, as src/renderer/bridge.ts reads it.
@@ -36,6 +37,10 @@ pub enum StudioEvent {
     FilesChanged { changes: Vec<FileChange> },
     /// A chat got an entry, or its agent started or stopped (D40).
     Chat { event: ChatEvent },
+    /// The recent list changed (D49); the welcome screen lists it again.
+    RecentChanged,
+    /// File › Open Recent was chosen (D49); the page opens `path` as the welcome screen would.
+    OpenRecent { path: String },
 }
 
 /// The last finished outcomes kept, so switching back to a score shows it at once (D39).
@@ -47,6 +52,8 @@ pub struct Studio {
     pub settings_file: PathBuf,
     /// Each score's instruments, mutes and start bar (D45).
     pub playback: PlaybackSetups,
+    /// The folders and scores opened last (D49).
+    pub recent: RecentList,
     /// Where the sample goes: Documents › Lily Studio (D37).
     pub documents: PathBuf,
     /// The PATH every lilypond and agent runs with; never the process's own.
@@ -76,7 +83,7 @@ pub fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 pub struct Paths {
-    /// Where settings.json, chats.json and playback.json are kept.
+    /// Where settings.json, chats.json, playback.json and recent.json are kept.
     pub data: PathBuf,
     pub documents: PathBuf,
     /// runtime/ from the extension, bundled as a resource.
@@ -91,6 +98,7 @@ impl Studio {
         let settings_file = paths.data.join("settings.json");
         let mut settings = setup::read_settings(&settings_file).await;
         let playback = PlaybackSetups::load(paths.data.join("playback.json")).await;
+        let recent = RecentList::load(paths.data.join("recent.json")).await;
         if let Some(smoke) = &smoke {
             // A stand-in for Claude Code that answers and edits without a network (D40).
             let claude = AgentSettings {
@@ -230,6 +238,7 @@ impl Studio {
             settings: Mutex::new(settings),
             settings_file,
             playback,
+            recent,
             documents: paths.documents,
             search_path,
             compiler,

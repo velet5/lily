@@ -6,6 +6,7 @@ mod commands;
 mod dialogs;
 mod menu;
 mod playback;
+mod recent;
 mod smoke;
 mod state;
 
@@ -66,6 +67,27 @@ pub fn run() {
             let studio = tauri::async_runtime::block_on(Studio::new(paths, smoke.clone()));
             app.manage(studio.clone());
             app.set_menu(menu::build(&handle)?)?;
+            // File › Open Recent and the welcome screen follow the recent list (D49).
+            let entries = tauri::async_runtime::block_on(studio.recent.entries());
+            menu::fill_recent(&handle, &entries)?;
+            studio.recent.on_change({
+                let handle = handle.clone();
+                move |entries| {
+                    let entries = entries.to_vec();
+                    let app = handle.clone();
+                    let filled = handle.run_on_main_thread(move || {
+                        if let Err(error) = menu::fill_recent(&app, &entries) {
+                            eprintln!("Open Recent: {error}");
+                        }
+                    });
+                    if let Err(error) = filled {
+                        eprintln!("Open Recent: {error}");
+                    }
+                    handle
+                        .state::<Arc<Studio>>()
+                        .send(StudioEvent::RecentChanged);
+                }
+            });
             app.on_menu_event(move |app, event| menu_clicked(app, event.id().as_ref()));
             create_window(&handle, studio.smoke.is_some())?;
             if studio.smoke.is_some() {
@@ -112,6 +134,10 @@ pub fn run() {
             commands::chat_delete,
             commands::playback_setup,
             commands::set_playback_setup,
+            commands::recent_list,
+            commands::open_recent,
+            commands::forget_recent,
+            commands::clear_recent,
             smoke::smoke_folder,
             smoke::smoke_read,
             smoke::smoke_write,
@@ -235,6 +261,17 @@ fn menu_clicked(app: &AppHandle, id: &str) {
     if menu::COMMANDS.contains(&id) {
         app.state::<Arc<Studio>>().send(StudioEvent::Command {
             command: id.to_string(),
+        });
+    } else if let Some(path) = id.strip_prefix(menu::RECENT_PREFIX) {
+        app.state::<Arc<Studio>>().send(StudioEvent::OpenRecent {
+            path: path.to_string(),
+        });
+    } else if id == menu::RECENT_CLEAR {
+        let studio = app.state::<Arc<Studio>>().inner().clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(error) = studio.recent.clear().await {
+                eprintln!("{error}");
+            }
         });
     } else if id == menu::LEARN
         && let Some(url) = lily_engrave::setup::setup_link("learn")

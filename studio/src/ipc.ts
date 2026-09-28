@@ -189,6 +189,22 @@ export interface PlaybackSetup {
   startBar?: number
 }
 
+/** An entry of the recent list (D49): a folder or a score opened lately. */
+export interface RecentEntry {
+  path: string
+  kind: 'folder' | 'file'
+  /** When it was last opened, in milliseconds since 1970. */
+  opened: number
+  /** False when nothing of its kind is at `path` now. */
+  exists: boolean
+}
+
+/** The recent list, newest first, and the home directory the welcome screen shortens to `~`. */
+export interface RecentList {
+  home?: string
+  entries: RecentEntry[]
+}
+
 export type ChatEvent =
   | { kind: 'entry'; chatId: string; entry: ChatEntry }
   | { kind: 'running'; chatId: string; running: boolean }

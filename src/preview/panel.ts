@@ -87,6 +87,8 @@ export interface PreviewPlayback {
 export interface PlaybackTiming {
   events: TimedEvent[]
   bars: TimedBar[]
+  /** What each staff says about its MIDI track, in track order after the first (D48). */
+  staves?: TimedStaff[]
 }
 
 export interface TimedEvent {
@@ -101,6 +103,22 @@ export interface TimedEvent {
 export interface TimedBar {
   at: number
   number: number
+}
+
+export interface TimedStaff {
+  /** `\new Staff = "id"`; empty when it has none. */
+  id: string
+  /** `instrumentName` and `shortInstrumentName` as plain text, at its first note. */
+  name: string
+  shortName: string
+  /** The context it is in, such as `PianoStaff` or `ChoirStaff`, and which one of the score's groups; `''` and -1 at the top. */
+  group: string
+  groupIndex: number
+  /** The clef glyph at its first note, such as `clefs.F`; `''` when it plays nothing. */
+  clef: string
+  clefTransposition: number
+  /** The ids of the voices that played notes in it, `''` for one without. */
+  voices: string[]
 }
 
 /** Where the editor's cursor is, in the editor's own terms. */

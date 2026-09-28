@@ -473,7 +473,8 @@ fn non_empty(value: &Option<String>) -> Option<&str> {
 ///
 /// `Edit`, as D40 has it. Claude Code: `--permission-mode acceptEdits` accepts
 /// edits inside the folder; the allowed tools add LilyPond and nothing else
-/// that runs commands. Codex: its `workspace-write` sandbox lets commands write
+/// that runs commands, but `mkdir -p` of the check directory
+/// (`agent_out_dir`), which is also a directory of the turn (`--add-dir`). Codex: its `workspace-write` sandbox lets commands write
 /// only in the folder and the temp directory, without network.
 /// `Read`: Claude Code is allowed only the tools that read; Codex runs in its
 /// `read-only` sandbox. `Full`: Claude Code bypasses its permissions, Codex
@@ -524,6 +525,12 @@ pub fn agent_args(id: AgentId, turn: &TurnOptions) -> Vec<String> {
                     if let Some(lilypond) = non_empty(&turn.lilypond) {
                         push(&[&format!("Bash({lilypond}:*)")]);
                     }
+                    // Agents like to make sure of the check directory first
+                    // (`cd … || mkdir -p …`); it may be theirs to touch.
+                    let out_dir = agent_out_dir();
+                    let out_dir = out_dir.to_string_lossy();
+                    push(&[&format!("Bash(mkdir -p {out_dir}:*)")]);
+                    push(&["--add-dir", &out_dir]);
                 }
                 Permission::Full => push(&["--permission-mode", "bypassPermissions"]),
             }
@@ -617,6 +624,9 @@ pub fn instructions(lilypond: Option<&str>) -> String {
         "Edit the .ly and .ily files of this folder directly. Lily Studio reloads a changed file in its editor and engraves the score again by itself.",
         &format!(
             "After an edit, check that the score still compiles: `{lilypond} -dbackend=svg -o {out_dir}/check <score.ly>`, run on the score that has \\score or \\book, even when you edited a file it \\includes."
+        ),
+        &format!(
+            "{out_dir} exists already. Run that command on its own, as it is: without cd, mkdir, &&, ||, pipes or redirections, which Lily Studio does not allow."
         ),
         "Never write output files next to the sources. If lilypond reports errors, fix the first one and compile again.",
         "A `warning: bar check failed` means the bar before that | has the wrong length: recount it, do not remove the bar check. Keep each file's \\version line.",

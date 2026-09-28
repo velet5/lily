@@ -2133,3 +2133,103 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   answer "Red".
 - **Not done.** Images are not scaled down before they are sent. A file
   dropped from the Finder that is not an image is ignored without a word.
+
+## D47 — Lily Studio: text size of the agent chats
+
+**Status:** proposed · **Refines:** D40
+
+- **What.** A− and A+ at the right end of the chat toolbar, in the list and in
+  an open chat, set the chat's text size: 11, 12, 13, 14, 15, 16, 18, 20 or
+  22 px, each button greyed out at its end. ⌘+ (or ⌘=), ⌘− and ⌘0 do the same
+  while the focus is in the chats fold; ⌘0 goes back to the default. The app
+  menu has no accelerator on these keys, and the webview's own zoom keys are
+  off. The default went from 12 to 13 px, the size of the rest of the window.
+- **Kept.** In the window's `localStorage` (`lily-studio.chatFontSize`), like
+  `lily-studio.permission`. A missing value or one that is not a number gives
+  the default; one out of range is brought within the steps. The renderer sets
+  `--chat-font-size` on the fold's body: messages, notes, the list and the
+  message box use it, and the secondary text (tool lines, "is working", the
+  context line, the menus under the box, Send) 1 px less. The toolbar stays at
+  12 px so the buttons do not move under the pointer.
+- **Verified.** `test/agents.test.ts`: `stepChatFont` and `chatFontSize`.
+- **Not done.** No reset button; ⌘0 is the reset. Not checked by hand in the
+  running app.
+
+## D48 — Lily Studio: parts named after their staves
+
+**Status:** proposed · **Refines:** D45, D26
+
+- **What.** The Parts fold names each part instead of "Part N": "S.A",
+  "Tenor", "Piano · G clef", "Piano · F clef", "Violin one", "Flute". The
+  tooltip still says "Part N, written for …".
+- **Where from.** A MIDI track says little: lilypond names it
+  `<staff id>:<first voice id>` and nothing more. `runtime/timing.ly` now also
+  has a performer in each MIDI `Staff` and `Voice` and writes `staves` into the
+  playback map: per staff its id, `instrumentName` and `shortInstrumentName`
+  as plain text (at its first note), the group it is in (`PianoStaff`,
+  `ChoirStaff`, … and which one), its clef at its first note and the ids of
+  the voices that played. **[verified]** on 2.26: the tracks after the first
+  follow the staves in the order lilypond makes them, whenever each starts to
+  sound, and a staff with only rests still has a track; `\clef` is set in the
+  MIDI Staff, whose own `instrumentName` default is "bright acoustic", which
+  is taken for none. The map is used only when it has one staff per track.
+- **Naming** (`partNames` in `studio/src/renderer/playbackSetup.ts`, pure), in
+  order: the instrument name the score gives; the choir voices its voices, or
+  else the staff, are named after (`sopranos`, `altoTwo`, `T`), abbreviated
+  and joined by a dot when several; in a PianoStaff or GrandStaff, the
+  instrument and the clef; an id of the staff or of its only voice that is
+  more than a number or `up`/`down`/`rh`…; in a ChoirStaff, a guess from the
+  clef and the voices ("S.A" and "T.B" for two voices, Soprano/Alto/Tenor/Bass
+  for one); otherwise the instrument, with the clef when another part has it
+  too. Names still alike get a number. Without the map, the track's name gives
+  the ids and the pitches the clef.
+- **Verified.** `studio/test/playbackSetup.test.ts`: each rule, the fallback
+  without a map, and a real compile of a choir, a piano and a flute. The
+  extension's unit tests pass with the new `timing.ly`.
+- **Not done.** DrumStaff, TabStaff and RhythmicStaff have no staff performer,
+  so a score with them is named from the tracks alone. The name is the one at
+  the staff's first note.
+
+## D49 — Lily Studio: recent folders and scores
+
+**Status:** proposed · **Refines:** D37, D29
+
+- **What.** The welcome screen lists the folders and scores opened last,
+  under Recent: the name, the directory it is in (home as `~`), and an outline
+  of a folder or a page. A click opens it as Open Folder or Open Score would;
+  ✕, shown on hover, takes one off the list; Clear empties it. File › Open
+  Recent has the same entries, a name alone unless two share it, and Clear
+  Menu.
+- **Kept.** `recent.json` beside settings.json (`studio/src-tauri/src/recent.rs`):
+  ten entries, newest first, each path once, with its kind and when it was
+  opened. Every open ends in `open_folder_at` (a dialog, New Score, the
+  sample, the list itself), which adds the chosen score, or else the folder.
+  A broken file loads what it can.
+- **Gone entries** stay, dimmed and marked Not found, since a disk that is not
+  connected comes back. Opening one is refused with where it was, above the
+  list or, from the menu, in the status line. `open_recent` opens only paths
+  on the list.
+- **Verified.** `recent.rs` and `menu.rs` tests; `test/welcome.test.ts`:
+  `recentLabel`. `npm run test:smoke` passes its steps with the list in place.
+- **Not done.** No smoke step for the list itself, and not checked by hand.
+  macOS's own recent documents and the Dock menu are not used.
+
+## D50 — Lily Studio: the agents' check directory
+
+**Status:** proposed · **Refines:** D40, D43
+
+- **Why.** Under *Edit files*, Claude Code tended to check a score with
+  `cd <check dir> 2>/dev/null || mkdir -p <check dir> && lilypond …`, which
+  was denied and shown as "Not allowed in Lily Studio".
+- **What.** The first turn's instructions say the check directory exists
+  already (the studio makes it before each turn) and that the lilypond
+  command is to be run on its own, without `cd`, `mkdir`, `&&`, `||`, pipes or
+  redirections. Claude Code under *Edit files* also gets `--add-dir` for that
+  directory and `Bash(mkdir -p <check dir>:*)`.
+- **[verified]** with Claude Code: `cd X`, `mkdir -p X` and `mkdir -p X &&
+  lilypond …` are allowed with these arguments, but `cd X || …` is denied
+  whatever is allowed, `Bash(cd:*)` included, so only the instruction helps
+  there. With the new instructions, Sonnet ran the check alone and nothing
+  was denied.
+- **Smoke test.** The stand-in agent says "with an image" only for an
+  `--add-dir` of `chat-images`, since every edit turn now has one.

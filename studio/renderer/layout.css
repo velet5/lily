@@ -675,6 +675,10 @@ button:focus-visible,
 .playback-setup .part-name {
   flex: none;
   min-width: 72px;
+  max-width: 160px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   color: var(--fg);
 }
 
@@ -903,6 +907,159 @@ button.primary:hover {
 
 .welcome-steps span {
   color: var(--fg-muted);
+}
+
+/* The welcome screen's recent list (D47): a row per folder or score, its name
+   and where it is; ✕ shows on hover. A gone one is dimmed. */
+
+.welcome-recent {
+  margin-bottom: 24px;
+}
+
+.welcome-recent[hidden] {
+  display: none;
+}
+
+.welcome-recent-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+
+.welcome-recent h2 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.welcome-recent-clear {
+  border: none;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.welcome-recent-clear:hover {
+  color: var(--fg);
+  background: none;
+}
+
+.welcome-recent-message {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left: 4px solid #c72e2e;
+  border-radius: 6px;
+}
+
+.welcome-recent-message[hidden] {
+  display: none;
+}
+
+.welcome-recent-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.welcome-recent-list li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+
+.welcome-recent-list li:hover {
+  background: var(--hover);
+}
+
+.welcome-recent-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 32px 6px 8px;
+  border: none;
+  text-align: left;
+}
+
+.welcome-recent-open:hover {
+  background: none;
+}
+
+.welcome-recent-icon {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--fg-muted);
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+
+.welcome-recent-list li[data-kind='folder'] .welcome-recent-icon {
+  stroke: var(--accent);
+}
+
+.welcome-recent-text {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.welcome-recent-name {
+  flex: none;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.welcome-recent-place {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.welcome-recent-gone {
+  flex: none;
+  font-size: 11px;
+  color: var(--warning);
+}
+
+.welcome-recent-list li[data-missing] :is(.welcome-recent-name, .welcome-recent-place, .welcome-recent-icon) {
+  opacity: 0.5;
+}
+
+.welcome-recent-remove {
+  position: absolute;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+  opacity: 0;
+}
+
+.welcome-recent-list li:hover .welcome-recent-remove,
+.welcome-recent-remove:focus-visible {
+  opacity: 1;
+}
+
+.welcome-recent-remove:hover {
+  color: var(--fg);
 }
 
 .setup {
@@ -1141,7 +1298,13 @@ body[data-resizing] .preview {
   align-self: flex-start;
 }
 
-/* Agent chats */
+/* Agent chats. A− and A+ set --chat-font-size on the fold's body; the
+   messages, the message box and the menus under it follow it. */
+
+.fold[data-fold='chats'] .fold-body {
+  --chat-font-size: 13px;
+  --chat-font-small: calc(var(--chat-font-size) - 1px);
+}
 
 .chat-toolbar {
   flex: none;
@@ -1184,6 +1347,17 @@ body[data-resizing] .preview {
   flex: none;
 }
 
+.chat-font {
+  flex: none;
+  display: flex;
+  gap: 2px;
+}
+
+.chat-font button {
+  min-width: 0;
+  padding: 1px 5px;
+}
+
 .chat-content {
   flex: 1;
   min-height: 0;
@@ -1194,7 +1368,7 @@ body[data-resizing] .preview {
 .chat-note {
   margin: 4px 12px;
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: var(--chat-font-size);
 }
 
 .chat-list {
@@ -1206,6 +1380,7 @@ body[data-resizing] .preview {
 
 .chat-list button {
   display: flex;
+  font-size: var(--chat-font-size);
   flex-direction: column;
   width: 100%;
   padding: 4px 12px;
@@ -1224,7 +1399,7 @@ body[data-resizing] .preview {
 
 .chat-list-meta {
   color: var(--fg-muted);
-  font-size: 11px;
+  font-size: var(--chat-font-small);
 }
 
 .chat-log {
@@ -1239,7 +1414,7 @@ body[data-resizing] .preview {
 }
 
 .chat-entry {
-  font-size: 12px;
+  font-size: var(--chat-font-size);
   line-height: 1.45;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1255,7 +1430,7 @@ body[data-resizing] .preview {
 
 .chat-entry.tool {
   color: var(--fg-muted);
-  font-size: 11px;
+  font-size: var(--chat-font-small);
 }
 
 .chat-entry.tool::before {
@@ -1271,7 +1446,7 @@ body[data-resizing] .preview {
 .chat-entry code,
 .chat-entry pre {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 11px;
+  font-size: 0.92em;
 }
 
 .chat-entry code {
@@ -1292,7 +1467,7 @@ body[data-resizing] .preview {
 
 .chat-working {
   color: var(--fg-muted);
-  font-size: 11px;
+  font-size: var(--chat-font-small);
 }
 
 .chat-working::after {
@@ -1322,7 +1497,7 @@ body[data-resizing] .preview {
 .chat-context {
   overflow: hidden;
   color: var(--fg-muted);
-  font-size: 11px;
+  font-size: var(--chat-font-small);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1375,7 +1550,7 @@ body[data-resizing] .preview {
 
 .chat-image-gone {
   color: var(--fg-muted);
-  font-size: 11px;
+  font-size: var(--chat-font-small);
   font-style: italic;
 }
 
@@ -1384,7 +1559,7 @@ body[data-resizing] .preview {
   resize: none;
   padding: 6px 8px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--chat-font-size);
   color: inherit;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -1409,7 +1584,7 @@ body[data-resizing] .preview {
   min-width: 0;
   flex: 0 1 auto;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--chat-font-small);
   color: inherit;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -1425,6 +1600,7 @@ body[data-resizing] .preview {
 
 .chat-composer-bar button {
   flex: none;
+  font-size: var(--chat-font-small);
   margin-left: auto;
 }
 

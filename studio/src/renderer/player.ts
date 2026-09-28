@@ -397,7 +397,7 @@ export class ScorePlayer {
       panel.replaceChildren(paragraph('The score has no MIDI to play.'))
       return
     }
-    const rows = partsOf(midi).map((part) => {
+    const rows = partsOf(midi, this.loaded?.timing?.staves).map((part) => {
       const setting = this.setup.parts?.[part.track] ?? {}
       const row = document.createElement('div')
       row.className = 'part'
@@ -407,17 +407,17 @@ export class ScorePlayer {
       mute.className = 'part-mute'
       mute.textContent = setting.muted ? 'Muted' : 'On'
       mute.setAttribute('aria-pressed', String(!!setting.muted))
-      mute.title = setting.muted ? `Play part ${part.number} again` : `Mute part ${part.number}`
+      mute.title = setting.muted ? `Play ${part.name} again` : `Mute ${part.name}`
       mute.addEventListener('click', () => {
         this.changeSetup(withPart(this.setup, part.track, { muted: !setting.muted }))
         this.remix()
       })
       const label = document.createElement('span')
       label.className = 'part-name'
-      label.textContent = `Part ${part.number}`
-      label.title = `Written for ${part.written}`
+      label.textContent = part.name
+      label.title = `Part ${part.number}, written for ${part.written}`
       const select = document.createElement('select')
-      select.setAttribute('aria-label', `Instrument of part ${part.number}`)
+      select.setAttribute('aria-label', `Instrument of ${part.name}`)
       select.append(new Option(part.drums ? 'Drums' : `As written (${part.written})`, ''))
       for (const group of INSTRUMENT_GROUPS) {
         const optgroup = document.createElement('optgroup')

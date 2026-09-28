@@ -2,8 +2,9 @@
 // of the open folder, and one chat at a time with what its agent said and did;
 // a message starts a turn of Claude Code or Codex in the folder. Agent setup:
 // where each agent is, its version, and the model it uses. Images pasted or
-// dropped into the message box go with the message (D46). `textRuns` and
-// `imageRefusal` are pure so the tests can run them without a DOM.
+// dropped into the message box go with the message (D46). A− and A+ size the
+// chat's text (D47). `textRuns`, `imageRefusal` and the size steps are pure so
+// the tests can run them without a DOM.
 import type { AgentId, AgentStatus, ChatEntry, ChatEvent, ChatInfo, OpenChat, PastedImage, Permission } from '../ipc'
 import type { StudioApi } from './bridge'
 import { button } from './files'
@@ -94,6 +95,23 @@ export function modelChoices(agent: AgentId, current?: string): { value: string;
   return [{ value: '', label: 'Default model' }, ...models.map((model) => ({ value: model, label: model }))]
 }
 
+/** The chat's text sizes in px, from A− to A+; the default is what ⌘0 goes back to. */
+export const CHAT_FONT_SIZES: readonly number[] = [11, 12, 13, 14, 15, 16, 18, 20, 22]
+export const CHAT_FONT_DEFAULT = 13
+
+/** The size one step from `size` in `direction`, kept within the steps; a size between steps goes to the next one. */
+export function stepChatFont(size: number, direction: 1 | -1): number {
+  const sizes = direction > 0 ? CHAT_FONT_SIZES : [...CHAT_FONT_SIZES].reverse()
+  return sizes.find((step) => (direction > 0 ? step > size : step < size)) ?? sizes[sizes.length - 1]!
+}
+
+/** A remembered size, or the default when there is none or it is not a number. */
+export function chatFontSize(stored: string | null): number {
+  const size = Number(stored)
+  if (!stored || !Number.isFinite(size)) return CHAT_FONT_DEFAULT
+  return Math.min(Math.max(size, CHAT_FONT_SIZES[0]!), CHAT_FONT_SIZES[CHAT_FONT_SIZES.length - 1]!)
+}
+
 /** What goes with a message, as the line above the message box says it. */
 export function contextLabel(context: EditorContext, name: (file: string) => string): string | undefined {
   if (!context.file) return undefined
@@ -126,6 +144,7 @@ export interface AgentPanelOptions {
 
 const AGENT_KEY = 'lily-studio.agent'
 const PERMISSION_KEY = 'lily-studio.permission'
+const FONT_KEY = 'lily-studio.chatFontSize'
 
 type View = { kind: 'list' } | { kind: 'chat'; chat: OpenChat }
 
@@ -151,12 +170,18 @@ export class AgentPanel {
   private readonly permissionSelect = document.createElement('select')
   /** The model of the agent the next message goes to: the open chat's, or the one chosen for a new chat. */
   private readonly modelSelect = document.createElement('select')
+  private fontSize = CHAT_FONT_DEFAULT
+  /** A− and A+, at the end of the toolbar in either view. */
+  private readonly fontButtons = document.createElement('span')
+  private readonly smaller = button('A−', () => this.setFontSize(stepChatFont(this.fontSize, -1)))
+  private readonly larger = button('A+', () => this.setFontSize(stepChatFont(this.fontSize, 1)))
 
   constructor(private readonly options: AgentPanelOptions) {
     try {
       if (localStorage.getItem(AGENT_KEY) === 'codex') this.agent = 'codex'
       const permission = PERMISSIONS.find((p) => p.id === localStorage.getItem(PERMISSION_KEY))
       if (permission) this.permission = permission.id
+      this.fontSize = chatFontSize(localStorage.getItem(FONT_KEY))
     } catch {
       // No storage: Claude Code first, editing files.
     }
@@ -214,7 +239,25 @@ export class AgentPanel {
         if (!this.running()) void this.sendOrStop()
       }
     })
+    this.fontButtons.className = 'chat-font'
+    this.fontButtons.append(this.smaller, this.larger)
+    // ⌘+, ⌘− and ⌘0 while the focus is in the chat; the app menu has none of them.
+    options.chats.addEventListener('keydown', (event) => {
+      if (!(event.metaKey || event.ctrlKey) || event.altKey) return
+      const size =
+        event.key === '=' || event.key === '+'
+          ? stepChatFont(this.fontSize, 1)
+          : event.key === '-'
+            ? stepChatFont(this.fontSize, -1)
+            : event.key === '0'
+              ? CHAT_FONT_DEFAULT
+              : undefined
+      if (size === undefined) return
+      event.preventDefault()
+      this.setFontSize(size)
+    })
     options.chats.append(this.toolbar, this.content, this.composer)
+    this.setFontSize(this.fontSize, false)
     options.studio.onChatEvent((event) => this.chatEvent(event))
     this.render()
   }
@@ -421,7 +464,7 @@ export class AgentPanel {
       title.title = `${agentName(chat.agent)}: ${chat.title}`
       const remove = button('Delete', () => void this.deleteChat(chat))
       remove.title = 'Delete this chat'
-      this.toolbar.append(back, title, remove)
+      this.toolbar.append(back, title, remove, this.fontButtons)
       this.input.placeholder = `Reply to ${agentName(chat.agent)}…`
 
       const log = document.createElement('div')
@@ -460,7 +503,7 @@ export class AgentPanel {
     const label = document.createElement('span')
     label.className = 'chat-title'
     label.textContent = 'New chat with'
-    this.toolbar.append(label, select)
+    this.toolbar.append(label, select, this.fontButtons)
     this.input.placeholder = noFolder ? 'Open a score first' : `Ask ${agentName(this.agent)} to change the score…`
 
     if (noFolder) {
@@ -509,6 +552,22 @@ export class AgentPanel {
     )
     this.modelSelect.title = `The model ${agentName(agent)} uses, from the next message on`
     this.modelSelect.disabled = this.folder === undefined
+  }
+
+  /** Sizes the chat's text: the messages, the message box and the menus under it. */
+  private setFontSize(size: number, remember = true): void {
+    this.fontSize = size
+    this.options.chats.style.setProperty('--chat-font-size', `${size}px`)
+    this.smaller.title = `Smaller text (⌘−); ${size} px now, ⌘0 for ${CHAT_FONT_DEFAULT} px`
+    this.larger.title = `Larger text (⌘+); ${size} px now, ⌘0 for ${CHAT_FONT_DEFAULT} px`
+    this.smaller.disabled = size <= CHAT_FONT_SIZES[0]!
+    this.larger.disabled = size >= CHAT_FONT_SIZES[CHAT_FONT_SIZES.length - 1]!
+    if (!remember) return
+    try {
+      localStorage.setItem(FONT_KEY, String(size))
+    } catch {
+      // Remembered for this run only.
+    }
   }
 
   private choosePermission(): void {

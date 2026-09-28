@@ -1,8 +1,8 @@
 //! The commands behind src/renderer/bridge.ts (DECISIONS D42), one per call,
 //! as main.ts's IPC handlers were: file access (D29), compiling (D31, D33,
 //! D36, D39), point-and-click (D32), changes on disk (D34), LilyPond's setup
-//! and the sample (D37), the agents (D40) and each score's playback setup
-//! (D45). Every path from the page is checked against what the user opened;
+//! and the sample (D37), the agents (D40), each score's playback setup (D45)
+//! and the recent list (D49). Every path from the page is checked against what the user opened;
 //! only the window "main" may call.
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -22,6 +22,7 @@ use tauri::{AppHandle, State, WebviewWindow};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::dialogs::{self, Alert, Open, Save};
+use crate::recent::{self, Listed, RecentKind};
 use crate::state::{Studio, StudioEvent, lock};
 
 type Studios<'a> = State<'a, Arc<Studio>>;
@@ -59,9 +60,19 @@ fn score_extensions() -> Vec<String> {
         .collect()
 }
 
+/// Every open ends here, so each goes on the recent list (D49): the file when
+/// one was chosen, else the folder.
 async fn open_folder_at(studio: &Studio, folder: &Path, file: Option<PathBuf>) -> Opened {
     let folder = lily_engrave::paths::resolve(folder);
     lock(&studio.access).folder = Some(folder.clone());
+    let added = match &file {
+        Some(file) => studio.recent.add(file, RecentKind::File).await,
+        None => studio.recent.add(&folder, RecentKind::Folder).await,
+    };
+    // The open itself went well; a list that could not be saved only loses this entry.
+    if let Err(error) = added {
+        eprintln!("{error}");
+    }
     Opened {
         listing: files::list_folder(&folder).await,
         file,
@@ -530,4 +541,61 @@ pub async fn set_playback_setup(
     setup: Value,
 ) -> Answer<()> {
     studio.playback.set(&root_file, &setup).await
+}
+
+fn home() -> Option<PathBuf> {
+    std::env::var_os("HOME").map(PathBuf::from)
+}
+
+/// The recent list (D49) for the welcome screen, and the home directory it shortens to `~`.
+#[derive(Serialize)]
+pub struct RecentAnswer {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    home: Option<PathBuf>,
+    entries: Vec<Listed>,
+}
+
+#[tauri::command]
+pub async fn recent_list(studio: Studios<'_>) -> Answer<RecentAnswer> {
+    Ok(RecentAnswer {
+        home: home(),
+        entries: studio.recent.listed().await,
+    })
+}
+
+/// Opens an entry of the recent list; only those, so the page cannot name
+/// any other path. One that is gone rejects with where it was.
+#[tauri::command]
+pub async fn open_recent(studio: Studios<'_>, path: String) -> Answer<Opened> {
+    let entry = studio
+        .recent
+        .find(&path)
+        .await
+        .ok_or_else(|| format!("{path} is not on the recent list."))?;
+    let target = PathBuf::from(&entry.path);
+    if !entry.kind.exists_at(&target).await {
+        return Err(recent::missing_message(&entry, home().as_deref()));
+    }
+    Ok(match entry.kind {
+        RecentKind::Folder => open_folder_at(&studio, &target, None).await,
+        RecentKind::File => {
+            let file = lily_engrave::paths::resolve(&target);
+            lock(&studio.access).allow_file(&file);
+            let folder = file
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_else(|| PathBuf::from("/"));
+            open_folder_at(&studio, &folder, Some(file)).await
+        }
+    })
+}
+
+#[tauri::command]
+pub async fn forget_recent(studio: Studios<'_>, path: String) -> Answer<()> {
+    studio.recent.remove(&path).await
+}
+
+#[tauri::command]
+pub async fn clear_recent(studio: Studios<'_>) -> Answer<()> {
+    studio.recent.clear().await
 }

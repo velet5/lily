@@ -75,9 +75,98 @@
             (lily-timing-json-number (cdr bar))))
 
   (define (lily-timing-performance->json performance)
-    (format #f "{\"events\":[~a],\"bars\":[~a]}"
+    (format #f "{\"events\":[~a],\"bars\":[~a],\"staves\":[~a]}"
             (string-join (map lily-timing-event->json (car performance)) ",")
-            (string-join (map lily-timing-bar->json (cdr performance)) ",")))
+            (string-join (map lily-timing-bar->json (cadr performance)) ",")
+            (string-join (map (lambda (staff) (staff)) (caddr performance)) ",")))
+
+  ;; The staves of the performance being made, in the order lilypond makes
+  ;; them, which is the order of its MIDI tracks after the first. Each is a
+  ;; thunk that gives its JSON once the performance is over.
+  (define lily-timing-staves '())
+  ;; The voices that played notes in each staff, by staff context.
+  (define lily-timing-voices (make-hash-table))
+  ;; The staff groups (PianoStaff, ChoirStaff, …) met so far, numbered.
+  (define lily-timing-groups '())
+
+  (define (lily-timing-text value)
+    (cond ((string? value) value)
+          ((markup? value) (markup->string value))
+          (else "")))
+
+  (define (lily-timing-group context)
+    (let ((parent (ly:context-parent context)))
+      (if (or (not parent) (eq? (ly:context-name parent) 'Score))
+          (cons "" -1)
+          (let ((known (assq parent lily-timing-groups)))
+            (unless known
+              (set! lily-timing-groups
+                    (append lily-timing-groups (list (cons parent (length lily-timing-groups))))))
+            (cons (symbol->string (ly:context-name parent))
+                  (cdr (assq parent lily-timing-groups)))))))
+
+  ;; What a staff says about the part its MIDI track plays (D48): its id,
+  ;; name, group, and clef at its first note, and the voices with notes.
+  (define (Lily_timing_staff_performer context)
+    (let ((group (cons "" -1))
+          (name "")
+          (short-name "")
+          (clef #f)
+          (transposition 0))
+      (make-performer
+       ((initialize performer)
+        (catch #t
+          (lambda ()
+            (set! group (lily-timing-group context))
+            (set! lily-timing-staves
+                  (append
+                   lily-timing-staves
+                   (list
+                    (lambda ()
+                      (format #f "{\"id\":~a,\"name\":~a,\"shortName\":~a,\"group\":~a,\"groupIndex\":~a,\"clef\":~a,\"clefTransposition\":~a,\"voices\":[~a]}"
+                              (lily-timing-json-string (or (ly:context-id context) ""))
+                              (lily-timing-json-string name)
+                              (lily-timing-json-string short-name)
+                              (lily-timing-json-string (car group))
+                              (cdr group)
+                              (lily-timing-json-string (or clef ""))
+                              transposition
+                              (string-join
+                               (map lily-timing-json-string
+                                    (reverse (hashq-ref lily-timing-voices context '())))
+                               ",")))))))
+          (lambda (key . args)
+            (ly:warning "playback map: ~a ~a" key args))))
+       (listeners
+        ((note-event performer event)
+         (unless clef
+           ;; No \clef yet means the treble clef, which the MIDI Staff does not set.
+           (let ((glyph (ly:context-property context 'clefGlyph #f))
+                 (shift (ly:context-property context 'clefTransposition #f))
+                 (long (lily-timing-text (ly:context-property context 'instrumentName #f))))
+             (set! clef (if (string? glyph) glyph "clefs.G"))
+             (when (integer? shift) (set! transposition shift))
+             ;; "bright acoustic" is the MIDI Staff's own default, not the score's.
+             (unless (equal? long "bright acoustic") (set! name long))
+             (set! short-name
+                   (lily-timing-text (ly:context-property context 'shortInstrumentName #f))))))))))
+
+  (define (Lily_timing_voice_performer context)
+    (let ((known #f))
+      (make-performer
+       (listeners
+        ((note-event performer event)
+         (unless known
+           (set! known #t)
+           (catch #t
+             (lambda ()
+               (let ((staff (ly:context-find context 'Staff)))
+                 (when staff
+                   (hashq-set! lily-timing-voices staff
+                               (cons (or (ly:context-id context) "")
+                                     (hashq-ref lily-timing-voices staff '()))))))
+             (lambda (key . args)
+               (ly:warning "playback map: ~a ~a" key args)))))))))
 
   (define (lily-timing-write! events bars)
     (let ((name (ly:parser-output-name)))
@@ -86,7 +175,7 @@
         (set! lily-timing-output-name name)
         (set! lily-timing-performances '()))
       (set! lily-timing-performances
-            (append lily-timing-performances (list (cons events bars))))
+            (append lily-timing-performances (list (list events bars lily-timing-staves))))
       (with-output-to-file (string-append (basename name) ".timing.json")
         (lambda ()
           (display "[")
@@ -99,6 +188,9 @@
           (last-bar #f))
       (make-performer
        ((initialize performer)
+        (set! lily-timing-staves '())
+        (set! lily-timing-groups '())
+        (hash-clear! lily-timing-voices)
         (ly:add-listener
          (lambda (event)
            ;; An error here would fail the compile; it only loses the map.
@@ -150,5 +242,13 @@
   \context {
     \Score
     \consists #Lily_timing_performer
+  }
+  \context {
+    \Staff
+    \consists #Lily_timing_staff_performer
+  }
+  \context {
+    \Voice
+    \consists #Lily_timing_voice_performer
   }
 }

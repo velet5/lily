@@ -4,7 +4,8 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { momentTime, parseMidi, type Midi } from '../../media/midi.js'
-import { barTime, mixMidi, momentAt, partsOf, withPart, withStartBar } from '../src/renderer/playbackSetup'
+import type { TimedStaff } from '../../src/preview/panel'
+import { barTime, mixMidi, momentAt, partNames, partsOf, withPart, withStartBar } from '../src/renderer/playbackSetup'
 import { realOutcome } from './outcome'
 
 // Runs under `node --test` from out/test/, in studio/ (npm run test:unit).
@@ -39,9 +40,9 @@ const MIDI: Midi = {
 describe('the parts and the mix', () => {
   test('a part is a track with notes, drums included', () => {
     assert.deepEqual(partsOf(MIDI), [
-      { track: 1, number: 1, written: 'violin', drums: false },
-      { track: 2, number: 2, written: 'acoustic grand', drums: false },
-      { track: 3, number: 3, written: 'drums', drums: true },
+      { track: 1, number: 1, name: 'Violin', written: 'violin', drums: false },
+      { track: 2, number: 2, name: 'Piano', written: 'acoustic grand', drums: false },
+      { track: 3, number: 3, name: 'Drums', written: 'drums', drums: true },
     ])
   })
 
@@ -138,5 +139,107 @@ describe('the start bar', () => {
     assert.equal(barTime(bars, 3), 4)
     const mixed = mixMidi(midi, { parts: { [partsOf(midi)[0].track]: { muted: true } } })
     assert.equal(mixed.notes.length, 10)
+  })
+})
+
+function staff(fields: Partial<TimedStaff>): TimedStaff {
+  return { id: '', name: '', shortName: '', group: '', groupIndex: -1, clef: 'clefs.G', clefTransposition: 0, voices: [''], ...fields }
+}
+
+function named(...staves: Partial<TimedStaff>[]): string[] {
+  return partNames(staves.map((fields) => ({ staff: staff(fields), written: 'acoustic grand', drums: false })))
+}
+
+describe('the names of the parts', () => {
+  test('the instrument name the score gives wins', () => {
+    assert.deepEqual(named({ name: 'Soprano  Alto', voices: ['1', '2'] }, { shortName: 'Vc.' }), ['Soprano Alto', 'Vc.'])
+  })
+
+  test('voices named after choir voices: abbreviated when several, in full when one', () => {
+    assert.deepEqual(named({ voices: ['sopranos', 'altos'] }, { id: 'tenor' }, { id: 'men', voices: ['tenorOne', 'bassVoice'] }), ['S.A', 'Tenor', 'T.B'])
+    // Numbered voices say nothing; the staff's id does.
+    assert.deepEqual(named({ id: 'women', voices: ['1', '2'] }, { id: 'altos', voices: ['1', '2'] }), ['Women', 'Alto'])
+  })
+
+  test('a piano staff: the instrument and the clef', () => {
+    const group = { group: 'PianoStaff', groupIndex: 0 }
+    assert.deepEqual(named({ ...group, id: 'up' }, { ...group, id: 'down', clef: 'clefs.F' }), ['Piano · G clef', 'Piano · F clef'])
+    assert.deepEqual(partNames([{ staff: staff({ group: 'GrandStaff', clef: 'clefs.F' }), written: 'church organ', drums: false }]), ['Organ · F clef'])
+  })
+
+  test("an id that says something, the staff's or its only voice's", () => {
+    assert.deepEqual(named({ id: 'violinOne' }, { id: 'viola_2' }, { voices: ['melody'] }, { id: '1', clef: 'clefs.F' }), [
+      'Violin one',
+      'Viola 2',
+      'Melody',
+      'Piano',
+    ])
+  })
+
+  test('a choir without names: guessed from the clefs and the voices', () => {
+    const group = { group: 'ChoirStaff', groupIndex: 0 }
+    assert.deepEqual(named({ ...group, voices: ['1', '2'] }, { ...group, clef: 'clefs.F', voices: ['1', '2'] }), ['S.A', 'T.B'])
+    assert.deepEqual(named(group, group, { ...group, clefTransposition: -7 }, { ...group, clef: 'clefs.F' }), ['Soprano', 'Alto', 'Tenor', 'Bass'])
+    assert.deepEqual(named(group, group, { ...group, clef: 'clefs.F' }, { ...group, clef: 'clefs.F' }), ['Soprano', 'Alto', 'Tenor', 'Bass'])
+  })
+
+  test('nothing to go by: the instrument, with the clef when two parts share it, then a number', () => {
+    assert.deepEqual(named({}, { clef: 'clefs.F' }), ['Piano · G clef', 'Piano · F clef'])
+    assert.deepEqual(named({}, {}), ['Piano · G clef 1', 'Piano · G clef 2'])
+  })
+
+  test('without the map: from the track names lilypond writes and the pitches', () => {
+    const midi: Midi = {
+      ...MIDI,
+      tracks: [
+        { name: 'control track', channels: [], programs: [], notes: 0 },
+        { name: 'women:sopranos', channels: [0], programs: [0], notes: 1 },
+        { name: ':', channels: [1], programs: [0], notes: 1 },
+        { name: ':', channels: [2], programs: [0], notes: 1 },
+      ],
+      notes: [note(1, 0, 0), { ...note(2, 1, 0), key: 72 }, { ...note(3, 2, 0), key: 40 }],
+    }
+    assert.deepEqual(
+      partsOf(midi).map((part) => part.name),
+      ['Soprano', 'Piano · G clef', 'Piano · F clef'],
+    )
+    // A map with a staff per track is used; one that does not fit is not.
+    assert.deepEqual(
+      partsOf(midi, [staff({ name: 'Upper' }), staff({}), staff({})]).map((part) => part.name),
+      ['Upper', 'Piano · G clef 1', 'Piano · G clef 2'],
+    )
+    assert.equal(partsOf(midi, [staff({ name: 'Upper' })])[0].name, 'Soprano')
+  })
+
+  test('a real compile names a choir, a piano and a flute', async (t) => {
+    const score = path.join(scratch, 'choir.ly')
+    await fs.writeFile(
+      score,
+      String.raw`\version "2.24.0"
+\score {
+  <<
+    \new ChoirStaff <<
+      \new Staff << \new Voice = "sopranos" { \voiceOne c''4 d'' e'' f'' } \new Voice = "altos" { \voiceTwo a'4 b' c'' d'' } >>
+      \new Staff { \clef bass << { c4 d e f } \\ { c,4 d, e, f, } >> }
+    >>
+    \new PianoStaff <<
+      \new Staff { c''4 e'' g'' c''' }
+      \new Staff { \clef bass c,4 e, g, c }
+    >>
+    \new Staff \with { instrumentName = \markup { \bold Flute } midiInstrument = "flute" } { c''4 d'' e'' f'' }
+  >>
+  \layout { }
+  \midi { }
+}
+`,
+    )
+    const outcome = await realOutcome(t, score)
+    if (!outcome) return
+    assert.equal(outcome.state, 'ok')
+    const midi = parseMidi(outcome.midiData!)
+    assert.deepEqual(
+      partsOf(midi, outcome.timing?.staves).map((part) => part.name),
+      ['S.A', 'T.B', 'Piano · G clef', 'Piano · F clef', 'Flute'],
+    )
   })
 })

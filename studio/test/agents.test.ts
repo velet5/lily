@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict'
 import * as path from 'node:path'
 import { describe, test } from 'node:test'
-import { contextLabel, imageRefusal, MAX_IMAGE_BYTES, MAX_IMAGES, modelChoices, PERMISSIONS, SELECTION_ACTIONS, textRuns } from '../src/renderer/agents'
+import { CHAT_FONT_DEFAULT, CHAT_FONT_SIZES, chatFontSize, contextLabel, imageRefusal, MAX_IMAGE_BYTES, MAX_IMAGES, modelChoices, PERMISSIONS, SELECTION_ACTIONS, stepChatFont, textRuns } from '../src/renderer/agents'
 import { clampHeight, clampWidth, FILES_MIN, SIDEBAR_WIDTH } from '../src/renderer/sidebar'
 
 // Runs under `node --test` from out/test/ (npm run test:unit in studio/): the
@@ -73,5 +73,25 @@ describe('imageRefusal', () => {
     assert.match(imageRefusal('image/svg+xml', 10, 0)!, /PNG, JPEG, GIF and WebP/)
     assert.match(imageRefusal('image/png', MAX_IMAGE_BYTES + 1, 0)!, /too large/)
     assert.match(imageRefusal('image/png', 10, MAX_IMAGES)!, /at most 6/)
+  })
+})
+
+describe('the chat text size', () => {
+  test('stepChatFont goes one step and stops at either end', () => {
+    assert.equal(stepChatFont(CHAT_FONT_DEFAULT, 1), 14)
+    assert.equal(stepChatFont(CHAT_FONT_DEFAULT, -1), 12)
+    assert.equal(stepChatFont(16, 1), 18)
+    assert.equal(stepChatFont(17, -1), 16)
+    assert.equal(stepChatFont(11, -1), 11)
+    assert.equal(stepChatFont(22, 1), 22)
+    assert.ok(CHAT_FONT_SIZES.includes(CHAT_FONT_DEFAULT) && CHAT_FONT_DEFAULT >= 13)
+  })
+
+  test('chatFontSize reads a remembered size, kept within the steps', () => {
+    assert.equal(chatFontSize(null), CHAT_FONT_DEFAULT)
+    assert.equal(chatFontSize('nonsense'), CHAT_FONT_DEFAULT)
+    assert.equal(chatFontSize('16'), 16)
+    assert.equal(chatFontSize('40'), 22)
+    assert.equal(chatFontSize('2'), 11)
   })
 })
