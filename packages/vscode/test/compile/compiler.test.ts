@@ -206,7 +206,7 @@ describe('CompileService', () => {
 
   test('a preview compile with the runtime maps every note of the MIDI to its link on the pages', async (t) => {
     if (!needsLilyPond(t)) return
-    const mapped = new CompileService({ tmpRoot: scratch, runtimeDir: path.resolve('runtime') })
+    const mapped = new CompileService({ tmpRoot: scratch, runtimeDir: path.resolve('../common/runtime') })
     try {
       const score = path.resolve('test/e2e/workspace/score.ly')
       // A dirty buffer makes it a snapshot compile, whose links must name the real file.

@@ -1,29 +1,14 @@
 import * as path from 'node:path'
-import { displayWidth } from './span'
+import { displayWidth } from '@lily/common/span'
+import type { LyDiagnostic } from '@lily/common/types'
 
 // Pure functions from lilypond's stderr to editor-independent diagnostics
 // (DECISIONS D6, D16). No `vscode` import: the CLI and MCP server reuse this.
-// Columns and spans are in span.ts, which Lily Studio's renderer uses too.
+// Columns and spans are in @lily/common/span, which Lily Studio's renderer
+// uses too.
 
-export { columnToCharacter, diagnosticSpan, type Span } from './span'
-
-export type LySeverity = 'error' | 'warning'
-
-export interface LyDiagnostic {
-  /** Absolute path; the root file for messages that carry no location. */
-  file: string
-  /** 1-based; 1 for messages that carry no location. */
-  line: number
-  /**
-   * As lilypond prints it: 1-based, counted in code points with tabs advancing
-   * to the next multiple of 8. Convert with `columnToCharacter`. Absent when the
-   * message names only a line, or no location at all.
-   */
-  column?: number
-  severity: LySeverity
-  /** Without the severity keyword; continuation lines are joined with `\n`. */
-  message: string
-}
+export { columnToCharacter, diagnosticSpan, type Span } from '@lily/common/span'
+export type { LyDiagnostic, LySeverity } from '@lily/common/types'
 
 export interface ParseOptions {
   /** Receives the messages that carry no location. */

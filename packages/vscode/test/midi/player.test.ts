@@ -59,9 +59,9 @@ function setup() {
   let unwatched = 0
   const provider = new MidiPlayerProvider({
     assets: {
-      root: uri('file:///ext/media'),
+      roots: [uri('file:///ext/media'), uri('file:///ext/dist/web')],
       script: uri('file:///ext/media/player.js'),
-      midiScript: uri('file:///ext/media/midi.js'),
+      midiScript: uri('file:///ext/dist/web/midi.js'),
       style: uri('file:///ext/media/player.css'),
     },
     readFile: async (file) => {
@@ -115,11 +115,11 @@ describe('midiPlayerHtml', () => {
 describe('MidiPlayerProvider', () => {
   const song = uri('file:///scores/my%20song.midi')
 
-  test('scripts are enabled and only media/ can be loaded', () => {
+  test('scripts are enabled and only media/ and dist/web/ can be loaded', () => {
     const { open } = setup()
     const fake = open(song)
     assert.deepStrictEqual(Object.keys(fake.webview.options), ['enableScripts', 'localResourceRoots'])
-    assert.match(fake.webview.html, /src="https:\/\/webview\.test\/ext\/media\/midi\.js"/)
+    assert.match(fake.webview.html, /src="https:\/\/webview\.test\/ext\/dist\/web\/midi\.js"/)
   })
 
   test('a ready webview gets the file as base64, and again when the file is rewritten', async () => {

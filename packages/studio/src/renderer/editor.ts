@@ -3,8 +3,8 @@
 // from the version last written, so undoing back to it clears the mark.
 import * as monaco from 'monaco-editor/editor'
 import 'monaco-editor/features/register.all'
-import type { LyDiagnostic } from '../../../src/diagnostics/parse'
-import { charToCharacter, columnToCharacter } from '../../../src/diagnostics/span'
+import type { LyDiagnostic } from '@lily/common/types'
+import { charToCharacter, columnToCharacter } from '@lily/common/span'
 import { toMarkers } from './diagnostics'
 import { DARK_THEME, LIGHT_THEME, languageConfiguration, loadGrammar, theme, tokensProvider } from './grammar'
 

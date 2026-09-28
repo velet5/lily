@@ -5,7 +5,7 @@ import { completionsAt, type LyCompletionList } from '../../src/intellisense/com
 import { loadIndex, type LilyIndex } from '../../src/intellisense/data'
 
 // Runs under `node --test` (npm run test:unit) against the committed
-// data/completions.json and snippets/lilypond.json; cwd is the repository root.
+// data/completions.json and snippets/lilypond.json; cwd is packages/vscode.
 
 let index: LilyIndex
 before(async () => {

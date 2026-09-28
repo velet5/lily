@@ -1,7 +1,10 @@
 # Decision log
 
-Short records of the choices that shape the extension. Context and evidence are
-in [ARCHITECTURE.md](ARCHITECTURE.md); gap numbers (G1…) refer to its section 2.
+Short records of the choices that shape the extension and, from D28 on, Lily
+Studio. Context and evidence are in
+[ARCHITECTURE.md](../packages/vscode/docs/ARCHITECTURE.md); gap numbers (G1…)
+refer to its section 2. Paths in entries before D53 are as they were then, before
+the move into `packages/`.
 Add new entries at the bottom; supersede rather than rewrite.
 
 Status values: **accepted**, **proposed** (cheap to change, not yet relied on),
@@ -1150,7 +1153,7 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   time and reused-page count. The rendered acknowledgment follows two animation
   frames, approximating a paint opportunity, not measuring GPU completion.
   Hidden webviews can delay it. The benchmark and measurements live in
-  [LIVE-PREVIEW-IMPLEMENTATION.md](LIVE-PREVIEW-IMPLEMENTATION.md).
+  [LIVE-PREVIEW-IMPLEMENTATION.md](../packages/vscode/docs/LIVE-PREVIEW-IMPLEMENTATION.md).
 - **Packaging.** `runtime/*.scm` is explicitly allowed into the VSIX. The release
   test checks both files and asserts that the packaged preview actually used
   the warm engine, so a silent fallback cannot mask a missing resource.
@@ -2316,3 +2319,62 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   and given to the next turn, an answered denial is not repeated, and stdin
   closes at the result. `npm run test:smoke`: the stand-in asks to run
   `magick`, the card shows the command, Allow lets it go on.
+
+---
+
+## D53 — One repository, three packages
+
+**Status:** proposed · **Refines:** D28, D42
+
+- **Decision.** The repository is an npm workspace of three packages:
+  `packages/common` (`@lily/common`, private), `packages/vscode` (`lily`, the
+  extension; its name, publisher and ID are unchanged) and `packages/studio`
+  (`lily-studio`). One `package-lock.json` at the root; `docs/DECISIONS.md`,
+  `AGENTS.md`, the lint configuration, `tsconfig.base.json` and CI stay at the
+  root. The files were moved with `git mv`, so `git log --follow` finds their
+  history.
+- **Why.** The studio reached into the extension with paths like
+  `../../../src/diagnostics/span`, and nothing said which of the extension's
+  files the studio depended on. Deleting the repository and starting two was
+  considered; the code they share would then have had to be copied or
+  published.
+- **What is common.** Only what both apps use: `src/span.ts`; `src/types.ts`
+  (`LyDiagnostic`, `SourceLocation`, the playback map, formerly in
+  `diagnostics/parse.ts`, `preview/pointAndClick.ts` and `preview/panel.ts`,
+  which re-export what the extension imports from them); `src/textedit.ts`
+  (`parseTextEdit`, which Lily Studio's tests use); `web/preview.js` and
+  `web/midi.js`, with the `.d.ts` files that were the studio's
+  `previewScript.d.ts`; the grammar and its snapshot tests, the language
+  configuration and `runtime/`. The rest of `media/`, the snippets, the
+  completion data, the compiler and `lily-check` stay with the extension.
+- **Imports.** `@lily/common/span`, `/types`, `/textedit`, `/web/*`,
+  `/syntaxes/*`, `/language-configuration.json`, `/runtime/*`, through the
+  package's `exports`, which point at the sources: there is no build step, and
+  esbuild bundles them as it did. `span.ts` and `types.ts` import neither
+  `vscode` nor Node.
+- **The VSIX.** `vsce` packages only `packages/vscode`, so the extension's
+  `esbuild.mjs` copies the common files into `dist/`: `dist/web/`,
+  `dist/runtime/`, `dist/syntaxes/` and `dist/language-configuration.json`
+  (again on change under `--watch`). `contributes`, `extension.ts` and
+  `.vscodeignore` name the new places. The webviews' `localResourceRoots` are
+  `media/` and `dist/web/` (`assets.roots`). The VSIX no longer carries
+  `docs/DECISIONS.md`; the shipped live-preview notes link to it on GitHub.
+- **The studio.** Its `esbuild.mjs` copies `runtime/` from `packages/common`.
+  The Rust tests compile the extension's test scores
+  (`packages/vscode/test/fixtures`, `test/e2e/workspace/score.ly`) and use
+  `packages/common/runtime`. The Cargo workspace stays in `packages/studio`.
+- **AGENTS.md.** The compile-and-fix loop is `packages/vscode/AGENTS.md`,
+  still in the VSIX; the root `AGENTS.md` is about working on the repository.
+- **CI.** Types and lint cover all three packages; grammar, unit, host and
+  release tests are the extension's, as before. The studio is not built in CI.
+- **Verified.** `npm run check-types`, `npm run lint` and `npm run
+  test:grammar` at the root. In `packages/vscode`: 253 unit tests, and
+  `npm run test:e2e` (7 tests) on a VSIX whose file list differs from the old
+  one only by the moved paths and `docs/DECISIONS.md`. The extension-host
+  suite timed out in 13–14 webview tests in a full run on this machine, as it
+  did on `main` before the move; each of those suites passes on its own. In
+  `packages/studio`: 202 Rust and 68 renderer tests, `cargo fmt` and `clippy`.
+  Its smoke test passes every step but one, "dragging the sidebar's edge by 80
+  px changed its width from 640 to 640", which fails the same way on `main`
+  before the move. A fresh checkout needs `node esbuild.mjs` in the studio
+  before `cargo test`, which wants `dist/runtime`; that was so before as well.

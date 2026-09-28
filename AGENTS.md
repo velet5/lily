@@ -1,131 +1,66 @@
 # AGENTS.md
 
-Instructions for coding agents (Codex and others). The first section is how to
-write LilyPond scores with a compile-and-fix loop; it does not depend on the rest
-and can be copied into the `AGENTS.md` of any score repository. The second is for
-work on this extension itself.
+Instructions for coding agents working on this repository. How to write LilyPond
+scores with the compile-and-fix loop of `lily-check` is in
+[packages/vscode/AGENTS.md](packages/vscode/AGENTS.md), which ships with the
+extension.
 
-## Writing and fixing LilyPond scores
+## Layout
 
-Never hand back a `.ly` file you have not compiled. `lily-check` runs the same
-compile and the same error parser as the editor and reports the result as JSON.
+An npm workspace of three packages (DECISIONS D53):
 
-```sh
-npm run build                                     # once, in a checkout; the installed extension has dist/ already
-node dist/lily-check.js compile score.ly --json
-```
+- `packages/common` (`@lily/common`): what both apps use. `src/span.ts` and
+  `src/types.ts` import neither `vscode` nor Node (Lily Studio's renderer
+  bundles them); `src/textedit.ts` may use Node. `web/preview.js` and
+  `web/midi.js` are plain scripts with `.d.ts` files beside them. Also the
+  TextMate grammar, the language configuration and lilypond's `runtime/`
+  files. No build step: the apps bundle or copy what they import.
+- `packages/vscode` (`lily`): the VS Code extension and `lily-check`. Read
+  `packages/vscode/docs/ARCHITECTURE.md` §3 for its layout.
+- `packages/studio` (`lily-studio`): Lily Studio, a Tauri app whose Rust side
+  is a Cargo workspace in that directory (D42).
 
-Exit code `0`: compiled. `1`: lilypond reported errors. `2`: lilypond did not run
-(file missing, lilypond not installed); `error.code` and `error.message` say why,
-and the fix is not in the score.
+`docs/DECISIONS.md` records the decisions of all three; read it before changing
+a convention and record new ones there.
 
-```json
-{
-  "ok": false,
-  "rootFile": "/abs/score.ly",
-  "exitCode": 1,
-  "errorCount": 1,
-  "warningCount": 0,
-  "diagnostics": [
-    {
-      "file": "/abs/parts/violin.ily",
-      "line": 12,
-      "column": 9,
-      "severity": "error",
-      "message": "unknown command: `\\stacato'",
-      "source": "  c4-. d \\stacato e",
-      "token": "\\stacato"
-    }
-  ],
-  "pages": ["/tmp/lily-check/score-1a2b3c4d/score.svg"],
-  "midi": [],
-  "outputDir": "/tmp/lily-check/score-1a2b3c4d",
-  "durationMs": 430
-}
-```
+## Commands
 
-### The loop
-
-1. Edit the score.
-2. Compile the **root** file, the one with `\score` or `\book`, even when the
-   edit was in a file it `\include`s. Diagnostics name the file they are in.
-3. `ok: true` and no warning you caused: done. Otherwise fix the **first** error
-   and compile again. One mistake usually produces several messages (an unknown
-   command is followed by `string outside of text script`, a missing brace by
-   `unexpected end of input`), so do not fix them all from one report.
-4. Stop after about five rounds without progress and say what is left.
-
-### Reading a diagnostic
-
-- `line` and `column` are 1-based, as lilypond prints them. The column counts a
-  tab as a jump to the next multiple of 8, so do not index with it: `source` is
-  the line and `token` is the thing in it that lilypond points at.
-- A diagnostic without `column` concerns the whole line, or, at line 1 of the
-  root file, the whole run.
-- `warning: bar check failed` means the durations before that `|` do not fill the
-  bar. Recount the bar; do not delete the bar check.
-- `warning: no \version statement found` is fixed by making the `\version "…"`
-  line that the message suggests the first line of the file.
-- `cannot find file` for an `\include` that exists means its directory is not on
-  the search path: pass it with `-I`.
-- `pages` of a failed run show whatever lilypond could still engrave. Do not
-  present them as the result.
-- If `stderr` is present, lilypond failed without a message that could be
-  parsed; read it as it is.
-
-### Options
-
-- `-I <dir>` (repeatable) adds an `\include` directory, relative to where you run
-  the command. Anything after `--` goes to lilypond as is.
-- `--out-dir <dir>` chooses where the SVG pages go. The default is a directory
-  per score under the system temp directory, emptied on every run. Nothing is
-  ever written next to the source.
-- `--lilypond <path>` or `$LILYPOND_PATH` selects the executable.
-- Without `--json` the same report is printed as `file:line:col: severity:
-  message` lines.
-
-### As an MCP tool
-
-`node dist/lily-check.js mcp` serves the same check on stdio as the tool
-`lilypond_compile`, with the arguments `file` (absolute path of the root file),
-and optionally `extraArgs` and `outDir`. The result is the JSON above. Register it
-with Codex once, with absolute paths:
+`npm install` once at the root. From the root:
 
 ```sh
-codex mcp add lily -- node /abs/path/to/dist/lily-check.js mcp
+npm run check-types     # tsc in every package
+npm run lint            # oxlint over the repository; warnings fail
+npm run test:grammar    # TextMate grammar snapshots (packages/common)
+npm run build           # the extension and the studio
+npm test                # grammar, then the extension's and the studio's tests
 ```
 
-which writes to `~/.codex/config.toml`:
-
-```toml
-[mcp_servers.lily]
-command = "node"
-args = ["/abs/path/to/dist/lily-check.js", "mcp"]
-```
-
-When the tool is available, prefer it to the shell command; the loop is the same.
-
-## Working on this repository
-
-A VS Code extension for LilyPond. Read `docs/ARCHITECTURE.md` §3 for the layout
-and `docs/DECISIONS.md` before changing a convention; record new ones there.
+In `packages/vscode`:
 
 ```sh
-npm run check-types     # tsc, no emit
-npm run build           # esbuild → dist/extension.js, dist/lily-check.js
+npm run build           # esbuild → dist/extension.js, dist/lily-check.js; copies packages/common into dist/
 npm run test:unit       # node --test; tests in subdirectories of test/
-npm run test:grammar    # TextMate grammar snapshots
-npm run lint            # oxlint; warnings fail
-npm test                # all of the above, then the extension-host tests
+npm test                # types, lint, unit, then the extension-host tests
 npm run test:e2e        # packages the VSIX and runs a sample score through it
 ```
 
-- Nothing under `src/compile/`, `src/intellisense/` (except `provider.ts`),
-  `src/diagnostics/parse.ts`, `src/diagnostics/span.ts` or `tools/` may import
-  `vscode`; `span.ts` imports nothing from Node either (Lily Studio's renderer
-  uses it).
-- A file or directory that is needed at run time must be let into the VSIX in
-  `.vscodeignore`; only `npm run test:e2e` notices when it is not.
-- `data/completions.json` is generated (`npm run gen:completions`); do not edit it.
+In `packages/studio`: `npm start`, `npm test` (Rust, renderer and smoke
+tests), `npm run lint:rust`; its README has the rest.
+
+## Rules
+
+- Something belongs in `packages/common` only if both apps use it. Import it
+  as `@lily/common/…`, never by a relative path into another package.
+- Nothing under `packages/common`, `src/compile/`, `src/intellisense/` (except
+  `provider.ts`), `src/diagnostics/parse.ts` or `tools/` of the extension may
+  import `vscode`.
+- A VSIX holds only `packages/vscode`: a file the extension needs at run time
+  is copied into `dist/` by its `esbuild.mjs` if it is in `packages/common`,
+  and let into the VSIX in `.vscodeignore` either way; only
+  `npm run test:e2e` notices when it is not.
+- Lily Studio's compiler and error parser are a Rust port of the extension's
+  (D42); a change to one must be made in the other.
+- `packages/vscode/data/completions.json` is generated (`npm run
+  gen:completions`); do not edit it.
 - Tests that need lilypond skip themselves when it is not installed; a run with
   skipped tests has not verified a change to compiling or parsing.

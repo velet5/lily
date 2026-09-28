@@ -3,7 +3,7 @@ import type * as vscode from 'vscode'
 import type { PlaybackAction, PreviewPlayback } from '../preview/panel'
 
 // The viewer of `.mid` / `.midi` files (DECISIONS D24): a custom editor whose
-// webview plays the file with media/midi.js, as the preview plays its score.
+// webview plays the file with @lily/common's midi.js, as the preview plays its score.
 // Only *types* come from `vscode`, as in preview/panel.ts: extension.ts registers
 // the provider and lends it the file system, so it runs under `node --test`.
 
@@ -23,8 +23,8 @@ export type PlayerWebviewMessage =
   | ({ type: 'playback' } & PreviewPlayback)
 
 export interface MidiPlayerAssets {
-  /** The only directory the webview may load from. */
-  root: vscode.Uri
+  /** The only directories the webview may load from. */
+  roots: vscode.Uri[]
   script: vscode.Uri
   midiScript: vscode.Uri
   style: vscode.Uri
@@ -104,7 +104,7 @@ export class MidiPlayerPanel {
   ) {
     const { webview } = panel
     const { assets } = host
-    webview.options = { enableScripts: true, localResourceRoots: [assets.root] }
+    webview.options = { enableScripts: true, localResourceRoots: assets.roots }
     this.subscriptions = [
       // Sent on every (re)load: a hidden webview is destroyed, not retained.
       webview.onDidReceiveMessage((message: PlayerWebviewMessage) => this.receive(message)),

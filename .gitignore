@@ -8,7 +8,7 @@ out/
 .vscode-test/
 *.vsix
 .worktrees/
-test/e2e/workspace/sample.ly
+packages/vscode/test/e2e/workspace/sample.ly
 *.log
 
 # Local secrets and machine-specific settings; never commit these
@@ -20,9 +20,9 @@ test/e2e/workspace/sample.ly
 .DS_Store
 Thumbs.db
 
-# Lily Studio packages (npm run dist in studio/)
+# Lily Studio packages (npm run dist in packages/studio/)
 release/
 
-# Lily Studio's Cargo workspace (studio/), and what tauri-build generates
+# Lily Studio's Cargo workspace (packages/studio/), and what tauri-build generates
 target/
-studio/src-tauri/gen/
+packages/studio/src-tauri/gen/

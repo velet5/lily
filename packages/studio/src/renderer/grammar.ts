@@ -1,5 +1,5 @@
-// LilyPond highlighting in Monaco from the extension's own TextMate grammar and
-// language configuration (DECISIONS D30). vscode-textmate tokenizes each line
+// LilyPond highlighting in Monaco from the TextMate grammar and language
+// configuration that the extension contributes, in @lily/common (DECISIONS D30). vscode-textmate tokenizes each line
 // with Oniguruma compiled to WebAssembly; every token is handed to Monaco as
 // one theme key (`tokenType`), which the two themes below colour like VS
 // Code's Light+ and Dark+. Only types come from `monaco-editor`, so the tests
@@ -8,8 +8,8 @@ import type * as monaco from 'monaco-editor/editor'
 import { createOnigScanner, createOnigString, loadWASM } from 'vscode-oniguruma'
 import onigWasm from 'vscode-oniguruma/release/onig.wasm'
 import { INITIAL, Registry, type IGrammar, type IRawGrammar, type StateStack } from 'vscode-textmate'
-import rawConfiguration from '../../../language-configuration.json'
-import rawGrammar from '../../../syntaxes/lilypond.tmLanguage.json'
+import rawConfiguration from '@lily/common/language-configuration.json'
+import rawGrammar from '@lily/common/syntaxes/lilypond.tmLanguage.json'
 
 export const SCOPE_NAME = 'source.lilypond'
 export const LIGHT_THEME = 'lilypond-light'

@@ -1,7 +1,7 @@
 # Live preview implementation and validation
 
 Implemented 2026-09-21, following [the research](LIVE-PREVIEW-RESEARCH.md).
-[D25](DECISIONS.md#d25--unsaved-accelerated-live-preview) records the conventions
+[D25](https://github.com/velet5/lily/blob/main/docs/DECISIONS.md#d25--unsaved-accelerated-live-preview) records the conventions
 that supersede the original save-only pipeline.
 
 The extension now compiles unsaved root/include snapshots after a 150 ms idle

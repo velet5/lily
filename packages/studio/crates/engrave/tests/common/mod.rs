@@ -7,20 +7,25 @@ use std::path::{Path, PathBuf};
 use lily_engrave::SearchPath;
 use lily_engrave::locate::{LocateOptions, locate_lilypond};
 
-/// The repository root: studio/crates/engrave/../../..
-pub fn repo() -> PathBuf {
+/// The monorepo's packages/: packages/studio/crates/engrave/../../..
+pub fn packages() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../..")
         .canonicalize()
-        .expect("the repository")
+        .expect("the repository's packages")
+}
+
+/// The extension's test scores, which these tests compile too.
+pub fn extension_tests() -> PathBuf {
+    packages().join("vscode/test")
 }
 
 pub fn fixtures() -> PathBuf {
-    repo().join("test/fixtures")
+    extension_tests().join("fixtures")
 }
 
 pub fn runtime() -> PathBuf {
-    repo().join("runtime")
+    packages().join("common/runtime")
 }
 
 /// A fresh directory, by its real path: the temp directory is a symlink on

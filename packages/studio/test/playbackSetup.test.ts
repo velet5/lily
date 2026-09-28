@@ -3,12 +3,12 @@ import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { after, before, describe, test } from 'node:test'
-import { momentTime, parseMidi, type Midi } from '../../media/midi.js'
-import type { TimedStaff } from '../../src/preview/panel'
+import { momentTime, parseMidi, type Midi } from '@lily/common/web/midi.js'
+import type { TimedStaff } from '@lily/common/types'
 import { barTime, mixMidi, momentAt, partNames, partsOf, withPart, withStartBar } from '../src/renderer/playbackSetup'
 import { realOutcome } from './outcome'
 
-// Runs under `node --test` from out/test/, in studio/ (npm run test:unit).
+// Runs under `node --test` from out/test/, in packages/studio/ (npm run test:unit).
 
 let scratch: string
 

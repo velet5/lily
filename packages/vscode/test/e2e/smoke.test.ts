@@ -69,17 +69,17 @@ suite('release smoke pass on the packaged extension', () => {
       'dist/extension.js',
       'dist/lily-check.js',
       'data/completions.json',
-      'syntaxes/lilypond.tmLanguage.json',
+      'dist/syntaxes/lilypond.tmLanguage.json',
       'snippets/lilypond.json',
-      'language-configuration.json',
-      'media/preview.js',
+      'dist/language-configuration.json',
+      'dist/web/preview.js',
       'media/preview.css',
-      'media/midi.js',
+      'dist/web/midi.js',
       'media/player.js',
       'media/player.css',
-      'runtime/glyph-cache.scm',
-      'runtime/worker.scm',
-      'runtime/timing.ly',
+      'dist/runtime/glyph-cache.scm',
+      'dist/runtime/worker.scm',
+      'dist/runtime/timing.ly',
       'media/icons/preview.svg',
       'media/icons/preview-dark.svg',
     ]) {
@@ -114,7 +114,7 @@ suite('release smoke pass on the packaged extension', () => {
     await vscode.commands.executeCommand('lily.preview.openToSide')
     const preview = api.previews.get(score)
     assert.ok(preview, 'no preview was registered for the score')
-    // Reported by the webview: the shipped media/preview.js drew the pages.
+    // Reported by the webview: the shipped dist/web/preview.js drew the pages.
     assert.strictEqual(await preview.whenRendered(), 2)
     assert.strictEqual(preview.latency?.engine, 'warm', 'the packaged warm resources must actually run')
     assert.strictEqual(preview.viewColumn, vscode.ViewColumn.Two)
@@ -183,7 +183,7 @@ suite('release smoke pass on the packaged extension', () => {
     const preview = api.previews.get(score)
     assert.ok(preview)
     await vscode.commands.executeCommand('lily.midi.play', vscode.Uri.file(score))
-    // Eight bars of 3/4 at 96: the shipped media/midi.js read the file the compile wrote.
+    // Eight bars of 3/4 at 96: the shipped dist/web/midi.js read the file the compile wrote.
     await eventually('the preview to play', () => preview.playback?.duration === 15 && asked(preview.playback))
     await vscode.commands.executeCommand('lily.midi.stop', vscode.Uri.file(score))
     await eventually('the preview to stop', () => preview.playback?.state === 'stopped')

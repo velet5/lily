@@ -2,8 +2,8 @@
 // Monaco, and the compile part of the status line. No Monaco and no DOM here,
 // so the tests run it under plain Node; editor.ts applies the markers. The
 // markers and the problem banner lead with plain words (plainLanguage.ts, D37).
-import type { LyDiagnostic } from '../../../src/diagnostics/parse'
-import { diagnosticSpan } from '../../../src/diagnostics/span'
+import type { LyDiagnostic } from '@lily/common/types'
+import { diagnosticSpan } from '@lily/common/span'
 import type { CompileEvent, CompileOutcome } from '../ipc'
 import { explain, markerMessage } from './plainLanguage'
 

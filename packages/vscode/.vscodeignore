@@ -8,17 +8,21 @@
 !CHANGELOG.md
 !LICENSE
 !AGENTS.md
-!language-configuration.json
 
 # The two bundles; their source maps stay out.
 !dist/extension.js
 !dist/lily-check.js
 
-# Webview assets and icons, grammar, snippets, IntelliSense data (D21).
+# What esbuild.mjs copies from packages/common (D53): the webview scripts,
+# runtime/, the grammar and the language configuration.
+!dist/web/*.js
+!dist/runtime/*.scm
+!dist/runtime/timing.ly
+!dist/syntaxes/lilypond.tmLanguage.json
+!dist/language-configuration.json
+
+# Webview styles and icons, snippets, IntelliSense data (D21).
 !media/**
-!runtime/*.scm
-!runtime/timing.ly
-!syntaxes/lilypond.tmLanguage.json
 !snippets/lilypond.json
 !data/completions.json
 
@@ -28,7 +32,6 @@
 # Preview implementation notes linked from the README.
 !docs/LIVE-PREVIEW-IMPLEMENTATION.md
 !docs/LIVE-PREVIEW-RESEARCH.md
-!docs/DECISIONS.md
 !docs/research/live-preview/implementation-results.json
 !docs/research/live-preview/implementation-editor-results.json
 !docs/research/live-preview/choir-results.json

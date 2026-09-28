@@ -48,6 +48,8 @@ jobs:
           echo "$HOME/lilypond/bin" >> "$GITHUB_PATH"
           "$HOME/lilypond/bin/lilypond" --version
 
+      # The extension and what it shares with Lily Studio (DECISIONS D53); the
+      # studio is type-checked and linted with them, but not built here.
       - name: Types
         run: npm run check-types
 
@@ -58,18 +60,18 @@ jobs:
         run: npm run test:grammar
 
       - name: Unit tests
-        run: npm run test:unit
+        run: npm run test:unit -w lily
 
-      # `npm test` repeats the four steps above as its pretest; they are listed
-      # separately so that a failure names itself.
+      # The extension's `npm test` repeats types, lint and unit tests as its
+      # pretest; they are listed separately so that a failure names itself.
       - name: Extension-host tests
-        run: xvfb-run -a npm test
+        run: xvfb-run -a npm test -w lily
 
       - name: Package, and run the sample score through the packaged extension
-        run: xvfb-run -a npm run test:e2e
+        run: xvfb-run -a npm run test:e2e -w lily
 
       - uses: actions/upload-artifact@v4
         with:
           name: vsix
-          path: "*.vsix"
+          path: packages/vscode/*.vsix
           if-no-files-found: error

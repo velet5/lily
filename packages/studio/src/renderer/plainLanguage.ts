@@ -2,7 +2,7 @@
 // wrong and what to try, for someone who reads music, not compiler output.
 // The markers and the status line show them above lilypond's own words. No
 // DOM here, so the tests run it under plain Node.
-import type { LyDiagnostic } from '../../../src/diagnostics/parse'
+import type { LyDiagnostic } from '@lily/common/types'
 
 interface Rule {
   pattern: RegExp

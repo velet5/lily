@@ -6,7 +6,7 @@ import { after, before, describe, test } from 'node:test'
 import { addMidiBlock, type TextEdit } from '../src/renderer/midiBlock'
 import { realOutcome } from './outcome'
 
-// Runs under `node --test` from out/test/, in studio/ (npm run test:unit).
+// Runs under `node --test` from out/test/, in packages/studio/ (npm run test:unit).
 
 function apply(text: string, edits: TextEdit[]): string {
   return [...edits].reverse().reduce((out, edit) => out.slice(0, edit.offset) + edit.text + out.slice(edit.offset + edit.length), text)

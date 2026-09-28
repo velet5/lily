@@ -1,11 +1,12 @@
 // Preview webview script (DECISIONS D17). Plain JS, no build step (D12); the
-// message types are HostMessage / WebviewMessage in src/preview/panel.ts.
-// media/midi.js is loaded before it and plays the score (D24).
+// message types are HostMessage / WebviewMessage in the extension's
+// src/preview/panel.ts, which loads it from dist/web/ (D53). midi.js is loaded
+// before it and plays the score (D24).
 //
-// The first half is pure (or needs only the DOM) and is also loaded by
-// test/preview/panel.test.ts and bundled by Lily Studio's preview
-// (studio/src/renderer/preview.ts), which is why it ends with a CommonJS
-// export that a webview never reaches.
+// The first half is pure (or needs only the DOM) and is also loaded by the
+// extension's test/preview/panel.test.ts and bundled by Lily Studio's preview
+// (packages/studio/src/renderer/preview.ts), which is why it ends with a
+// CommonJS export that a webview never reaches. preview.d.ts types that half.
 ;(function () {
   'use strict'
 

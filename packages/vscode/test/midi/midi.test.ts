@@ -3,7 +3,7 @@ import * as fs from 'node:fs'
 import * as path from 'node:path'
 import { describe, mock, test } from 'node:test'
 
-// The pure half of media/midi.js (DECISIONS D24), loaded as the webviews load it:
+// The pure half of @lily/common's web/midi.js (DECISIONS D24), loaded as the webviews load it:
 // the file itself, not a bundle of it. There is no AudioContext here, so the
 // player runs against a clock that the tests turn.
 
@@ -58,7 +58,7 @@ interface LilyMidi {
 
 const root = path.resolve(__dirname, '../../..')
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const midi: LilyMidi = require(path.join(root, 'media/midi.js'))
+const midi: LilyMidi = require(path.join(root, '../common/web/midi.js'))
 
 // ---- a Standard MIDI File writer, just enough for the tests ---------------------
 

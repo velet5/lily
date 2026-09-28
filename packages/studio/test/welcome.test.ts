@@ -2,7 +2,7 @@ import * as assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import { recentLabel } from '../src/renderer/welcome'
 
-// Runs under `node --test` from out/test/ (npm run test:unit in studio/). The
+// Runs under `node --test` from out/test/ (npm run test:unit in packages/studio/). The
 // list itself is the Rust side's (src-tauri/src/recent.rs's tests).
 
 describe('recentLabel', () => {

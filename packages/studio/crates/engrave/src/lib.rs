@@ -5,7 +5,7 @@
 //! LilyPond setup, file access and the templates).
 //!
 //! Everything the renderer receives serializes to the shapes of
-//! studio/src/ipc.ts: camelCase fields, absent optional fields left out, paths
+//! packages/studio/src/ipc.ts: camelCase fields, absent optional fields left out, paths
 //! as strings and bytes as base64.
 
 pub mod accelerator;

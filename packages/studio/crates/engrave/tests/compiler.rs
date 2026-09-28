@@ -313,7 +313,7 @@ async fn a_preview_compile_with_the_runtime_maps_every_note_of_the_midi_to_its_l
         runtime_dir: Some(common::runtime()),
         search_path: common::search_path(),
     });
-    let score = common::repo().join("test/e2e/workspace/score.ly");
+    let score = common::extension_tests().join("e2e/workspace/score.ly");
     // A dirty buffer makes it a snapshot compile, whose links must name the real file.
     let buffers = [(score.clone(), read(&score).await)].into_iter().collect();
     let result = mapped

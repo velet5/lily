@@ -3,7 +3,7 @@
 This document records what we learned from studying
 [VSLilyPond](https://marketplace.visualstudio.com/items?itemName=lhl2617.vslilypond)
 and how our extension is laid out in response. The reasoning behind each choice
-lives in [DECISIONS.md](DECISIONS.md).
+lives in [DECISIONS.md](../../../docs/DECISIONS.md).
 
 Sources studied (September 2026): the marketplace page, and a source read of
 `lhl2617/VSLilyPond` @ `37c0970` (v1.7.3, last commit 2021-09-11) together with
@@ -166,13 +166,12 @@ src/
   config.ts             typed, uncached access to the `lily.*` settings
   diagnostics/
     parse.ts            stderr → LyDiagnostic[] (no vscode)
-    span.ts             column → character, CHAR ↔ character, token span (no vscode, no Node)
     publish.ts          CompileReporter: Problems, output channel, status bar item
   preview/
     panel.ts            PreviewManager / PreviewPanel, html + CSP, message protocol (types-only vscode)
     autoPreview.ts      bounded edit/save debounce of previewed roots (no vscode)
     liveQueue.ts        one running and one replaceable pending revision per root
-    pointAndClick.ts    textedit link parser and index; re-exports span.ts's CHAR ↔ character (no vscode)
+    pointAndClick.ts    textedit link index; re-exports @lily/common's parser and CHAR ↔ character (no vscode)
   midi/
     player.ts           the custom editor for .mid/.midi files, html + CSP (types-only vscode)
   intellisense/
@@ -180,12 +179,8 @@ src/
     completion.ts       what to offer after `\`, `\new`, `\override`, `\set` (no vscode)
     hover.ts            hover lookup and the Markdown both providers show (no vscode)
     provider.ts         the two VS Code providers
-media/                  preview.js + preview.css for the webview (no framework, no build)
-                        midi.js: SMF parser, Web Audio synthesizer, player (D24); player.js + player.css
-syntaxes/               lilypond.tmLanguage.json (authored here)
+media/                  preview.css for the webview; player.js + player.css for .mid files; icons
 snippets/
-runtime/                guarded glyph-cache.scm and isolated worker.scm (D25); timing.ly, the
-                        performer that maps the MIDI to the page for the playhead (D26)
 data/                   completions.json, generated and committed (D21)
 scripts/                gen-completions.mjs: data extraction from the installed lilypond
 tools/lily-check/       headless checker for agents, bundled to dist/lily-check.js (D22, no vscode)
@@ -193,14 +188,30 @@ tools/lily-check/       headless checker for agents, bundled to dist/lily-check.
   cli.ts                `lily-check compile <file> --json`, exit codes, text report
   mcp.ts                minimal MCP server on stdio, one tool: lilypond_compile
   main.ts               entry
-AGENTS.md               the compile-and-fix loop for Codex, then repository notes
+AGENTS.md               the compile-and-fix loop for Codex (shipped in the VSIX)
 test/                   *.test.ts: extension-host tests; */*.test.ts: node:test (D13, D15)
   e2e/                  release pass on the unpacked VSIX, its sample score, README screenshots (D23)
 .vscodeignore           allow-list of what ships in the VSIX (D23)
-.github/workflows/      ci.yml: types, lint, grammar, unit, host tests, release pass, VSIX artifact
 ```
 
-Rule: nothing under `src/compile/` or `tools/`, nor `src/diagnostics/parse.ts` and `span.ts`, may import `vscode`. That is what lets the
+What the extension shares with Lily Studio is in `packages/common` (D53), and
+`esbuild.mjs` copies it into `dist/`, since a VSIX holds only its own directory:
+
+```
+../common/
+  src/span.ts           column → character, CHAR ↔ character, token span (no vscode, no Node)
+  src/types.ts          LyDiagnostic, SourceLocation, the playback map (no vscode, no Node)
+  src/textedit.ts       the textedit link parser
+  web/                  → dist/web/: preview.js for the webview (no framework, no build);
+                        midi.js: SMF parser, Web Audio synthesizer, player (D24)
+  syntaxes/             → dist/syntaxes/: lilypond.tmLanguage.json (authored here)
+  language-configuration.json → dist/
+  runtime/              → dist/runtime/: guarded glyph-cache.scm and isolated worker.scm (D25);
+                        timing.ly, the performer that maps the MIDI to the page for the playhead (D26)
+  test/grammar/         grammar snapshots
+```
+
+Rule: nothing under `src/compile/` or `tools/`, nor `src/diagnostics/parse.ts` and `@lily/common`, may import `vscode`. That is what lets the
 CLI and MCP server reuse the exact code path the editor uses, and
 lets it be unit-tested without an extension host.
 
@@ -208,7 +219,7 @@ lets it be unit-tested without an extension host.
 
 ```
 lilypond --loglevel=WARNING --svg -dpoint-and-click \
-         -dinclude-settings=<extension>/runtime/timing.ly <extra args> \
+         -dinclude-settings=<extension>/dist/runtime/timing.ly <extra args> \
          -o <tmp>/<run-id>/<basename>  <root file>
 cwd = dirname(root file)      # so relative \include keeps working
 env = process.env + LANGUAGE=en
@@ -345,21 +356,21 @@ const run = reporter.run(rootFile, () =>
 await previews.get(rootFile)?.follow(run)
 ```
 
+In `packages/vscode`, after `npm install` at the repository's root:
+
 ```
-npm install
-npm run build         # esbuild → dist/extension.js   (watch: npm run watch)
+npm run build         # esbuild → dist/extension.js, and packages/common → dist/   (watch: npm run watch)
 npm run check-types   # tsc --noEmit over src/ and test/
-npm run test:grammar  # grammar snapshots only (no extension host)
 npm run test:unit     # pure-module tests under test/*/ with node --test (~5 s)
 npm run gen:completions  # rewrite data/completions.json from the installed lilypond
 npm run lint          # oxlint, warnings are errors (D23)
-npm test              # type-check, lint, build, grammar, unit, extension-host tests
+npm test              # type-check, lint, build, unit, extension-host tests
 npm run vsix          # lily-<version>.vsix (production build first)
 npm run test:e2e      # package, unpack, run the sample score through the packaged extension
 npm run screenshots   # retake docs/images/*.png from the packaged extension
 ```
 
-`npm test` downloads a VS Code build into `.vscode-test/` on first run. F5
+The grammar snapshots are `npm run test:grammar` at the root. `npm test` downloads a VS Code build into `.vscode-test/` on first run. F5
 ("Run Extension") opens `test/fixtures` in a development host.
 
 Where each piece of upcoming work should look first:
@@ -376,7 +387,7 @@ Where each piece of upcoming work should look first:
 | IntelliSense data, completion, hover (done) | D8 (the verified Scheme recipe), D21 |
 | CLI / MCP for agents (done) | §3.1 `CompileResult`, D11, D22, `AGENTS.md` |
 | Packaging, CI, README, release pass (done) | D23; what is left before publishing is listed there |
-| MIDI playback in the preview and for exported files (done) | D24; `media/midi.js` is the whole audio path |
+| MIDI playback in the preview and for exported files (done) | D24; `packages/common/web/midi.js` is the whole audio path |
 
 Appendix A is reproducible: each row is a one-line `lilypond` invocation on a
 two- or three-line input, and should be re-run when the minimum supported

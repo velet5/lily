@@ -11,7 +11,7 @@ import { createHash } from 'node:crypto'
 const scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'lily-benchmark-'))
 await build({ entryPoints: ['src/compile/compiler.ts'], outfile: path.join(scratch, 'compiler.cjs'), bundle: true, platform: 'node', format: 'cjs' })
 const { CompileService } = createRequire(import.meta.url)(path.join(scratch, 'compiler.cjs'))
-const runtimeDir = path.resolve(process.argv[3] ?? 'runtime')
+const runtimeDir = path.resolve(process.argv[3] ?? '../common/runtime')
 const service = new CompileService({ tmpRoot: scratch, runtimeDir })
 const digest = async files => Promise.all(files.map(async file => createHash('sha256').update(await fs.readFile(file)).digest('hex')))
 const rows = []

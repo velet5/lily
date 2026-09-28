@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from 'node:crypto'
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
+import type { PlaybackTiming } from '@lily/common/types'
 import type * as vscode from 'vscode'
 import type { CompileResult } from '../compile/compiler'
 import {
@@ -79,48 +80,6 @@ export interface PreviewPlayback {
   timed: boolean
 }
 
-/**
- * Where the notes of a MIDI file are on the pages (D26), as `runtime/timing.ly`
- * writes it: every rhythmic event of the performance with the `textedit:` link
- * of the element it produced, and the bar starts. Moments are whole notes.
- */
-export interface PlaybackTiming {
-  events: TimedEvent[]
-  bars: TimedBar[]
-  /** What each staff says about its MIDI track, in track order after the first (D48). */
-  staves?: TimedStaff[]
-}
-
-export interface TimedEvent {
-  href: string
-  /** When the event begins in the performance; `grace` is the grace part, 0 or negative. */
-  at: number
-  grace: number
-  /** Its written length, in grace time for a grace note. */
-  length: number
-}
-
-export interface TimedBar {
-  at: number
-  number: number
-}
-
-export interface TimedStaff {
-  /** `\new Staff = "id"`; empty when it has none. */
-  id: string
-  /** `instrumentName` and `shortInstrumentName` as plain text, at its first note. */
-  name: string
-  shortName: string
-  /** The context it is in, such as `PianoStaff` or `ChoirStaff`, and which one of the score's groups; `''` and -1 at the top. */
-  group: string
-  groupIndex: number
-  /** The clef glyph at its first note, such as `clefs.F`; `''` when it plays nothing. */
-  clef: string
-  clefTransposition: number
-  /** The ids of the voices that played notes in it, `''` for one without. */
-  voices: string[]
-}
-
 /** Where the editor's cursor is, in the editor's own terms. */
 export interface EditorCursor {
   file: string
@@ -132,8 +91,8 @@ export interface EditorCursor {
 }
 
 export interface PreviewAssets {
-  /** The only directory the webview may load from. */
-  root: vscode.Uri
+  /** The only directories the webview may load from. */
+  roots: vscode.Uri[]
   script: vscode.Uri
   /** The parser, synthesizer and player that the MIDI viewer uses too (D24). */
   midiScript: vscode.Uri
@@ -144,7 +103,7 @@ export interface PreviewHtmlOptions {
   cspSource: string
   nonce: string
   scriptUri: string
-  /** media/midi.js, which the script expects to be loaded before it (D24). */
+  /** @lily/common's web/midi.js, which the script expects to be loaded before it (D24). */
   midiScriptUri: string
   styleUri: string
   colors: PreviewColors
@@ -294,7 +253,7 @@ export class PreviewPanel {
   ) {
     const { webview } = panel
     this.colors = options.colors
-    webview.options = { enableScripts: true, localResourceRoots: [options.assets.root] }
+    webview.options = { enableScripts: true, localResourceRoots: options.assets.roots }
     this.subscriptions = [
       webview.onDidReceiveMessage((message: WebviewMessage) => this.receive(message)),
       panel.onDidDispose(() => this.dispose()),

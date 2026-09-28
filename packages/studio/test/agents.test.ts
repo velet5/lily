@@ -4,7 +4,7 @@ import { describe, test } from 'node:test'
 import { CHAT_FONT_DEFAULT, CHAT_FONT_SIZES, chatFontSize, contextLabel, imageRefusal, MAX_IMAGE_BYTES, MAX_IMAGES, modelChoices, PERMISSIONS, SELECTION_ACTIONS, stepChatFont, textRuns } from '../src/renderer/agents'
 import { clampHeight, clampWidth, FILES_MIN, SIDEBAR_WIDTH } from '../src/renderer/sidebar'
 
-// Runs under `node --test` from out/test/ (npm run test:unit in studio/): the
+// Runs under `node --test` from out/test/ (npm run test:unit in packages/studio/): the
 // sidebar and the agent panel. Running the agents is the Rust side's
 // (crates/agents's tests).
 

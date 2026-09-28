@@ -2,9 +2,9 @@
 // frontend (DECISIONS D42): renderer/index.html and layout.css as they are,
 // the renderer script with Monaco as app.js and Monaco's CSS as app.css
 // (D29), and Monaco's and pdf.js's workers beside it (D33). The renderer
-// carries the extension's grammar, language configuration and Oniguruma's
+// carries @lily/common's grammar, language configuration and Oniguruma's
 // WebAssembly inline (D30). smoke.js is the smoke test's driver, loaded only
-// by `lily-studio --smoke-test` (D42). The extension's runtime/ is copied to
+// by `lily-studio --smoke-test` (D42). @lily/common's runtime/ is copied to
 // dist/runtime/, which the app bundles as a resource: timing.ly for the
 // playhead (D35), the warm compiler and glyph cache for live preview (D36).
 //
@@ -93,7 +93,7 @@ if (!tests && !e2e) {
   // timing.ly is passed to every compile as -dinclude-settings; the playback
   // map comes from it. worker.scm and glyph-cache.scm speed up compiles (D25).
   mkdirSync('dist/runtime', { recursive: true })
-  for (const name of ['timing.ly', 'worker.scm', 'glyph-cache.scm']) cpSync(`../runtime/${name}`, `dist/runtime/${name}`)
+  for (const name of ['timing.ly', 'worker.scm', 'glyph-cache.scm']) cpSync(`../common/runtime/${name}`, `dist/runtime/${name}`)
 }
 
 if (watch) {

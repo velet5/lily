@@ -24,9 +24,9 @@ const renderMessage = (revision: number, pages: string[]): HostMessage => ({ typ
 const uri = (value: string) => ({ toString: () => value }) as vscode.Uri
 
 const assets = {
-  root: uri('file:///ext/media'),
-  script: uri('file:///ext/media/preview.js'),
-  midiScript: uri('file:///ext/media/midi.js'),
+  roots: [uri('file:///ext/media'), uri('file:///ext/dist/web')],
+  script: uri('file:///ext/dist/web/preview.js'),
+  midiScript: uri('file:///ext/dist/web/midi.js'),
   style: uri('file:///ext/media/preview.css'),
 }
 
@@ -178,13 +178,13 @@ describe('PreviewPanel', () => {
     return { fake, preview, clicked, closed: () => closed }
   }
 
-  test('scripts are enabled and only media/ can be loaded', () => {
+  test('scripts are enabled and only media/ and dist/web/ can be loaded', () => {
     const { fake } = create()
     assert.deepStrictEqual(fake.webview.options, {
       enableScripts: true,
-      localResourceRoots: [assets.root],
+      localResourceRoots: assets.roots,
     })
-    assert.match(fake.webview.html, /src="https:\/\/webview\.test\/ext\/media\/preview\.js"/)
+    assert.match(fake.webview.html, /src="https:\/\/webview\.test\/ext\/dist\/web\/preview\.js"/)
     assert.match(fake.webview.html, /href="https:\/\/webview\.test\/ext\/media\/preview\.css"/)
   })
 
@@ -764,7 +764,7 @@ describe('PreviewManager', () => {
   })
 })
 
-describe('media/preview.js', () => {
+describe('web/preview.js', () => {
   interface Rect {
     top: number
     height: number
@@ -774,8 +774,8 @@ describe('media/preview.js', () => {
     offset: number
   }
   // Plain JS shared with the webview; outside one it only exports its pure half.
-  // `npm run test:unit` runs from the repository root.
-  const script = require(path.resolve('media/preview.js')) as {
+  // `npm run test:unit` runs from packages/vscode.
+  const script = require(path.resolve('../common/web/preview.js')) as {
     clampZoom(zoom: number): number
     stepZoom(zoom: number, direction: number): number
     zoomLabel(zoom: number): string
@@ -902,7 +902,7 @@ describe('preview.js: the playhead (DECISIONS D26)', () => {
     soundingAt(events: Array<{ time: number; end: number }>, ends: number[], time: number): number[]
   }
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const playhead: Playhead = require(path.resolve(__dirname, '../../../media/preview.js'))
+  const playhead: Playhead = require(path.resolve(__dirname, '../../../../common/web/preview.js'))
   const moment = (page: number, x: number, time: number, top = 0.1, bottom = 0.2): Moment => ({ page, x, time, top, bottom })
 
   test('a system ends where the music jumps back to the left, or the page turns', () => {

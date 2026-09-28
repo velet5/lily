@@ -1,6 +1,7 @@
 // MIDI viewer webview script (DECISIONS D24). Plain JS, no build step (D12); the
 // message types are PlayerHostMessage / PlayerWebviewMessage in
-// src/midi/player.ts. media/midi.js is loaded before it and makes the sound.
+// src/midi/player.ts. midi.js (dist/web/, from @lily/common) is loaded before
+// it and makes the sound.
 ;(function () {
   'use strict'
 

@@ -1,9 +1,7 @@
 // What the renderer and Lily Studio's Rust side exchange (DECISIONS D28, D42):
 // the types of src/renderer/bridge.ts's calls and events, as the Rust side
 // serializes them (crates/engrave, crates/agents). Types only.
-import type { LyDiagnostic } from '../../src/diagnostics/parse'
-import type { PlaybackTiming } from '../../src/preview/panel'
-import type { SourceLocation } from '../../src/preview/pointAndClick'
+import type { LyDiagnostic, PlaybackTiming, SourceLocation } from '@lily/common/types'
 
 /** The scores File › New starts from (crates/engrave/src/templates.rs). */
 export type TemplateId = 'melody' | 'song' | 'piano'

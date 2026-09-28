@@ -1,11 +1,11 @@
 import * as assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import type { LyDiagnostic } from '../../src/diagnostics/parse'
+import type { LyDiagnostic } from '@lily/common/types'
 import type { CompileOutcome } from '../src/ipc'
 import { problemSummary, toMarkers } from '../src/renderer/diagnostics'
 import { explain, markerMessage } from '../src/renderer/plainLanguage'
 
-// Runs under `node --test` from out/test/ (npm run test:unit in studio/).
+// Runs under `node --test` from out/test/ (npm run test:unit in packages/studio/).
 
 const said = (message: string) => explain({ message })
 

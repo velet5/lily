@@ -2,7 +2,7 @@ import * as assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import { fileRows } from '../src/renderer/files'
 
-// Runs under `node --test` from out/test/ (npm run test:unit in studio/). The
+// Runs under `node --test` from out/test/ (npm run test:unit in packages/studio/). The
 // listing itself is the Rust side's (crates/engrave's tests).
 
 describe('fileRows', () => {

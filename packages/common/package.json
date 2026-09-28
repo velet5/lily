@@ -1,0 +1,26 @@
+{
+  "name": "@lily/common",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "description": "What the VS Code extension and Lily Studio share: spans, types, the webview scripts, the grammar and lilypond's runtime files (DECISIONS D53).",
+  "exports": {
+    "./span": "./src/span.ts",
+    "./types": "./src/types.ts",
+    "./textedit": "./src/textedit.ts",
+    "./web/*": "./web/*",
+    "./syntaxes/*": "./syntaxes/*",
+    "./language-configuration.json": "./language-configuration.json",
+    "./runtime/*": "./runtime/*"
+  },
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test:grammar": "vscode-tmgrammar-snap -g syntaxes/lilypond.tmLanguage.json -s source.lilypond \"test/grammar/*.ly\"",
+    "test:grammar:update": "vscode-tmgrammar-snap -g syntaxes/lilypond.tmLanguage.json -s source.lilypond --updateSnapshot \"test/grammar/*.ly\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^7.0.2",
+    "vscode-tmgrammar-test": "^0.1.3"
+  }
+}

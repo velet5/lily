@@ -1,45 +1,17 @@
 import * as fs from 'node:fs/promises'
 import * as path from 'node:path'
+import { parseTextEdit } from '@lily/common/textedit'
+import type { SourceLocation } from '@lily/common/types'
 
 // Point-and-click in both directions (DECISIONS D7, D19). LilyPond wraps what a
 // piece of input produced in `<a xlink:href="textedit://PATH:LINE:CHAR:COLUMN">`
 // (ARCHITECTURE §3.5). No `vscode` import: the mapping is tested under `node --test`.
-// The `CHAR` conversions live in the Node-free span.ts, which Lily Studio's
-// renderer bundles; they are re-exported here.
-export { charToCharacter, characterToChar } from '../diagnostics/span'
-
-/** A place in a source file, in the numbers LilyPond prints. */
-export interface SourceLocation {
-  /** Absolute and decoded. */
-  file: string
-  /** 1-based. */
-  line: number
-  /** 0-based, in code points, tabs not expanded: the `CHAR` field. */
-  char: number
-}
-
-/**
- * Reads a `textedit:` link. The numbers are taken from the right, because a
- * Windows path has a colon of its own; `COLUMN`, the tab-expanded form of
- * `CHAR`, is not needed.
- */
-export function parseTextEdit(href: string): SourceLocation | undefined {
-  const match = /^textedit:\/\/(.+):(\d+):(\d+):\d+$/s.exec(href.trim())
-  if (!match) return undefined
-  let file: string
-  try {
-    file = decodeURIComponent(match[1])
-  } catch {
-    return undefined
-  }
-  // `/C:/scores/a.ly` when the link was written with three slashes.
-  if (/^\/[A-Za-z]:[\\/]/.test(file)) file = file.slice(1)
-  const line = Number(match[2])
-  const char = Number(match[3])
-  if (!path.isAbsolute(file) || file.includes('\0')) return undefined
-  if (line < 1 || !Number.isSafeInteger(line) || !Number.isSafeInteger(char)) return undefined
-  return { file: path.normalize(file), line, char }
-}
+// The `CHAR` conversions live in the Node-free @lily/common/span, which Lily
+// Studio's renderer bundles, and `parseTextEdit` in @lily/common/textedit;
+// they are re-exported here.
+export { charToCharacter, characterToChar } from '@lily/common/span'
+export { parseTextEdit } from '@lily/common/textedit'
+export type { SourceLocation } from '@lily/common/types'
 
 /**
  * The spelling under which the index knows a file. LilyPond prints paths as it

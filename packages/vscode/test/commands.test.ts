@@ -187,7 +187,7 @@ suite('command surface: preview and export', () => {
     )
     assert.ok(preview, 'no preview was opened')
     assert.strictEqual(preview.hasMidi, true)
-    // Four crotchets at lilypond's default tempo: media/midi.js parsed what the compile wrote,
+    // Four crotchets at lilypond's default tempo: midi.js parsed what the compile wrote,
     // and found the notes of the playback map on the page (D26).
     await playback(() => preview.playback, 'play', (s) => s.duration === 4 && asked(s) && s.timed)
 

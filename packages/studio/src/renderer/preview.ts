@@ -1,7 +1,7 @@
 // The preview pane (DECISIONS D32): the SVG pages of the last compile, fitted
 // to the pane's width and zoomable, and a click on a note that asks for its
 // place in the source. Page parsing, sanitizing, zoom steps and the scroll
-// anchor are media/preview.js's, the extension's webview script; the rest is
+// anchor are @lily/common's web/preview.js, the extension's webview script; the rest is
 // the webview's render() cut down to one pane without a toolbar of its own.
 import {
   captureAnchor,
@@ -12,7 +12,7 @@ import {
   sanitize,
   stepZoom,
   zoomLabel,
-} from '../../../media/preview.js'
+} from '@lily/common/web/preview.js'
 import type { CompileEvent, CompileOutcome } from '../ipc'
 
 /** What a finished compile does to the preview. */

@@ -1,0 +1,27 @@
+{
+  "name": "lily-monorepo",
+  "private": true,
+  "license": "MIT",
+  "description": "LilyPond for VS Code and Lily Studio, with the code they share (DECISIONS D53).",
+  "workspaces": [
+    "packages/common",
+    "packages/vscode",
+    "packages/studio"
+  ],
+  "scripts": {
+    "build": "npm run build -w lily -w lily-studio",
+    "check-types": "npm run check-types --workspaces",
+    "lint": "oxlint --deny-warnings",
+    "test:grammar": "npm run test:grammar -w @lily/common",
+    "test:vscode": "npm test -w lily",
+    "test:studio": "npm test -w lily-studio",
+    "test": "npm run test:grammar && npm run test:vscode && npm run test:studio"
+  },
+  "devDependencies": {
+    "oxlint": "^1.83.0"
+  },
+  "author": {
+    "name": "Oleg Arshinskii",
+    "email": "velet592@gmail.com"
+  }
+}

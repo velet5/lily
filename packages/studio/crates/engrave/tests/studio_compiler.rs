@@ -873,7 +873,7 @@ async fn the_playback_map_comes_with_the_music_when_there_is_a_runtime() {
     });
     let (studio, _) = studio(Arc::new(service), vec![]);
     let outcome = studio
-        .compile(&common::repo().join("test/e2e/workspace/score.ly"))
+        .compile(&common::extension_tests().join("e2e/workspace/score.ly"))
         .await
         .expect("an outcome");
     assert_eq!(outcome.state, CompileState::Ok);

@@ -1,10 +1,10 @@
 import * as assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
-import type { LyDiagnostic } from '../../src/diagnostics/parse'
+import type { LyDiagnostic } from '@lily/common/types'
 import type { CompileOutcome } from '../src/ipc'
 import { compileStatus, DiagnosticStore, toMarkers } from '../src/renderer/diagnostics'
 
-// Runs under `node --test` from out/test/ (npm run test:unit in studio/).
+// Runs under `node --test` from out/test/ (npm run test:unit in packages/studio/).
 
 const error = (file: string, line: number, column?: number, message = 'oops'): LyDiagnostic => ({
   file, line, ...(column === undefined ? {} : { column }), severity: 'error', message,

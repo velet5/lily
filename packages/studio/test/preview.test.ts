@@ -3,13 +3,14 @@ import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { after, before, describe, test } from 'node:test'
-import { quiet } from '../../media/preview.js'
-import { charToCharacter, parseTextEdit } from '../../src/preview/pointAndClick'
+import { quiet } from '@lily/common/web/preview.js'
+import { charToCharacter } from '@lily/common/span'
+import { parseTextEdit } from '@lily/common/textedit'
 import type { CompileOutcome } from '../src/ipc'
 import { previewUpdate } from '../src/renderer/preview'
 import { realOutcome } from './outcome'
 
-// Runs under `node --test` from out/test/ (npm run test:unit in studio/).
+// Runs under `node --test` from out/test/ (npm run test:unit in packages/studio/).
 
 let scratch: string
 

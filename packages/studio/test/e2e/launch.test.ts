@@ -6,7 +6,7 @@ import * as path from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { promisify } from 'node:util'
 
-// `npm run test:e2e` in studio/ (DECISIONS D37): builds the DMG with
+// `npm run test:e2e` in packages/studio/ (DECISIONS D37): builds the DMG with
 // `npm run dist`, then mounts it, installs the app from it into a scratch
 // folder as a user would drag it to Applications, and launches that copy with
 // the Finder's bare PATH. The app runs its own smoke test (src/renderer/smoke.ts, D42)

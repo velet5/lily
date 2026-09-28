@@ -1,6 +1,6 @@
 # Faster LilyPond previews
 
-Implementation followed in [D25](DECISIONS.md#d25--unsaved-accelerated-live-preview);
+Implementation followed in [D25](https://github.com/velet5/lily/blob/main/docs/DECISIONS.md#d25--unsaved-accelerated-live-preview);
 see [implementation measurements and limits](LIVE-PREVIEW-IMPLEMENTATION.md).
 The research below preserves the pre-implementation findings.
 

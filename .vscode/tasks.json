@@ -4,6 +4,7 @@
     {
       "type": "npm",
       "script": "build",
+      "path": "packages/vscode",
       "group": { "kind": "build", "isDefault": true },
       "presentation": { "reveal": "silent" },
       "problemMatcher": []

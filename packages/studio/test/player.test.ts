@@ -3,13 +3,13 @@ import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { after, before, describe, test } from 'node:test'
-import { formatTime, momentTime, parseMidi } from '../../media/midi.js'
-import { timelineOf, type Box } from '../../media/preview.js'
+import { formatTime, momentTime, parseMidi } from '@lily/common/web/midi.js'
+import { timelineOf, type Box } from '@lily/common/web/preview.js'
 import type { CompileOutcome, PlaybackTiming } from '../src/ipc'
 import { playbackChange, type Loaded } from '../src/renderer/player'
 import { realOutcome } from './outcome'
 
-// Runs under `node --test` from out/test/, in studio/ (npm run test:unit).
+// Runs under `node --test` from out/test/, in packages/studio/ (npm run test:unit).
 
 let scratch: string
 

@@ -1,9 +1,9 @@
 // The pure half of the playback setup (DECISIONS D45): the instruments a part
 // can be given, the music as the setup plays it, and the bars playback can
 // start from. player.ts shows it; the Rust side keeps it per score.
-import { trackInstruments, type Midi } from '../../../media/midi.js'
-import type { Moment, System } from '../../../media/preview.js'
-import type { TimedStaff } from '../../../src/preview/panel'
+import { trackInstruments, type Midi } from '@lily/common/web/midi.js'
+import type { Moment, System } from '@lily/common/web/preview.js'
+import type { TimedStaff } from '@lily/common/types'
 import type { PlaybackSetup } from '../ipc'
 
 const DRUMS = 9 // channel 10

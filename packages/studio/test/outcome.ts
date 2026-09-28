@@ -8,19 +8,19 @@ import * as path from 'node:path'
 import type { TestContext } from 'node:test'
 import type { CompileOutcome } from '../src/ipc'
 
-/** studio/, as out/test/ lies two levels below it. */
+/** packages/studio/, as out/test/ lies two levels below it. */
 const studioDir = path.resolve(__dirname, '..', '..')
 const binary = path.join(studioDir, 'target', 'debug', 'lily-outcome')
 
 /**
- * The outcome of compiling `score` with the extension's runtime/, or
+ * The outcome of compiling `score` with @lily/common's runtime/, or
  * undefined after skipping `t` when lilypond is not installed. Throws when
  * lily-outcome is not built.
  */
 export async function realOutcome(t: TestContext, score: string): Promise<CompileOutcome | undefined> {
-  if (!fs.existsSync(binary)) throw new Error(`${binary} is missing; run \`cargo build -p lily-engrave\` in studio/`)
+  if (!fs.existsSync(binary)) throw new Error(`${binary} is missing; run \`cargo build -p lily-engrave\` in packages/studio/`)
   const { code, stdout, stderr } = await new Promise<{ code: number; stdout: string; stderr: string }>((resolve) => {
-    execFile(binary, [score, '--runtime', path.join(studioDir, '..', 'runtime')], { maxBuffer: 64 << 20 }, (error, out, err) =>
+    execFile(binary, [score, '--runtime', path.join(studioDir, '..', 'common', 'runtime')], { maxBuffer: 64 << 20 }, (error, out, err) =>
       resolve({ code: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stdout: out, stderr: err }),
     )
   })

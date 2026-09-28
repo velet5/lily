@@ -12,7 +12,7 @@ let service: CompileService
 before(async () => {
   await locateLilyPond() // This suite must not silently skip acceleration coverage.
   scratch = await fs.mkdtemp(path.join(os.tmpdir(), 'lily-live-'))
-  service = new CompileService({ tmpRoot: scratch, runtimeDir: path.resolve('runtime') })
+  service = new CompileService({ tmpRoot: scratch, runtimeDir: path.resolve('../common/runtime') })
 })
 after(async () => { await service?.dispose(); if (scratch) await fs.rm(scratch, { recursive: true, force: true }) })
 

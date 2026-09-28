@@ -1,19 +1,8 @@
 {
-  // Type checking only (`npm run check-types`); esbuild.mjs produces the output.
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "target": "ES2022",
     "lib": ["ES2022"],
-    "module": "preserve",
-    "moduleResolution": "bundler",
-    "types": ["node", "mocha"],
-    "strict": true,
-    "noUnusedLocals": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "isolatedModules": true,
-    "resolveJsonModule": true,
-    "skipLibCheck": true,
-    "noEmit": true
+    "types": ["node", "mocha"]
   },
   "include": ["src", "test", "tools"]
 }

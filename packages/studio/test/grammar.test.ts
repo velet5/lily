@@ -1,10 +1,10 @@
 import * as assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import type * as monaco from 'monaco-editor/editor'
-import rawGrammar from '../../syntaxes/lilypond.tmLanguage.json'
+import rawGrammar from '@lily/common/syntaxes/lilypond.tmLanguage.json'
 import { languageConfiguration, loadGrammar, theme, tokensProvider, tokenType } from '../src/renderer/grammar'
 
-// Runs under `node --test` from out/test/ (npm run test:unit in studio/), with
+// Runs under `node --test` from out/test/ (npm run test:unit in packages/studio/), with
 // the same Oniguruma WebAssembly the renderer loads.
 
 /** Tokenizes `lines` as Monaco would: `[text, token]` pairs per line. */

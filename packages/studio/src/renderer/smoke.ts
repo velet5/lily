@@ -1,4 +1,4 @@
-// `npm run test:smoke` in studio/ (DECISIONS D42): `lily-studio --smoke-test`
+// `npm run test:smoke` in packages/studio/ (DECISIONS D42): `lily-studio --smoke-test`
 // opens the real window on a scratch folder and loads this script into it,
 // which drives the page once — layout, Monaco, the file list, highlighting,
 // an edit, the unsaved marker, a save, the compile it starts, its pages in

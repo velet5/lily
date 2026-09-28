@@ -8,8 +8,13 @@
 //   node esbuild.mjs --unit         build only the pure-module tests into out/unit/
 //   node esbuild.mjs --e2e          build only the release pass and the screenshot
 //                                   run into out/e2e/ and out/screenshots/ (D23)
+//
+// The extension's builds also copy what it shares with Lily Studio from
+// packages/common into dist/ (D53), since a VSIX holds only its own directory:
+// the webview scripts into dist/web/, runtime/, the grammar and the language
+// configuration. --watch copies them again when they change.
 import * as esbuild from 'esbuild'
-import { readdirSync, rmSync } from 'node:fs'
+import { cpSync, mkdirSync, readdirSync, rmSync, watch as watchFiles } from 'node:fs'
 
 const production = process.argv.includes('--production')
 const watch = process.argv.includes('--watch')
@@ -65,6 +70,25 @@ if (unit) {
 if (e2e) {
   builds.push({ ...shared, entryPoints: ['test/e2e/smoke.test.ts'], outdir: 'out/e2e' })
   builds.push({ ...shared, entryPoints: ['test/e2e/screenshots.ts'], outdir: 'out/screenshots' })
+}
+
+/** Source in packages/common → destination in dist/. */
+const common = [
+  ['../common/web/preview.js', 'dist/web/preview.js'],
+  ['../common/web/midi.js', 'dist/web/midi.js'],
+  ['../common/runtime', 'dist/runtime'],
+  ['../common/syntaxes/lilypond.tmLanguage.json', 'dist/syntaxes/lilypond.tmLanguage.json'],
+  ['../common/language-configuration.json', 'dist/language-configuration.json'],
+]
+
+function copyCommon() {
+  mkdirSync('dist', { recursive: true })
+  for (const [from, to] of common) cpSync(from, to, { recursive: true })
+}
+
+if (!unit && !e2e) {
+  copyCommon()
+  if (watch) for (const [from] of common) watchFiles(from, copyCommon)
 }
 
 if (watch) {

@@ -31,15 +31,17 @@ export interface LilyApi {
 let service: CompileService | undefined
 
 export function activate(context: vscode.ExtensionContext): LilyApi {
-  const compiler = (service = new CompileService({ runtimeDir: path.join(context.extensionPath, 'runtime') }))
+  // What @lily/common shares with Lily Studio is copied into dist/ by esbuild.mjs (D53).
+  const compiler = (service = new CompileService({ runtimeDir: path.join(context.extensionPath, 'dist', 'runtime') }))
   const reporter = new CompileReporter()
   const queue = new LiveQueue<CompileResult | undefined>()
   const media = vscode.Uri.joinPath(context.extensionUri, 'media')
-  const midiScript = vscode.Uri.joinPath(media, 'midi.js')
+  const web = vscode.Uri.joinPath(context.extensionUri, 'dist', 'web')
+  const midiScript = vscode.Uri.joinPath(web, 'midi.js')
   const previews = new PreviewManager({
     assets: {
-      root: media,
-      script: vscode.Uri.joinPath(media, 'preview.js'),
+      roots: [media, web],
+      script: vscode.Uri.joinPath(web, 'preview.js'),
       midiScript,
       style: vscode.Uri.joinPath(media, 'preview.css'),
     },
@@ -208,7 +210,7 @@ export function activate(context: vscode.ExtensionContext): LilyApi {
   // Exported MIDI files open in a player of their own (D24).
   const midiPlayers = new MidiPlayerProvider({
     assets: {
-      root: media,
+      roots: [media, web],
       script: vscode.Uri.joinPath(media, 'player.js'),
       midiScript,
       style: vscode.Uri.joinPath(media, 'player.css'),

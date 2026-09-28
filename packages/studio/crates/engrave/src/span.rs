@@ -1,5 +1,5 @@
 //! Where a diagnostic sits in a line of text (DECISIONS D16), from
-//! src/diagnostics/span.ts. lilypond counts columns in code points with tabs
+//! packages/common/src/span.ts. lilypond counts columns in code points with tabs
 //! advancing to the next multiple of 8 and `CHAR` in code points; the editor
 //! counts UTF-16 units. The `*_byte` forms are the same conversions onto Rust's
 //! UTF-8 offsets, which the snapshot uses internally.

@@ -1,12 +1,12 @@
 // Playback in the preview pane (DECISIONS D35): the MIDI of the last compile,
-// played by media/midi.js's parser, synthesizer and player (D24) behind the
-// transport of media/player.js, and the notes marked as they sound, with a
-// playhead through the system (D26), from media/preview.js's pure half. The
+// played by @lily/common's midi.js parser, synthesizer and player (D24) behind
+// the transport of the extension's media/player.js, and the notes marked as they
+// sound, with a playhead through the system (D26), from preview.js's pure half. The
 // main process reads the MIDI and its map together with the pages. The Parts
 // fold plays each part on an instrument of its own or mutes it, and ▶ starts
 // from a marked bar (D45).
-import { formatTime, instrumentName, momentTime, parseMidi, Player, type Midi } from '../../../media/midi.js'
-import { barAt, cursorAt, scrollToShow, soundingAt, timelineOf, type Box, type Timeline } from '../../../media/preview.js'
+import { formatTime, instrumentName, momentTime, parseMidi, Player, type Midi } from '@lily/common/web/midi.js'
+import { barAt, cursorAt, scrollToShow, soundingAt, timelineOf, type Box, type Timeline } from '@lily/common/web/preview.js'
 import type { CompileEvent, CompileOutcome, PlaybackSetup, PlaybackTiming } from '../ipc'
 import { barTime, INSTRUMENT_GROUPS, mixMidi, momentAt, partsOf, withPart, withStartBar } from './playbackSetup'
 
