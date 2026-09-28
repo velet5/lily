@@ -5,7 +5,7 @@
 // dropped into the message box go with the message (D46). A− and A+ size the
 // chat's text (D47). `textRuns`, `imageRefusal` and the size steps are pure so
 // the tests can run them without a DOM.
-import type { AgentId, AgentStatus, ChatEntry, ChatEvent, ChatInfo, OpenChat, PastedImage, Permission } from '../ipc'
+import type { AgentId, AgentStatus, Ask, ChatEntry, ChatEvent, ChatInfo, Decision, OpenChat, PastedImage, Permission } from '../ipc'
 import type { StudioApi } from './bridge'
 import { button } from './files'
 
@@ -415,6 +415,18 @@ export class AgentPanel {
 
   private chatEvent(event: ChatEvent): void {
     const open = this.view.kind === 'chat' && this.view.chat.id === event.chatId ? this.view.chat : undefined
+    const listed = this.chats.find((chat) => chat.id === event.chatId)
+    if (event.kind === 'ask' || event.kind === 'answered') {
+      if (event.kind === 'ask') {
+        if (listed) listed.asking = true
+        open?.asks.push(event.ask)
+      } else if (open) {
+        open.asks = open.asks.filter((ask) => ask.id !== event.askId)
+      }
+      if (open) this.renderAsks(open)
+      else if (this.view.kind === 'list') void this.refreshList()
+      return
+    }
     if (event.kind === 'entry') {
       if (!open) return
       open.entries.push(event.entry)
@@ -425,10 +437,14 @@ export class AgentPanel {
       if (atEnd) log.scrollTop = log.scrollHeight
       return
     }
-    const listed = this.chats.find((chat) => chat.id === event.chatId)
-    if (listed) listed.running = event.running
+    if (listed) {
+      listed.running = event.running
+      if (!event.running) listed.asking = false
+    }
     if (open) {
       open.running = event.running
+      // What a turn asked ends with it.
+      if (!event.running) open.asks = []
       this.render()
     }
     if (!event.running) {
@@ -473,10 +489,10 @@ export class AgentPanel {
       for (const entry of chat.entries) log.append(entryElement(entry, this.options.studio.chatImage))
       const working = document.createElement('div')
       working.className = 'chat-working'
-      working.textContent = `${agentName(chat.agent)} is working`
       working.hidden = !chat.running
       log.append(working)
       this.content.append(log)
+      this.renderAsks(chat)
       requestAnimationFrame(() => (log.scrollTop = log.scrollHeight))
       return
     }
@@ -524,13 +540,78 @@ export class AgentPanel {
       title.textContent = chat.title
       const meta = document.createElement('span')
       meta.className = 'chat-list-meta'
-      meta.textContent = `${agentName(chat.agent)} · ${chat.running ? 'working…' : when(chat.updated)}`
+      meta.textContent = `${agentName(chat.agent)} · ${chat.asking ? 'waiting for your answer' : chat.running ? 'working…' : when(chat.updated)}`
       open.append(title, meta)
       open.title = chat.title
       item.append(open)
       list.append(item)
     }
     this.content.append(list)
+  }
+
+  /** The questions the open chat's agent waits on, above the line that says it waits (D52). */
+  private renderAsks(chat: OpenChat): void {
+    const log = this.content.querySelector<HTMLElement>('.chat-log')
+    const working = log?.querySelector<HTMLElement>('.chat-working')
+    if (!log || !working) return
+    const atEnd = log.scrollHeight - log.scrollTop - log.clientHeight < 24
+    const shown = new Set<string>()
+    for (const card of log.querySelectorAll<HTMLElement>('.chat-ask')) {
+      if (chat.asks.some((ask) => ask.id === card.dataset.ask)) shown.add(card.dataset.ask!)
+      else card.remove()
+    }
+    for (const ask of chat.asks) {
+      if (!shown.has(ask.id)) working.before(this.askElement(chat, ask))
+    }
+    working.textContent = chat.asks.length > 0 ? `${agentName(chat.agent)} is waiting for your answer` : `${agentName(chat.agent)} is working`
+    working.classList.toggle('waiting', chat.asks.length > 0)
+    if (atEnd) log.scrollTop = log.scrollHeight
+  }
+
+  private askElement(chat: OpenChat, ask: Ask): HTMLElement {
+    const card = document.createElement('div')
+    card.className = 'chat-ask'
+    card.dataset.ask = ask.id
+    card.setAttribute('role', 'group')
+    card.setAttribute('aria-label', `${agentName(chat.agent)} asks to be allowed`)
+    const question = document.createElement('div')
+    question.className = 'chat-ask-question'
+    question.textContent = `${agentName(chat.agent)} asks to ${ask.question}:`
+    const what = document.createElement('div')
+    what.className = 'chat-ask-text'
+    what.textContent = ask.subject || ask.text
+    card.append(question, what)
+    if (ask.detail) {
+      const detail = document.createElement('div')
+      detail.className = 'chat-ask-detail'
+      detail.textContent = ask.detail
+      card.append(detail)
+    }
+    const actions = document.createElement('div')
+    actions.className = 'chat-ask-actions'
+    const answer = (decision: Decision) => async () => {
+      for (const b of actions.querySelectorAll('button')) b.disabled = true
+      try {
+        await this.options.studio.chatAnswer(chat.id, ask.id, decision)
+      } catch (error) {
+        for (const b of actions.querySelectorAll('button')) b.disabled = false
+        this.options.onError(error)
+      }
+    }
+    const allow = button('Allow', () => void answer('allow')())
+    allow.className = 'primary'
+    allow.title = 'Allow this once'
+    actions.append(allow)
+    if (ask.always) {
+      const always = button('Allow for This Chat', () => void answer('always')())
+      always.title = `For the rest of this chat, allow ${ask.allows?.join(', ') ?? 'this'}`
+      actions.append(always)
+    }
+    const deny = button('Deny', () => void answer('deny')())
+    deny.title = 'Do not allow it; the agent is told and goes on without it'
+    actions.append(deny)
+    card.append(actions)
+    return card
   }
 
   /** The agent the next message goes to. */

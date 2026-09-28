@@ -13,9 +13,9 @@ pub use agent_chats::{
     OpenChat, PastedImage, chat_images_dir,
 };
 pub use agents::{
-    AGENTS, Agent, AgentEvent, AgentId, AgentRun, AgentState, AgentStatus, ChatEntry,
-    DetectAgentOptions, Env, Permission, Role, RunOptions, Selection, TurnOptions, agent_args,
-    agent_env, agent_label, agent_out_dir, agent_path, detect_agent, is_agent_id, login_shell_path,
-    process_env, run_agent,
+    AGENTS, Agent, AgentEvent, AgentId, AgentRun, AgentState, AgentStatus, Ask, ChatEntry,
+    Decision, DetectAgentOptions, Env, Permission, Role, RunOptions, Selection, TurnOptions,
+    agent_args, agent_env, agent_input, agent_label, agent_out_dir, agent_path, ask_answer,
+    detect_agent, is_agent_id, login_shell_path, process_env, run_agent,
 };
 pub use chats::{Chat, ChatStore, ChatSummary, MAX_CHATS, chat_title};

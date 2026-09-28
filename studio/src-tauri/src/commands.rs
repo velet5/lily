@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
-use lily_agents::{AGENTS, AgentId, AgentStatus, ChatInfo, ChatMessage, OpenChat};
+use lily_agents::{AGENTS, AgentId, AgentStatus, ChatInfo, ChatMessage, Decision, OpenChat};
 use lily_engrave::files::{self, SCORE_EXTENSIONS};
 use lily_engrave::setup::{self, DetectOptions, LilyPondState};
 use lily_engrave::templates::{SAMPLE, TEMPLATES, template};
@@ -507,6 +507,29 @@ pub async fn chat_image(studio: Studios<'_>, file: String) -> Answer<Option<Stri
     use base64::Engine as _;
     let bytes = studio.chats.image(&file).await;
     Ok(bytes.map(|bytes| base64::engine::general_purpose::STANDARD.encode(bytes)))
+}
+
+/// Answers what the agent of `chat_id` asked to be allowed (D52):
+/// `allow`, `always` or `deny`.
+#[tauri::command]
+pub async fn chat_answer(
+    studio: Studios<'_>,
+    chat_id: Value,
+    ask_id: Value,
+    decision: Value,
+) -> Answer<()> {
+    let (Some(chat_id), Some(ask_id), Some(decision)) = (
+        chat_id.as_str(),
+        ask_id.as_str(),
+        decision.as_str().and_then(Decision::parse),
+    ) else {
+        return Err("Expected a chat, a question and an answer.".to_string());
+    };
+    let folder = chat_folder(&studio)?;
+    studio
+        .chats
+        .answer(chat_id, ask_id, decision, &folder)
+        .await
 }
 
 #[tauri::command]

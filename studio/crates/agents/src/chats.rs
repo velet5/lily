@@ -28,6 +28,12 @@ pub struct Chat {
     pub created: i64,
     pub updated: i64,
     pub entries: Vec<ChatEntry>,
+    /// What the user allowed Claude Code for the rest of the chat (D52): its
+    /// rules, and directories outside the folder.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed_tools: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allowed_dirs: Vec<String>,
 }
 
 /// A chat in the list, without its entries.
@@ -119,6 +125,15 @@ fn valid_chat(value: &Value) -> Option<Chat> {
             })
         })
         .collect::<Option<Vec<_>>>()?;
+    let strings = |name: &str| -> Vec<String> {
+        match chat.get(name) {
+            Some(Value::Array(values)) => values
+                .iter()
+                .filter_map(|value| value.as_str().map(str::to_owned))
+                .collect(),
+            _ => Vec::new(),
+        }
+    };
     Some(Chat {
         id: text("id")?,
         agent: AgentId::parse(chat.get("agent")?.as_str()?)?,
@@ -128,6 +143,8 @@ fn valid_chat(value: &Value) -> Option<Chat> {
         created: timestamp(chat.get("created"))?,
         updated: timestamp(chat.get("updated"))?,
         entries,
+        allowed_tools: strings("allowedTools"),
+        allowed_dirs: strings("allowedDirs"),
     })
 }
 
@@ -227,6 +244,8 @@ impl ChatStore {
             created: now,
             updated: now,
             entries: Vec::new(),
+            allowed_tools: Vec::new(),
+            allowed_dirs: Vec::new(),
         };
         {
             let mut state = self.chats().await;
@@ -267,6 +286,27 @@ impl ChatStore {
                 return;
             }
             chat.session_id = Some(session_id.to_owned());
+        }
+        self.save().await;
+    }
+
+    /// Adds `tools` and `dirs` to what the chat allows, each once.
+    pub async fn allow(&self, id: &str, tools: &[String], dirs: &[String]) {
+        {
+            let mut state = self.chats().await;
+            let Some(chat) = state.chats.iter_mut().find(|chat| chat.id == id) else {
+                return;
+            };
+            for (list, new) in [
+                (&mut chat.allowed_tools, tools),
+                (&mut chat.allowed_dirs, dirs),
+            ] {
+                for item in new {
+                    if !list.contains(item) {
+                        list.push(item.clone());
+                    }
+                }
+            }
         }
         self.save().await;
     }

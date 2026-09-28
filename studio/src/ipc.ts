@@ -146,12 +146,38 @@ export interface Chat {
   created: number
   updated: number
   entries: ChatEntry[]
+  /** What the user allowed Claude Code for the rest of the chat (D52). */
+  allowedTools?: string[]
+  allowedDirs?: string[]
 }
 
+/**
+ * Something Claude Code asks before it does it (D52); the turn waits for
+ * the answer. `always`: it can be allowed for the rest of the chat.
+ */
+export interface Ask {
+  id: string
+  /** What the agent wants to do, as the chat's entries say it: "Ran magick …". */
+  text: string
+  /** The same in full: "… asks to <question>:" and the whole command, file or input. */
+  question: string
+  subject: string
+  /** The agent's own words for it. */
+  detail?: string
+  always: boolean
+  /** What "always" allows: Claude Code's rules (`Bash(magick:*)`) and directories. */
+  allows?: string[]
+}
+
+/** The answer to an `Ask`: this once, for the rest of the chat, or no. */
+export type Decision = 'allow' | 'always' | 'deny'
+
 /** A chat in the list, without its entries. */
-export type ChatSummary = Omit<Chat, 'entries'>
-export type ChatInfo = ChatSummary & { running: boolean }
-export type OpenChat = Chat & { running: boolean }
+export type ChatSummary = Omit<Chat, 'entries' | 'allowedTools' | 'allowedDirs'>
+/** `asking`: its agent waits for the user to allow something. */
+export type ChatInfo = ChatSummary & { running: boolean; asking: boolean }
+/** `asks`: what its agent waits to be allowed, oldest first. */
+export type OpenChat = Chat & { running: boolean; asks: Ask[] }
 
 /**
  * What an agent may do in a turn (D43): `read` the folder only, `edit` its
@@ -208,5 +234,7 @@ export interface RecentList {
 export type ChatEvent =
   | { kind: 'entry'; chatId: string; entry: ChatEntry }
   | { kind: 'running'; chatId: string; running: boolean }
+  | { kind: 'ask'; chatId: string; ask: Ask }
+  | { kind: 'answered'; chatId: string; askId: string }
 
 export type { PlaybackTiming, SourceLocation }

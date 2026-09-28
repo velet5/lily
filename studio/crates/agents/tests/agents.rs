@@ -9,10 +9,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use lily_agents::agents::{
-    AgentEvent, AgentId, AgentState, AgentStatus, ChatEntry, DetectAgentOptions, Permission,
-    PromptContext, Role, RunOptions, Selection, TurnOptions, agent_args, agent_env, agent_out_dir,
-    agent_path, detect_agent, instructions, parse_claude_line, parse_codex_line, relative_to,
-    run_agent, turn_prompt, unwrap_shell,
+    AgentEvent, AgentId, AgentState, AgentStatus, ChatEntry, Decision, DetectAgentOptions,
+    Permission, PromptContext, Role, RunOptions, Selection, TurnOptions, agent_args, agent_env,
+    agent_input, agent_out_dir, agent_path, ask_answer, detect_agent, instructions,
+    parse_claude_line, parse_codex_line, relative_to, run_agent, turn_prompt, unwrap_shell,
 };
 use lily_agents::{
     AgentChats, AgentChatsOptions, ChatEvent, ChatMessage, ChatStore, PastedImage, chat_images_dir,
@@ -76,10 +76,11 @@ fn claude_args_headless_stream_json_edits_accepted_lilypond_the_only_command() {
     };
     let args = agent_args(AgentId::Claude, &turn);
     assert_eq!(
-        args[..8],
+        args[..9],
         strings(&[
             "-p",
-            "Hi",
+            "--input-format",
+            "stream-json",
             "--output-format",
             "stream-json",
             "--verbose",
@@ -88,6 +89,12 @@ fn claude_args_headless_stream_json_edits_accepted_lilypond_the_only_command() {
             "--allowedTools"
         ])
     );
+    assert!(!args.contains(&"Hi".to_owned()), "the prompt goes on stdin");
+    let ask = args
+        .iter()
+        .position(|arg| arg == "--permission-prompt-tool")
+        .expect("what is not allowed is asked");
+    assert_eq!(args[ask + 1], "stdio");
     assert!(args.contains(&"Bash(/opt/lilypond/bin/lilypond:*)".to_owned()));
     assert!(args.contains(&"Bash(lilypond:*)".to_owned()));
     assert!(!args.contains(&"Bash".to_owned()), "no unrestricted Bash");
@@ -189,9 +196,10 @@ fn full_access_turns_bypass_the_limits() {
     };
     let claude = agent_args(AgentId::Claude, &turn);
     assert_eq!(
-        claude[5..7],
+        claude[6..8],
         strings(&["--permission-mode", "bypassPermissions"])
     );
+    assert!(!claude.contains(&"--permission-prompt-tool".to_owned()));
     assert!(!claude.contains(&"--allowedTools".to_owned()));
     assert!(
         agent_args(AgentId::Codex, &turn)
@@ -449,6 +457,152 @@ fn claude_a_failed_turn_and_denied_tools_become_errors() {
             AgentEvent::Done { ok: false }
         ]
     );
+}
+
+/// A `can_use_tool` request as Claude Code 2.1.283 sends it under `--permission-prompt-tool stdio`.
+fn can_use_tool(id: &str, command: &str) -> String {
+    json!({
+        "type": "control_request",
+        "request_id": id,
+        "request": {
+            "subtype": "can_use_tool",
+            "tool_name": "Bash",
+            "display_name": "Bash",
+            "input": { "command": command, "description": "Turn the PDF into images" },
+            "description": command,
+            "permission_suggestions": [{
+                "type": "addRules",
+                "rules": [{ "toolName": "Bash", "ruleContent": "magick:*" }],
+                "behavior": "allow",
+                "destination": "localSettings",
+            }],
+            "decision_reason": "This command requires approval",
+            "tool_use_id": format!("toolu_{id}"),
+        },
+    })
+    .to_string()
+}
+
+#[test]
+fn claude_asks_what_is_not_allowed() {
+    let command = format!("magick -density 300 in.pdf {}", "x".repeat(200));
+    let events = parse_claude_line(&can_use_tool("r1", &command), CWD);
+    let [AgentEvent::Ask(ask)] = events.as_slice() else {
+        panic!("{events:?}")
+    };
+    assert_eq!(ask.id, "r1");
+    assert_eq!(ask.question, "run this command");
+    assert_eq!(ask.subject, command, "the whole command, to judge it by");
+    assert!(ask.text.starts_with("Ran magick") && ask.text.len() < command.len());
+    assert_eq!(ask.detail, "Turn the PDF into images");
+    assert!(ask.always);
+    assert_eq!(ask.allowances(), (strings(&["Bash(magick:*)"]), Vec::new()));
+    // The renderer sees what to show, not the input or the rules.
+    assert_eq!(
+        serde_json::to_value(ask).expect("json"),
+        json!({ "id": "r1", "text": ask.text, "question": "run this command", "subject": command,
+                "detail": "Turn the PDF into images", "always": true, "allows": ["Bash(magick:*)"] })
+    );
+
+    let outside = json!({
+        "type": "control_request",
+        "request_id": "r2",
+        "request": {
+            "subtype": "can_use_tool",
+            "tool_name": "Read",
+            "input": { "file_path": "/Users/me/Downloads/a.pdf" },
+            "permission_suggestions": [{ "type": "addDirectories", "directories": ["/Users/me/Downloads"], "destination": "session" }],
+        },
+    });
+    let events = parse_claude_line(&outside.to_string(), CWD);
+    let [AgentEvent::Ask(ask)] = events.as_slice() else {
+        panic!("{events:?}")
+    };
+    assert_eq!(
+        (ask.question.as_str(), ask.subject.as_str()),
+        ("read this file", "/Users/me/Downloads/a.pdf")
+    );
+    assert_eq!(
+        ask.allowances(),
+        (Vec::new(), strings(&["/Users/me/Downloads"]))
+    );
+
+    let bare = json!({ "type": "control_request", "request_id": "r3",
+                       "request": { "subtype": "can_use_tool", "tool_name": "Bash", "input": { "command": "ls" } } });
+    let events = parse_claude_line(&bare.to_string(), CWD);
+    assert!(matches!(events.as_slice(), [AgentEvent::Ask(ask)] if !ask.always));
+}
+
+#[test]
+fn claude_answers_allow_once_always_or_deny() {
+    let events = parse_claude_line(&can_use_tool("r1", "magick a.pdf a.png"), CWD);
+    let [AgentEvent::Ask(ask)] = events.as_slice() else {
+        panic!("{events:?}")
+    };
+    let answer = |decision| {
+        let line = ask_answer(ask, decision);
+        assert!(line.ends_with('\n'), "one line");
+        let value: serde_json::Value = serde_json::from_str(&line).expect("json");
+        assert_eq!(value["type"], "control_response");
+        assert_eq!(value["response"]["subtype"], "success");
+        assert_eq!(value["response"]["request_id"], "r1");
+        value["response"]["response"].clone()
+    };
+    let input =
+        json!({ "command": "magick a.pdf a.png", "description": "Turn the PDF into images" });
+    assert_eq!(
+        answer(Decision::Allow),
+        json!({ "behavior": "allow", "updatedInput": input })
+    );
+    assert_eq!(
+        answer(Decision::Always),
+        json!({ "behavior": "allow", "updatedInput": input, "updatedPermissions": [{
+            "type": "addRules", "rules": [{ "toolName": "Bash", "ruleContent": "magick:*" }],
+            "behavior": "allow", "destination": "session" }] })
+    );
+    assert_eq!(answer(Decision::Deny)["behavior"], "deny");
+    assert_eq!(
+        agent_input(
+            AgentId::Claude,
+            &TurnOptions {
+                prompt: "Hi \"you\"".into(),
+                ..Default::default()
+            }
+        ),
+        Some(
+            "{\"message\":{\"content\":\"Hi \\\"you\\\"\",\"role\":\"user\"},\"type\":\"user\"}\n"
+                .to_owned()
+        )
+    );
+    assert_eq!(agent_input(AgentId::Codex, &TurnOptions::default()), None);
+}
+
+#[test]
+fn claude_edit_gets_what_the_chat_allowed_read_and_full_do_not_ask() {
+    let turn = |permission| TurnOptions {
+        permission,
+        allowed_tools: strings(&["Bash(magick:*)"]),
+        allowed_dirs: strings(&["/Users/me/Downloads"]),
+        ..Default::default()
+    };
+    let edit = agent_args(AgentId::Claude, &turn(Permission::Edit));
+    assert!(edit.contains(&"Bash(magick:*)".to_owned()));
+    assert!(added_dirs(&edit).contains(&"/Users/me/Downloads".to_owned()));
+    for permission in [Permission::Read, Permission::Full] {
+        let args = agent_args(AgentId::Claude, &turn(permission));
+        assert!(
+            !args.contains(&"Bash(magick:*)".to_owned()),
+            "{permission:?}"
+        );
+        assert!(
+            !args.contains(&"--permission-prompt-tool".to_owned()),
+            "{permission:?}"
+        );
+        assert!(
+            !added_dirs(&args).contains(&"/Users/me/Downloads".to_owned()),
+            "{permission:?}"
+        );
+    }
 }
 
 #[test]
@@ -713,6 +867,7 @@ async fn run(
         cwd: cwd.to_string_lossy().into_owned(),
         roots: None,
         env: process_env(),
+        input: None,
         on_event: Box::new(move |event| sink.lock().expect("events").push(event)),
     });
     if let Some(after) = stop_after {
@@ -994,19 +1149,23 @@ fn events_and_chats_serialize_as_the_renderer_reads_them() {
         created: 1_700_000_000_000,
         updated: 1_700_000_000_001,
         entries: Vec::new(),
+        allowed_tools: Vec::new(),
+        allowed_dirs: Vec::new(),
     };
     let open = lily_agents::OpenChat {
         chat: chat.clone(),
         running: false,
+        asks: Vec::new(),
     };
     assert_eq!(
         serde_json::to_value(&open).expect("json"),
         json!({ "id": "c", "agent": "codex", "folder": "/f", "title": "T", "created": 1_700_000_000_000_i64,
-                "updated": 1_700_000_000_001_i64, "entries": [], "running": false })
+                "updated": 1_700_000_000_001_i64, "entries": [], "running": false, "asks": [] })
     );
     let info = lily_agents::ChatInfo {
         chat: (&chat).into(),
         running: true,
+        asking: false,
     };
     assert_eq!(
         serde_json::to_value(&info).expect("json").get("entries"),
@@ -1105,7 +1264,7 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"ok"}'
         .iter()
         .filter_map(|event| match event {
             ChatEvent::Running { running, .. } => Some(*running),
-            ChatEvent::Entry { .. } => None,
+            _ => None,
         })
         .collect();
     assert_eq!(running, [true, false, true, false]);
@@ -1130,6 +1289,136 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"ok"}'
     assert_eq!(chats.list(&folder).await.len(), 1);
     chats.delete(&id, &folder).await;
     assert!(chats.list(&folder).await.is_empty());
+}
+
+#[tokio::test]
+async fn claude_waits_for_the_answer_and_always_is_kept_for_the_chat() {
+    let (_dir, scratch) = scratch();
+    let folder = scratch.to_string_lossy().into_owned();
+    // Asks once per turn, says what it was answered and whether the rule came
+    // as an argument, and ends only when its stdin does.
+    let binary = script(
+        &scratch.join("asking-agent"),
+        &format!(
+            r#"#!/bin/sh
+read -r prompt
+case "$prompt" in *'"type":"user"'*) ;; *) echo "no prompt: $prompt" >&2; exit 9;; esac
+echo '{{"type":"system","subtype":"init","session_id":"s-ask"}}'
+rule=no
+for arg in "$@"; do [ "$arg" = "Bash(magick:*)" ] && rule=yes; done
+printf '%s\n' '{ask}'
+read -r answer
+case "$answer" in *'"behavior":"allow"'*) said=allowed;; *'"behavior":"deny"'*) said=denied;; *) said=unknown;; esac
+echo '{{"type":"assistant","message":{{"content":[{{"type":"text","text":"'$said', rule: '$rule'"}}]}}}}'
+echo '{{"type":"result","subtype":"success","is_error":false,"result":"ok","permission_denials":[{{"tool_name":"Bash","tool_use_id":"toolu_r1","tool_input":{{"command":"magick a.pdf a.png"}}}}]}}'
+read -r rest
+"#,
+            ask = can_use_tool("r1", "magick a.pdf a.png")
+        ),
+    );
+    let events = Arc::new(Mutex::new(Vec::<ChatEvent>::new()));
+    let sink = events.clone();
+    let store = ChatStore::new(scratch.join("chats-ask.json"));
+    let chats = AgentChats::new(AgentChatsOptions::new(
+        store.clone(),
+        move |event| sink.lock().expect("events").push(event),
+        ready(binary),
+        || async { None },
+        || async { process_env() },
+    ));
+    let asked = || async {
+        for _ in 0..500 {
+            let found = events
+                .lock()
+                .expect("events")
+                .iter()
+                .rev()
+                .find_map(|event| match event {
+                    ChatEvent::Ask { ask, .. } => Some(ask.id.clone()),
+                    _ => None,
+                });
+            if let Some(found) = found {
+                events.lock().expect("events").clear();
+                return found;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        panic!("nothing was asked")
+    };
+    let message = |chat_id: Option<String>| ChatMessage {
+        agent: Some(AgentId::Claude),
+        chat_id,
+        text: "Look at the PDF".into(),
+        ..Default::default()
+    };
+    let id = chats.send(message(None), &folder).await.expect("sent");
+    assert_eq!(asked().await, "r1");
+    let open = chats.get(&id, &folder).await.expect("the chat");
+    assert!(open.running);
+    assert_eq!(open.asks.len(), 1, "a chat opened now shows the question");
+    assert!(chats.list(&folder).await[0].asking);
+    assert!(
+        chats
+            .answer(&id, "r1", Decision::Always, "/elsewhere")
+            .await
+            .is_err()
+    );
+    assert!(
+        chats
+            .answer(&id, "r9", Decision::Allow, &folder)
+            .await
+            .is_err()
+    );
+    chats
+        .answer(&id, "r1", Decision::Always, &folder)
+        .await
+        .expect("answered");
+    assert!(
+        chats
+            .answer(&id, "r1", Decision::Allow, &folder)
+            .await
+            .is_err(),
+        "answered once"
+    );
+    tokio::time::timeout(Duration::from_secs(10), chats.settled(&id))
+        .await
+        .expect("the turn ends: stdin is closed at its result");
+
+    chats
+        .send(message(Some(id.clone())), &folder)
+        .await
+        .expect("sent");
+    assert_eq!(asked().await, "r1");
+    chats
+        .answer(&id, "r1", Decision::Deny, &folder)
+        .await
+        .expect("answered");
+    tokio::time::timeout(Duration::from_secs(10), chats.settled(&id))
+        .await
+        .expect("the turn ends");
+
+    let chat = chats.get(&id, &folder).await.expect("the chat");
+    assert!(chat.asks.is_empty());
+    assert_eq!(chat.chat.allowed_tools, strings(&["Bash(magick:*)"]));
+    assert_eq!(
+        chat.chat.entries,
+        [
+            ChatEntry::new(Role::User, "Look at the PDF"),
+            ChatEntry::new(Role::Tool, "Allowed for this chat: Ran magick a.pdf a.png"),
+            ChatEntry::new(Role::Agent, "allowed, rule: no"),
+            ChatEntry::new(Role::User, "Look at the PDF"),
+            ChatEntry::new(Role::Tool, "Denied: Ran magick a.pdf a.png"),
+            ChatEntry::new(Role::Agent, "denied, rule: yes"),
+        ],
+        "a denial the user answered is not repeated as not allowed"
+    );
+    // Kept across stores, as chats.json has it.
+    let reread = ChatStore::new(scratch.join("chats-ask.json"));
+    assert_eq!(
+        reread.get(&id).await.expect("kept").allowed_tools,
+        strings(&["Bash(magick:*)"])
+    );
+    drop(store);
 }
 
 #[tokio::test]

@@ -11,6 +11,7 @@ import type {
   ChatInfo,
   ChatMessage,
   Command,
+  Decision,
   CompileEvent,
   CompileOutcome,
   FileChange,
@@ -206,6 +207,8 @@ export const studio = {
     const type = { jpg: 'jpeg', gif: 'gif', webp: 'webp' }[file.split('.').pop() ?? ''] ?? 'png'
     return `data:image/${type};base64,${data}`
   },
+  /** Answers what the agent of `chatId` asked to be allowed (D52). */
+  chatAnswer: (chatId: string, askId: string, decision: Decision): Promise<void> => call('chat_answer', { chatId, askId, decision }),
   /** Stops the agent of `chatId`, and the commands it started. */
   chatStop: (chatId: string): Promise<void> => call('chat_stop', { chatId }),
   chatDelete: (chatId: string): Promise<void> => call('chat_delete', { chatId }),

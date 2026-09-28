@@ -451,6 +451,21 @@ async function main(): Promise<void> {
     problems.push(`after the image: users ${JSON.stringify($$('.chat-log .chat-entry.user').map((e) => e.innerHTML.slice(0, 200)))}, answers ${JSON.stringify($$('.chat-log .chat-entry').map((e) => e.textContent))}, status ${statusMessage()}`)
   }
 
+  // The stand-in asks to run magick (D52): the question shows with the whole
+  // command, Allow sends the answer, and the agent goes on with it.
+  send('Convert the PDF to an image')
+  sidebar.asked = await until('the question of the agent', () => {
+    const card = $('.chat-log .chat-ask')
+    return card?.querySelector('.chat-ask-text')?.textContent === 'magick -density 300 score.pdf score.png' && text('.chat-working').includes('waiting') ? card.textContent : ''
+  }, 20_000)
+  $$<HTMLButtonElement>('.chat-ask button').find((b) => b.textContent === 'Allow')?.click()
+  sidebar.allowed = await until('the agent to go on once allowed', () => {
+    const answers = $$('.chat-log .chat-entry.agent').map((e) => e.textContent ?? '')
+    const tools = $$('.chat-log .chat-entry.tool').map((e) => e.textContent ?? '')
+    const done = !$('.chat-ask') && !$('.chat-log .chat-working:not([hidden])')
+    return done && answers[4]?.startsWith('The command was allowed') && tools.includes('Allowed: Ran magick -density 300 score.pdf score.png') ? answers[4] : ''
+  }, 20_000)
+
   const ok = problems.length === 0
   const report = { ok, problems, ...layout, welcome, listed, openedPages, switching, monaco: !!shown, colours, saved, compile, sidebar }
   await invoke('smoke_done', { ok, report: JSON.stringify(report, null, 2) })

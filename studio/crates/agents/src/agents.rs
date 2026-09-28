@@ -18,9 +18,9 @@ use std::time::Duration;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
-use tokio::sync::{OnceCell, watch};
+use tokio::sync::{OnceCell, mpsc, watch};
 
 use crate::js;
 
@@ -162,11 +162,113 @@ impl ChatEntry {
     }
 }
 
+/// Something Claude Code asks before it does it, under *Edit files* (D52):
+/// a command, a file outside the folder. The turn waits for the answer.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Ask {
+    /// The request's id, which the answer names.
+    pub id: String,
+    /// What the agent wants to do, as the chat's entries say it: "Ran magick …".
+    pub text: String,
+    /// The same, in full, for the user to judge: `question` ends "asks to …",
+    /// `subject` is the whole command, file or input.
+    pub question: String,
+    pub subject: String,
+    /// The agent's own words for it, when it gave any.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub detail: String,
+    /// Whether it can be allowed for the rest of the chat: Claude Code
+    /// suggested a rule or a directory for it, and which (`allowances`).
+    pub always: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub allows: Vec<String>,
+    /// The tool call as Claude Code sent it, given back when it is allowed.
+    #[serde(skip)]
+    pub input: Value,
+    /// Claude Code's `permission_suggestions`: the rules "always" adds.
+    #[serde(skip)]
+    pub suggestions: Vec<Value>,
+    #[serde(skip)]
+    pub tool_use_id: String,
+}
+
+impl Ask {
+    /// What "always" allows, as `--allowedTools` rules and `--add-dir` directories.
+    pub fn allowances(&self) -> (Vec<String>, Vec<String>) {
+        let mut rules = Vec::new();
+        let mut dirs = Vec::new();
+        for suggestion in &self.suggestions {
+            let suggestion = record(Some(suggestion));
+            match str_of(suggestion.get("type")) {
+                "addRules" if str_of(suggestion.get("behavior")) == "allow" => {
+                    for rule in suggestion
+                        .get("rules")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                    {
+                        let rule = record(Some(rule));
+                        let tool = str_of(rule.get("toolName"));
+                        let content = str_of(rule.get("ruleContent"));
+                        if tool.is_empty() {
+                            continue;
+                        }
+                        rules.push(if content.is_empty() {
+                            tool.to_owned()
+                        } else {
+                            format!("{tool}({content})")
+                        });
+                    }
+                }
+                "addDirectories" => {
+                    for dir in suggestion
+                        .get("directories")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                    {
+                        if let Some(dir) = dir.as_str().filter(|dir| !dir.is_empty()) {
+                            dirs.push(dir.to_owned());
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        (rules, dirs)
+    }
+}
+
+/// The user's answer to an `Ask`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Decision {
+    /// This once.
+    Allow,
+    /// This, and what Claude Code suggested with it, for the rest of the chat.
+    Always,
+    Deny,
+}
+
+impl Decision {
+    pub fn parse(value: &str) -> Option<Decision> {
+        match value {
+            "allow" => Some(Decision::Allow),
+            "always" => Some(Decision::Always),
+            "deny" => Some(Decision::Deny),
+            _ => None,
+        }
+    }
+}
+
 /// What one line of an agent's JSONL means to the chat.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum AgentEvent {
     Session(String),
     Entry(ChatEntry),
+    /// The agent waits for the user's answer (see `AgentRun::send`, `ask_answer`).
+    Ask(Ask),
     /// The turn ended; `ok` is false when the agent reported a failure.
     Done {
         ok: bool,
@@ -461,20 +563,29 @@ pub struct TurnOptions {
     pub permission: Permission,
     /// Images pasted with the message, saved as files (see `turn_prompt`).
     pub images: Vec<String>,
+    /// What the user allowed for the rest of the chat (D52): Claude Code's
+    /// rules, and directories outside the folder. Only under `Edit`.
+    pub allowed_tools: Vec<String>,
+    pub allowed_dirs: Vec<String>,
 }
 
 fn non_empty(value: &Option<String>) -> Option<&str> {
     value.as_deref().filter(|value| !value.is_empty())
 }
 
-/// The command line of one turn. Nothing asks for permission while the agent
-/// works, as there is no one at a terminal to answer: `turn.permission` sets
-/// the limits beforehand (D43).
+/// The command line of one turn. `turn.permission` sets the limits
+/// beforehand (D43).
+///
+/// Claude Code reads its prompt from stdin (`agent_input`), as stream-json, so
+/// that under `Edit` it can ask the user what the limits do not allow
+/// (`--permission-prompt-tool stdio`, D52) and read the answers there.
 ///
 /// `Edit`, as D40 has it. Claude Code: `--permission-mode acceptEdits` accepts
 /// edits inside the folder; the allowed tools add LilyPond and nothing else
 /// that runs commands, but `mkdir -p` of the check directory
-/// (`agent_out_dir`), which is also a directory of the turn (`--add-dir`). Codex: its `workspace-write` sandbox lets commands write
+/// (`agent_out_dir`), which is also a directory of the turn (`--add-dir`),
+/// and what the user allowed for the rest of the chat. Anything else is
+/// asked. Codex cannot ask: its `workspace-write` sandbox lets commands write
 /// only in the folder and the temp directory, without network.
 /// `Read`: Claude Code is allowed only the tools that read; Codex runs in its
 /// `read-only` sandbox. `Full`: Claude Code bypasses its permissions, Codex
@@ -499,7 +610,8 @@ pub fn agent_args(id: AgentId, turn: &TurnOptions) -> Vec<String> {
         AgentId::Claude => {
             push(&[
                 "-p",
-                &turn.prompt,
+                "--input-format",
+                "stream-json",
                 "--output-format",
                 "stream-json",
                 "--verbose",
@@ -530,7 +642,14 @@ pub fn agent_args(id: AgentId, turn: &TurnOptions) -> Vec<String> {
                     let out_dir = agent_out_dir();
                     let out_dir = out_dir.to_string_lossy();
                     push(&[&format!("Bash(mkdir -p {out_dir}:*)")]);
+                    for rule in &turn.allowed_tools {
+                        push(&[rule]);
+                    }
                     push(&["--add-dir", &out_dir]);
+                    for dir in &turn.allowed_dirs {
+                        push(&["--add-dir", dir]);
+                    }
+                    push(&["--permission-prompt-tool", "stdio"]);
                 }
                 Permission::Full => push(&["--permission-mode", "bypassPermissions"]),
             }
@@ -581,6 +700,66 @@ pub fn agent_args(id: AgentId, turn: &TurnOptions) -> Vec<String> {
     args
 }
 
+/// What goes to the agent's stdin at the start of a turn: Claude Code's
+/// prompt as a stream-json user message; nothing for Codex, which takes it as
+/// an argument.
+pub fn agent_input(id: AgentId, turn: &TurnOptions) -> Option<String> {
+    match id {
+        AgentId::Claude => Some(format!(
+            "{}\n",
+            serde_json::json!({
+                "type": "user",
+                "message": { "role": "user", "content": turn.prompt },
+            })
+        )),
+        AgentId::Codex => None,
+    }
+}
+
+/// The line that answers `ask` on Claude Code's stdin. "Always" also adds
+/// Claude Code's suggestions to the running session; later turns get them
+/// as arguments (`TurnOptions::allowed_tools`).
+pub fn ask_answer(ask: &Ask, decision: Decision) -> String {
+    let response = match decision {
+        Decision::Deny => serde_json::json!({
+            "behavior": "deny",
+            "message": "The user did not allow this in Lily Studio.",
+        }),
+        Decision::Allow | Decision::Always => {
+            let mut allow = serde_json::json!({
+                "behavior": "allow",
+                "updatedInput": ask.input,
+            });
+            if decision == Decision::Always {
+                let session: Vec<Value> = ask
+                    .suggestions
+                    .iter()
+                    .cloned()
+                    .map(|mut suggestion| {
+                        if let Some(suggestion) = suggestion.as_object_mut() {
+                            suggestion.insert("destination".to_owned(), "session".into());
+                        }
+                        suggestion
+                    })
+                    .collect();
+                allow["updatedPermissions"] = Value::Array(session);
+            }
+            allow
+        }
+    };
+    control_response(&ask.id, response)
+}
+
+fn control_response(request_id: &str, response: Value) -> String {
+    format!(
+        "{}\n",
+        serde_json::json!({
+            "type": "control_response",
+            "response": { "subtype": "success", "request_id": request_id, "response": response },
+        })
+    )
+}
+
 /// Lines selected in the editor, 1-based, and their text.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -626,7 +805,7 @@ pub fn instructions(lilypond: Option<&str>) -> String {
             "After an edit, check that the score still compiles: `{lilypond} -dbackend=svg -o {out_dir}/check <score.ly>`, run on the score that has \\score or \\book, even when you edited a file it \\includes."
         ),
         &format!(
-            "{out_dir} exists already. Run that command on its own, as it is: without cd, mkdir, &&, ||, pipes or redirections, which Lily Studio does not allow."
+            "{out_dir} exists already. Run that command on its own, as it is: without cd, mkdir, &&, ||, pipes or redirections, which Lily Studio would have to ask the user about."
         ),
         "Never write output files next to the sources. If lilypond reports errors, fix the first one and compile again.",
         "A `warning: bar check failed` means the bar before that | has the wrong length: recount it, do not remove the bar check. Keep each file's \\version line.",
@@ -778,16 +957,80 @@ fn claude_tool<S: AsRef<str>>(name: &str, input: &Map<String, Value>, cwd: &[S])
     })
 }
 
+/// What a `can_use_tool` request asks, in full: "run this command" and the
+/// command, "read this file" and its path, else the tool and its input.
+fn claude_ask(name: &str, input: &Map<String, Value>) -> (String, String) {
+    let file = [
+        input.get("file_path"),
+        input.get("path"),
+        input.get("notebook_path"),
+    ]
+    .into_iter()
+    .map(str_of)
+    .find(|file| !file.is_empty());
+    let (question, subject) = match (name, file) {
+        ("Bash", _) => ("run this command", str_of(input.get("command")).to_owned()),
+        ("Read", Some(file)) => ("read this file", file.to_owned()),
+        ("Edit" | "MultiEdit" | "NotebookEdit", Some(file)) => ("edit this file", file.to_owned()),
+        ("Write", Some(file)) => ("write this file", file.to_owned()),
+        ("Glob" | "Grep" | "LS", Some(file)) => ("look in", file.to_owned()),
+        ("WebFetch", _) => ("fetch this page", str_of(input.get("url")).to_owned()),
+        ("WebSearch", _) => ("search the web for", str_of(input.get("query")).to_owned()),
+        _ => {
+            return (
+                format!("use {name}"),
+                serde_json::to_string_pretty(input).unwrap_or_default(),
+            );
+        }
+    };
+    (question.to_owned(), subject)
+}
+
 /// One line of `claude -p --output-format stream-json --verbose`: the session
-/// id from `system/init`, the text and tool calls of `assistant` messages, and
-/// the `result` that ends the turn.
+/// id from `system/init`, the text and tool calls of `assistant` messages, the
+/// `can_use_tool` requests that ask the user (D52), and the `result` that ends
+/// the turn.
 pub fn parse_claude_line<S: AsRef<str>>(line: &str, cwd: &[S]) -> Vec<AgentEvent> {
+    claude_events(line, cwd, &HashSet::new())
+}
+
+/// `parse_claude_line`, leaving out of the denials the tool calls in `asked`:
+/// the user said no to those in the chat already.
+fn claude_events<S: AsRef<str>>(line: &str, cwd: &[S], asked: &HashSet<String>) -> Vec<AgentEvent> {
     let Some(event) = parse_line(line) else {
         return Vec::new();
     };
     let kind = event.get("type").and_then(Value::as_str);
     let mut events = Vec::new();
-    if kind == Some("system")
+    if kind == Some("control_request") {
+        let request = record(event.get("request"));
+        let id = str_of(event.get("request_id"));
+        if str_of(request.get("subtype")) == "can_use_tool" && !id.is_empty() {
+            let name = str_of(request.get("tool_name"));
+            let input = record(request.get("input"));
+            let mut ask = Ask {
+                id: id.to_owned(),
+                text: claude_tool(name, input, cwd).unwrap_or_else(|| format!("Used {name}")),
+                question: String::new(),
+                subject: String::new(),
+                detail: js::trim(str_of(input.get("description"))).to_owned(),
+                always: false,
+                allows: Vec::new(),
+                input: Value::Object(input.clone()),
+                suggestions: request
+                    .get("permission_suggestions")
+                    .and_then(Value::as_array)
+                    .cloned()
+                    .unwrap_or_default(),
+                tool_use_id: str_of(request.get("tool_use_id")).to_owned(),
+            };
+            (ask.question, ask.subject) = claude_ask(name, input);
+            let (rules, dirs) = ask.allowances();
+            ask.allows = [rules, dirs].concat();
+            ask.always = !ask.allows.is_empty();
+            events.push(AgentEvent::Ask(ask));
+        }
+    } else if kind == Some("system")
         && event.get("subtype").and_then(Value::as_str) == Some("init")
         && !str_of(event.get("session_id")).is_empty()
     {
@@ -817,6 +1060,9 @@ pub fn parse_claude_line<S: AsRef<str>>(line: &str, cwd: &[S]) -> Vec<AgentEvent
         let mut denied: Vec<String> = Vec::new();
         for denial in denials.into_iter().flatten() {
             let denial = record(Some(denial));
+            if asked.contains(str_of(denial.get("tool_use_id"))) {
+                continue;
+            }
             let name = str_of(denial.get("tool_name"));
             let text = claude_tool(name, record(denial.get("tool_input")), cwd)
                 .unwrap_or_else(|| name.to_owned());
@@ -1000,6 +1246,10 @@ pub struct RunOptions {
     /// The spellings of `cwd` that paths in the output are made relative to; `cwd` when not given.
     pub roots: Option<Vec<String>>,
     pub env: Env,
+    /// Written to stdin first (`agent_input`). stdin then stays open for
+    /// `AgentRun::send` until the turn's closing event; without it, stdin is
+    /// empty.
+    pub input: Option<String>,
     /// Called for each event, in order, from the task that reads the output.
     /// Dropped once the run is over.
     pub on_event: Box<dyn FnMut(AgentEvent) + Send + 'static>,
@@ -1009,6 +1259,20 @@ struct RunState {
     pid: Option<u32>,
     stopped: AtomicBool,
     exited: AtomicBool,
+    /// Lines for the agent's stdin; dropped when the turn is over, which closes it.
+    input: std::sync::Mutex<Option<mpsc::UnboundedSender<String>>>,
+}
+
+impl RunState {
+    fn input(&self) -> std::sync::MutexGuard<'_, Option<mpsc::UnboundedSender<String>>> {
+        self.input
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn close_input(&self) {
+        self.input().take();
+    }
 }
 
 /// One turn in progress. Clones share the turn.
@@ -1043,6 +1307,14 @@ impl AgentRun {
         }
     }
 
+    /// Writes `line` to the agent's stdin; false when the turn is over or has no stdin.
+    pub fn send(&self, line: String) -> bool {
+        self.state
+            .input()
+            .as_ref()
+            .is_some_and(|input| input.send(line).is_ok())
+    }
+
     /// The same turn: clones of one `AgentRun` are the same.
     pub fn same(&self, other: &AgentRun) -> bool {
         Arc::ptr_eq(&self.state, &other.state)
@@ -1053,22 +1325,72 @@ impl AgentRun {
 struct Delivery {
     on_event: Box<dyn FnMut(AgentEvent) + Send + 'static>,
     finished: bool,
+    /// The tool calls the user was asked about; their denials are not repeated.
+    asked: HashSet<String>,
+    state: Option<Arc<RunState>>,
 }
 
 impl Delivery {
     fn emit(&mut self, event: AgentEvent) {
-        if matches!(event, AgentEvent::Done { .. }) {
-            self.finished = true;
+        match &event {
+            AgentEvent::Done { .. } => {
+                self.finished = true;
+                // Claude Code ends when its stdin does.
+                if let Some(state) = &self.state {
+                    state.close_input();
+                }
+            }
+            AgentEvent::Ask(ask) => {
+                self.asked.insert(ask.tool_use_id.clone());
+            }
+            _ => {}
         }
         (self.on_event)(event);
     }
 
     fn line(&mut self, id: AgentId, line: &str, roots: &[String]) {
         let line = js::trim(line);
-        if !line.is_empty() {
-            for event in parse_agent_line(id, line, roots) {
-                self.emit(event);
+        if line.is_empty() {
+            return;
+        }
+        let events = match id {
+            AgentId::Claude => {
+                self.refuse_request(line);
+                claude_events(line, roots, &self.asked)
             }
+            AgentId::Codex => parse_codex_line(line, roots),
+        };
+        for event in events {
+            self.emit(event);
+        }
+    }
+
+    /// Answers a control request of Claude Code that is not a question for the
+    /// user with an error, so that it does not wait for an answer forever.
+    fn refuse_request(&self, line: &str) {
+        let Some(event) = parse_line(line) else {
+            return;
+        };
+        let id = str_of(event.get("request_id"));
+        let subtype = str_of(record(event.get("request")).get("subtype"));
+        if str_of(event.get("type")) != "control_request"
+            || id.is_empty()
+            || subtype == "can_use_tool"
+        {
+            return;
+        }
+        let refusal = serde_json::json!({
+            "type": "control_response",
+            "response": {
+                "subtype": "error",
+                "request_id": id,
+                "error": format!("Lily Studio does not answer {subtype}"),
+            },
+        });
+        if let Some(state) = &self.state
+            && let Some(input) = state.input().as_ref()
+        {
+            let _ = input.send(format!("{refusal}\n"));
         }
     }
 
@@ -1098,12 +1420,15 @@ pub fn run_agent(options: RunOptions) -> AgentRun {
         cwd,
         roots,
         env,
+        input,
         on_event,
     } = options;
     let roots = roots.unwrap_or_else(|| vec![cwd.clone()]);
     let mut delivery = Delivery {
         on_event,
         finished: false,
+        asked: HashSet::new(),
+        state: None,
     };
     let (done_tx, done_rx) = watch::channel(false);
     // Its own process group, so Stop ends the commands the agent started too.
@@ -1113,7 +1438,11 @@ pub fn run_agent(options: RunOptions) -> AgentRun {
         .env_clear()
         .envs(&env)
         .env("PWD", &cwd)
-        .stdin(Stdio::null())
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0)
@@ -1125,6 +1454,7 @@ pub fn run_agent(options: RunOptions) -> AgentRun {
                 pid: None,
                 stopped: AtomicBool::new(false),
                 exited: AtomicBool::new(true),
+                input: std::sync::Mutex::new(None),
             });
             tokio::spawn(async move {
                 delivery.end(Some(format!("{} did not start: {error}", agent_label(id))));
@@ -1136,15 +1466,34 @@ pub fn run_agent(options: RunOptions) -> AgentRun {
             };
         }
     };
+    let (input_tx, mut input_rx) = mpsc::unbounded_channel::<String>();
     let state = Arc::new(RunState {
         pid: child.id(),
         stopped: AtomicBool::new(false),
         exited: AtomicBool::new(false),
+        input: std::sync::Mutex::new(Some(input_tx)),
     });
     let run = AgentRun {
         state: state.clone(),
         done: done_rx,
     };
+    delivery.state = Some(state.clone());
+    match (child.stdin.take(), input) {
+        (Some(mut stdin), Some(first)) => {
+            let _ = run.send(first);
+            // Ends, closing stdin, when the sender is dropped (`close_input`).
+            tokio::spawn(async move {
+                while let Some(line) = input_rx.recv().await {
+                    if stdin.write_all(line.as_bytes()).await.is_err()
+                        || stdin.flush().await.is_err()
+                    {
+                        break;
+                    }
+                }
+            });
+        }
+        _ => state.close_input(),
+    }
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
     tokio::spawn(async move {
@@ -1190,6 +1539,7 @@ pub fn run_agent(options: RunOptions) -> AgentRun {
             };
             format!("{} ended unexpectedly{code}.{tail}", agent_label(id))
         };
+        state.close_input();
         delivery.end(Some(message));
         let _ = done_tx.send(true);
     });

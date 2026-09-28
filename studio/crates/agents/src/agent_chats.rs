@@ -16,9 +16,9 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 
 use crate::agents::{
-    AgentEvent, AgentId, AgentRun, AgentState, AgentStatus, BoxFuture, ChatEntry, Env, Permission,
-    PromptContext, Role, RunOptions, Selection, TurnOptions, agent_args, agent_label,
-    agent_out_dir, run_agent, spellings, turn_prompt,
+    AgentEvent, AgentId, AgentRun, AgentState, AgentStatus, Ask, BoxFuture, ChatEntry, Decision,
+    Env, Permission, PromptContext, Role, RunOptions, Selection, TurnOptions, agent_args,
+    agent_input, agent_label, agent_out_dir, ask_answer, run_agent, spellings, turn_prompt,
 };
 use crate::chats::{Chat, ChatStore, ChatSummary};
 use crate::js;
@@ -154,24 +154,44 @@ impl TryFrom<Value> for ChatMessage {
     rename_all_fields = "camelCase"
 )]
 pub enum ChatEvent {
-    Entry { chat_id: String, entry: ChatEntry },
-    Running { chat_id: String, running: bool },
+    Entry {
+        chat_id: String,
+        entry: ChatEntry,
+    },
+    Running {
+        chat_id: String,
+        running: bool,
+    },
+    /// The agent waits for the user to allow something (D52).
+    Ask {
+        chat_id: String,
+        ask: Box<Ask>,
+    },
+    /// The question `ask_id` is answered; the answer came as an entry.
+    Answered {
+        chat_id: String,
+        ask_id: String,
+    },
 }
 
-/// A chat in the list, and whether its agent is working.
+/// A chat in the list, whether its agent is working, and whether it waits for the user.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ChatInfo {
     #[serde(flatten)]
     pub chat: ChatSummary,
     pub running: bool,
+    #[serde(default)]
+    pub asking: bool,
 }
 
-/// An open chat, and whether its agent is working.
+/// An open chat, whether its agent is working, and what it is waiting to be allowed.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OpenChat {
     #[serde(flatten)]
     pub chat: Chat,
     pub running: bool,
+    #[serde(default)]
+    pub asks: Vec<Ask>,
 }
 
 pub type EmitFn = Arc<dyn Fn(ChatEvent) + Send + Sync>;
@@ -224,6 +244,8 @@ const MAX_SELECTION: usize = 4_000;
 struct Inner {
     options: AgentChatsOptions,
     runs: Mutex<HashMap<String, AgentRun>>,
+    /// The questions of running turns that wait for an answer, by chat.
+    asks: Mutex<HashMap<String, Vec<Ask>>>,
 }
 
 /// The chats and their running turns. Clones share them.
@@ -238,6 +260,7 @@ impl AgentChats {
             inner: Arc::new(Inner {
                 options,
                 runs: Mutex::new(HashMap::new()),
+                asks: Mutex::new(HashMap::new()),
             }),
         }
     }
@@ -250,6 +273,17 @@ impl AgentChats {
             .unwrap_or_else(|poisoned| poisoned.into_inner())
     }
 
+    fn asks(&self) -> MutexGuard<'_, HashMap<String, Vec<Ask>>> {
+        self.inner
+            .asks
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    fn pending(&self, chat_id: &str) -> Vec<Ask> {
+        self.asks().get(chat_id).cloned().unwrap_or_default()
+    }
+
     pub fn is_running(&self, chat_id: &str) -> bool {
         self.runs().contains_key(chat_id)
     }
@@ -260,7 +294,12 @@ impl AgentChats {
             .into_iter()
             .map(|chat| {
                 let running = self.is_running(&chat.id);
-                ChatInfo { chat, running }
+                let asking = !self.pending(&chat.id).is_empty();
+                ChatInfo {
+                    chat,
+                    running,
+                    asking,
+                }
             })
             .collect()
     }
@@ -275,7 +314,12 @@ impl AgentChats {
             .await
             .filter(|chat| chat.folder == folder)?;
         let running = self.is_running(&chat.id);
-        Some(OpenChat { chat, running })
+        let asks = self.pending(&chat.id);
+        Some(OpenChat {
+            chat,
+            running,
+            asks,
+        })
     }
 
     /// Sends `message` in `folder`; gives its chat's id once the turn has started.
@@ -363,17 +407,17 @@ impl AgentChats {
                 images: images.clone(),
             },
         );
-        let args = agent_args(
-            chat.agent,
-            &TurnOptions {
-                prompt,
-                session_id: chat.session_id.clone(),
-                model: status.model.clone(),
-                lilypond,
-                permission: message.permission,
-                images,
-            },
-        );
+        let turn = TurnOptions {
+            prompt,
+            session_id: chat.session_id.clone(),
+            model: status.model.clone(),
+            lilypond,
+            permission: message.permission,
+            images,
+            allowed_tools: chat.allowed_tools.clone(),
+            allowed_dirs: chat.allowed_dirs.clone(),
+        };
+        let args = agent_args(chat.agent, &turn);
         // Entries are kept in the order they came, each after the one before:
         // the run hands its events to one task that keeps and sends them.
         let (events, mut received) = mpsc::unbounded_channel::<AgentEvent>();
@@ -384,6 +428,7 @@ impl AgentChats {
             cwd: folder.to_owned(),
             roots: Some(spellings(folder).await),
             env: (options.env)().await,
+            input: agent_input(chat.agent, &turn),
             on_event: Box::new(move |event| {
                 let _ = events.send(event);
             }),
@@ -404,6 +449,17 @@ impl AgentChats {
                     AgentEvent::Entry(entry) => {
                         add(&options.store, &options.emit, &id, entry).await
                     }
+                    AgentEvent::Ask(ask) => {
+                        chats
+                            .asks()
+                            .entry(id.clone())
+                            .or_default()
+                            .push(ask.clone());
+                        (options.emit)(ChatEvent::Ask {
+                            chat_id: id.clone(),
+                            ask: Box::new(ask),
+                        });
+                    }
                     AgentEvent::Done { .. } => {}
                 }
             }
@@ -412,6 +468,8 @@ impl AgentChats {
                 let mut runs = chats.runs();
                 if runs.get(&id).is_some_and(|current| current.same(&run)) {
                     runs.remove(&id);
+                    // What this turn asked went with it; the renderer drops it on `running: false`.
+                    chats.asks().remove(&id);
                 }
             }
             (options.emit)(ChatEvent::Running {
@@ -433,6 +491,62 @@ impl AgentChats {
             return None;
         }
         tokio::fs::read(file).await.ok()
+    }
+
+    /// Answers the question `ask_id` of the running turn of `chat_id` (D52).
+    /// "Always" is kept in the chat, for its later turns.
+    pub async fn answer(
+        &self,
+        chat_id: &str,
+        ask_id: &str,
+        decision: Decision,
+        folder: &str,
+    ) -> Result<(), String> {
+        if self.get(chat_id, folder).await.is_none() {
+            return Err("This chat belongs to another folder.".to_owned());
+        }
+        let ask = {
+            let mut asks = self.asks();
+            let pending = asks.get_mut(chat_id);
+            let index = pending
+                .as_ref()
+                .and_then(|pending| pending.iter().position(|ask| ask.id == ask_id));
+            match (pending, index) {
+                (Some(pending), Some(index)) => pending.remove(index),
+                _ => return Err("The agent is no longer waiting for this answer.".to_owned()),
+            }
+        };
+        let Some(run) = self.runs().get(chat_id).cloned() else {
+            return Err("The agent is no longer waiting for this answer.".to_owned());
+        };
+        // The answer is in the chat before the agent hears it, so that what
+        // the agent does next comes after it.
+        let options = &self.inner.options;
+        if decision == Decision::Always {
+            let (tools, dirs) = ask.allowances();
+            options.store.allow(chat_id, &tools, &dirs).await;
+        }
+        let said = match decision {
+            Decision::Allow => "Allowed",
+            Decision::Always => "Allowed for this chat",
+            Decision::Deny => "Denied",
+        };
+        let text = format!("{said}: {}", ask.text);
+        add(
+            &options.store,
+            &options.emit,
+            chat_id,
+            ChatEntry::new(Role::Tool, text),
+        )
+        .await;
+        (options.emit)(ChatEvent::Answered {
+            chat_id: chat_id.to_owned(),
+            ask_id: ask.id.clone(),
+        });
+        if !run.send(ask_answer(&ask, decision)) {
+            return Err("The agent stopped before it heard the answer.".to_owned());
+        }
+        Ok(())
     }
 
     pub fn stop(&self, chat_id: &str) {

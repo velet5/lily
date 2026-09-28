@@ -2271,3 +2271,48 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   schedule is unchanged, the position waits at the start and then trails the
   clock by the latency, a pause keeps the clock position, playback ends only
   once the end is heard, and an unreported latency counts as 0.
+
+## D52 — Lily Studio: the agent asks, the user allows or denies
+
+**Status:** proposed · **Refines:** D40, D43, D50
+
+- **Why.** Under *Edit files*, a command outside D40's limits (`magick` on a
+  PDF, `python3 -c …`, a file in `~/Downloads`) was denied without asking
+  and reported only at the end of the turn as "Not allowed in Lily Studio".
+  The user's only way on was *Full access*.
+- **What.** Claude Code under *Edit files* asks the user instead. The chat
+  shows the question with the whole command or path, the agent's own words
+  for it, and *Allow*, *Allow for This Chat* (when Claude Code suggested a
+  rule or directory for it; the tooltip names them) and *Deny*. The turn
+  waits for the answer; Stop still ends it. The answer is kept in the chat
+  as an entry ("Allowed: Ran magick …", "Denied: …"). A chat waiting for an
+  answer says so in the list and under its log.
+- **How.** Claude Code runs with `--input-format stream-json
+  --permission-prompt-tool stdio`: the prompt is a user message on stdin,
+  and what the limits do not allow comes on stdout as a `control_request`
+  of subtype `can_use_tool`. The answer is a `control_response` on stdin:
+  `allow` with the input unchanged, or `deny` with a message the agent reads.
+  Any other control request is answered with an error, so that nothing
+  waits forever. Stdin is closed at the turn's `result`, which ends the
+  process. Denials the user answered are not repeated as "Not allowed".
+- **Allow for This Chat.** Claude Code's `permission_suggestions` go back
+  with the answer as `updatedPermissions`, destination `session`, so the
+  running turn does not ask again. The rules and directories are kept in
+  the chat (`allowedTools`, `allowedDirs` in chats.json) and later *Edit
+  files* turns of the chat get them as `--allowedTools` and `--add-dir`.
+  Claude Code decides how wide a suggestion is: a prefix (`magick:*`) or
+  the exact command.
+- **Not changed.** *Read only* still denies without asking: it promises
+  that nothing changes. *Full access* asks nothing. Codex cannot ask:
+  `codex exec` has no approval channel, so it keeps its sandbox (D40).
+- **[verified]** with Claude Code 2.1.283: without
+  `--permission-prompt-tool stdio` a command is denied without a request;
+  with `-p <prompt>` as an argument and stream-json input, the prompt is
+  not read and the process waits. Allow, deny and `updatedPermissions`
+  with destination `session` were accepted, and the answers took effect.
+- **Tests.** `cargo test -p lily-agents`: the arguments, the parsed
+  request, the three answers, and a two-turn chat with a stand-in that
+  waits on stdin: the question is listed while pending, "always" is kept
+  and given to the next turn, an answered denial is not repeated, and stdin
+  closes at the result. `npm run test:smoke`: the stand-in asks to run
+  `magick`, the card shows the command, Allow lets it go on.

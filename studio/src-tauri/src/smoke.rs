@@ -12,22 +12,37 @@ use tauri::{AppHandle, State};
 
 use crate::state::{Studio, StudioEvent};
 
-/// Answers as `claude -p --output-format stream-json` does, and says whether it was resumed.
+/// Answers as `claude -p --input-format stream-json --output-format stream-json`
+/// does, and says whether it was resumed. Asked to convert a PDF, it asks to
+/// run `magick` first (D52) and says what it was answered. It ends when its
+/// stdin does, as Claude Code does.
 const FAKE_AGENT: &str = r#"#!/bin/sh
 case " $* " in *" --version "*) echo "9.9.9 (Claude Code)"; exit 0;; esac
+IFS= read -r prompt
 resumed=no
 for arg in "$@"; do [ "$arg" = "--resume" ] && resumed=yes; done
-case "$*" in *"The user has selected"*) resumed="$resumed, with a selection";; esac
+case "$prompt" in *"The user has selected"*) resumed="$resumed, with a selection";; esac
 previous=
 for arg in "$@"; do
   case "$previous:$arg" in --add-dir:*chat-images*) resumed="$resumed, with an image";; esac
   previous=$arg
 done
 echo '{"type":"system","subtype":"init","session_id":"smoke-session"}'
-printf '%s\n' '\version "2.24.0"' '{ a4 b c d }' > agent.ly
-echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"file_path":"'"$PWD"'/agent.ly"}}]}}'
-echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Wrote agent.ly (resumed: '$resumed')"}]}}'
+case "$prompt" in
+  *"Convert the PDF"*)
+    echo '{"type":"control_request","request_id":"smoke-ask","request":{"subtype":"can_use_tool","tool_name":"Bash","input":{"command":"magick -density 300 score.pdf score.png","description":"Turn the PDF into an image"},"permission_suggestions":[{"type":"addRules","rules":[{"toolName":"Bash","ruleContent":"magick:*"}],"behavior":"allow","destination":"localSettings"}],"tool_use_id":"toolu_smoke"}}'
+    IFS= read -r answer
+    case "$answer" in *'"behavior":"allow"'*) said=allowed;; *) said=denied;; esac
+    echo '{"type":"assistant","message":{"content":[{"type":"text","text":"The command was '$said' (resumed: '$resumed')"}]}}'
+    ;;
+  *)
+    printf '%s\n' '\version "2.24.0"' '{ a4 b c d }' > agent.ly
+    echo '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"file_path":"'"$PWD"'/agent.ly"}}]}}'
+    echo '{"type":"assistant","message":{"content":[{"type":"text","text":"Wrote agent.ly (resumed: '$resumed')"}]}}'
+    ;;
+esac
 echo '{"type":"result","subtype":"success","is_error":false,"result":"done"}'
+cat > /dev/null
 "#;
 
 /// How long the whole run may take before it fails.
