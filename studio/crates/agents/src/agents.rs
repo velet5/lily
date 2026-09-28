@@ -420,6 +420,31 @@ async fn run_version(binary: &str, env: &Env) -> Result<String, String> {
 // ---------------------------------------------------------------------------
 // Arguments
 
+/// What an agent may do in a turn, chosen under the message box (D43).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Permission {
+    /// Reads the folder and answers; edits nothing, runs nothing.
+    Read,
+    /// Edits the folder's files and runs LilyPond (D40).
+    #[default]
+    Edit,
+    /// Anything the user could do in a terminal: no limits, no sandbox.
+    Full,
+}
+
+impl Permission {
+    /// `"read"`, `"edit"` or `"full"`; anything else is not a permission.
+    pub fn parse(value: &str) -> Option<Permission> {
+        match value {
+            "read" => Some(Permission::Read),
+            "edit" => Some(Permission::Edit),
+            "full" => Some(Permission::Full),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct TurnOptions {
     /// The whole prompt of this turn, context included (see `turn_prompt`).
@@ -429,21 +454,26 @@ pub struct TurnOptions {
     pub model: Option<String>,
     /// The LilyPond executable the agent may run to check its edits.
     pub lilypond: Option<String>,
+    pub permission: Permission,
 }
 
 fn non_empty(value: &Option<String>) -> Option<&str> {
     value.as_deref().filter(|value| !value.is_empty())
 }
 
-/// The command line of one turn. Both agents may read and edit files in the
-/// folder they run in and run LilyPond, and nothing asks for permission while
-/// they work: there is no one at a terminal to answer.
+/// The command line of one turn. Nothing asks for permission while the agent
+/// works, as there is no one at a terminal to answer: `turn.permission` sets
+/// the limits beforehand (D43).
 ///
-/// Claude Code: `--permission-mode acceptEdits` accepts edits inside the
-/// folder; the allowed tools add LilyPond and nothing else that runs commands.
-/// Codex: its `workspace-write` sandbox lets commands write only in the folder
-/// and the temp directory, without network. `codex exec resume` takes neither
-/// `--sandbox` nor `--cd`, so both are given as config and working directory.
+/// `Edit`, as D40 has it. Claude Code: `--permission-mode acceptEdits` accepts
+/// edits inside the folder; the allowed tools add LilyPond and nothing else
+/// that runs commands. Codex: its `workspace-write` sandbox lets commands write
+/// only in the folder and the temp directory, without network.
+/// `Read`: Claude Code is allowed only the tools that read; Codex runs in its
+/// `read-only` sandbox. `Full`: Claude Code bypasses its permissions, Codex
+/// runs without a sandbox.
+/// `codex exec resume` takes neither `--sandbox` nor `--cd`, so both are given
+/// as config and working directory.
 pub fn agent_args(id: AgentId, turn: &TurnOptions) -> Vec<String> {
     let model = turn
         .model
@@ -462,20 +492,29 @@ pub fn agent_args(id: AgentId, turn: &TurnOptions) -> Vec<String> {
                 "stream-json",
                 "--verbose",
             ]);
-            push(&["--permission-mode", "acceptEdits", "--allowedTools"]);
-            push(&[
-                "Read",
-                "Edit",
-                "MultiEdit",
-                "Write",
-                "Glob",
-                "Grep",
-                "LS",
-                "TodoWrite",
-                "Bash(lilypond:*)",
-            ]);
-            if let Some(lilypond) = non_empty(&turn.lilypond) {
-                push(&[&format!("Bash({lilypond}:*)")]);
+            match turn.permission {
+                Permission::Read => {
+                    push(&["--permission-mode", "default", "--allowedTools"]);
+                    push(&["Read", "Glob", "Grep", "LS", "TodoWrite"]);
+                }
+                Permission::Edit => {
+                    push(&["--permission-mode", "acceptEdits", "--allowedTools"]);
+                    push(&[
+                        "Read",
+                        "Edit",
+                        "MultiEdit",
+                        "Write",
+                        "Glob",
+                        "Grep",
+                        "LS",
+                        "TodoWrite",
+                        "Bash(lilypond:*)",
+                    ]);
+                    if let Some(lilypond) = non_empty(&turn.lilypond) {
+                        push(&[&format!("Bash({lilypond}:*)")]);
+                    }
+                }
+                Permission::Full => push(&["--permission-mode", "bypassPermissions"]),
             }
             if let Some(session) = session {
                 push(&["--resume", session]);
@@ -490,12 +529,12 @@ pub fn agent_args(id: AgentId, turn: &TurnOptions) -> Vec<String> {
                 push(&["resume"]);
             }
             push(&["--json", "--skip-git-repo-check"]);
-            push(&[
-                "-c",
-                "sandbox_mode=\"workspace-write\"",
-                "-c",
-                "approval_policy=\"never\"",
-            ]);
+            let sandbox = match turn.permission {
+                Permission::Read => "sandbox_mode=\"read-only\"",
+                Permission::Edit => "sandbox_mode=\"workspace-write\"",
+                Permission::Full => "sandbox_mode=\"danger-full-access\"",
+            };
+            push(&["-c", sandbox, "-c", "approval_policy=\"never\""]);
             if let Some(model) = model {
                 push(&["-m", model]);
             }
@@ -527,6 +566,8 @@ pub struct PromptContext {
     pub lilypond: Option<String>,
     /// The first turn of a chat carries the instructions; the agent keeps them.
     pub first: bool,
+    /// The turn may not change files (`Permission::Read`); the agent is told so.
+    pub read_only: bool,
 }
 
 /// Where an agent's check compiles write: in the temp directory, never next to
@@ -555,7 +596,7 @@ pub fn instructions(lilypond: Option<&str>) -> String {
 }
 
 /// The prompt of one turn: the instructions on the first, then where the user
-/// is, then what they wrote.
+/// is, then whether the turn is read-only, then what they wrote.
 pub fn turn_prompt(text: &str, context: &PromptContext) -> String {
     let mut parts: Vec<String> = Vec::new();
     if context.first {
@@ -588,6 +629,12 @@ pub fn turn_prompt(text: &str, context: &PromptContext) -> String {
     }
     if !place.is_empty() {
         parts.push(format!("<editor>\n{}\n</editor>", place.join("\n")));
+    }
+    if context.read_only {
+        parts.push(
+            "<lily-studio>\nThis turn is read-only: answer without changing any files or running commands.\n</lily-studio>"
+                .to_owned(),
+        );
     }
     parts.push(text.to_owned());
     parts.join("\n\n")

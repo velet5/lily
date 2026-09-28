@@ -14,7 +14,7 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 
 use crate::agents::{
-    AgentEvent, AgentId, AgentRun, AgentState, AgentStatus, BoxFuture, ChatEntry, Env,
+    AgentEvent, AgentId, AgentRun, AgentState, AgentStatus, BoxFuture, ChatEntry, Env, Permission,
     PromptContext, Role, RunOptions, Selection, TurnOptions, agent_args, agent_label,
     agent_out_dir, run_agent, spellings, turn_prompt,
 };
@@ -37,6 +37,9 @@ pub struct ChatMessage {
     pub file: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub selection: Option<Selection>,
+    /// What the agent may do in this turn; `Edit` when not given (D43).
+    #[serde(default)]
+    pub permission: Permission,
 }
 
 /// A JavaScript number that `Number.isInteger` accepts.
@@ -76,6 +79,11 @@ impl ChatMessage {
                 .and_then(AgentId::parse),
             file: optional("file"),
             selection,
+            permission: message
+                .get("permission")
+                .and_then(Value::as_str)
+                .and_then(Permission::parse)
+                .unwrap_or_default(),
         })
     }
 }
@@ -295,6 +303,7 @@ impl AgentChats {
                 selection,
                 lilypond: lilypond.clone(),
                 first: chat.session_id.is_none(),
+                read_only: message.permission == Permission::Read,
             },
         );
         let args = agent_args(
@@ -304,6 +313,7 @@ impl AgentChats {
                 session_id: chat.session_id.clone(),
                 model: status.model.clone(),
                 lilypond,
+                permission: message.permission,
             },
         );
         // Entries are kept in the order they came, each after the one before:

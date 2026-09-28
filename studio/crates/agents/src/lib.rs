@@ -11,8 +11,8 @@ mod js;
 pub use agent_chats::{AgentChats, AgentChatsOptions, ChatEvent, ChatInfo, ChatMessage, OpenChat};
 pub use agents::{
     AGENTS, Agent, AgentEvent, AgentId, AgentRun, AgentState, AgentStatus, ChatEntry,
-    DetectAgentOptions, Env, Role, RunOptions, Selection, TurnOptions, agent_args, agent_env,
-    agent_label, agent_out_dir, agent_path, detect_agent, is_agent_id, login_shell_path,
+    DetectAgentOptions, Env, Permission, Role, RunOptions, Selection, TurnOptions, agent_args,
+    agent_env, agent_label, agent_out_dir, agent_path, detect_agent, is_agent_id, login_shell_path,
     process_env, run_agent,
 };
 pub use chats::{Chat, ChatStore, ChatSummary, MAX_CHATS, chat_title};

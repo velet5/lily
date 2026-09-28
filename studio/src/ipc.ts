@@ -152,6 +152,12 @@ export type ChatSummary = Omit<Chat, 'entries'>
 export type ChatInfo = ChatSummary & { running: boolean }
 export type OpenChat = Chat & { running: boolean }
 
+/**
+ * What an agent may do in a turn (D43): `read` the folder only, `edit` its
+ * files and run LilyPond (D40), or have `full` access, without limits.
+ */
+export type Permission = 'read' | 'edit' | 'full'
+
 /** What the renderer sends with a message. */
 export interface ChatMessage {
   /** The chat to continue; a new one is started without it. */
@@ -162,6 +168,8 @@ export interface ChatMessage {
   /** The file in the editor, and the lines selected in it. */
   file?: string
   selection?: { startLine: number; endLine: number; text: string }
+  /** `edit` when not given. */
+  permission?: Permission
 }
 
 export type ChatEvent =

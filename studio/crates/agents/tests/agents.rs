@@ -9,9 +9,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use lily_agents::agents::{
-    AgentEvent, AgentId, AgentState, AgentStatus, ChatEntry, DetectAgentOptions, PromptContext,
-    Role, RunOptions, Selection, TurnOptions, agent_args, agent_env, agent_path, detect_agent,
-    parse_claude_line, parse_codex_line, relative_to, run_agent, turn_prompt, unwrap_shell,
+    AgentEvent, AgentId, AgentState, AgentStatus, ChatEntry, DetectAgentOptions, Permission,
+    PromptContext, Role, RunOptions, Selection, TurnOptions, agent_args, agent_env, agent_path,
+    detect_agent, parse_claude_line, parse_codex_line, relative_to, run_agent, turn_prompt,
+    unwrap_shell,
 };
 use lily_agents::{
     AgentChats, AgentChatsOptions, ChatEvent, ChatMessage, ChatStore, chat_title, process_env,
@@ -150,6 +151,63 @@ fn codex_args_a_later_turn_is_exec_resume_with_the_sandbox_as_config() {
     );
 }
 
+#[test]
+fn read_only_turns_read_and_run_nothing() {
+    let turn = TurnOptions {
+        prompt: "Why?".into(),
+        lilypond: Some("/opt/lilypond/bin/lilypond".into()),
+        permission: Permission::Read,
+        ..Default::default()
+    };
+    let claude = agent_args(AgentId::Claude, &turn);
+    let mode = claude
+        .iter()
+        .position(|arg| arg == "--permission-mode")
+        .expect("--permission-mode");
+    assert_eq!(claude[mode + 1], "default");
+    for tool in ["Read", "Glob", "Grep"] {
+        assert!(claude.contains(&tool.to_owned()), "{tool} is allowed");
+    }
+    for tool in [
+        "Edit",
+        "Write",
+        "Bash(lilypond:*)",
+        "Bash(/opt/lilypond/bin/lilypond:*)",
+    ] {
+        assert!(!claude.contains(&tool.to_owned()), "{tool} is not allowed");
+    }
+    assert!(agent_args(AgentId::Codex, &turn).contains(&"sandbox_mode=\"read-only\"".to_owned()));
+}
+
+#[test]
+fn full_access_turns_bypass_the_limits() {
+    let turn = TurnOptions {
+        prompt: "Anything".into(),
+        permission: Permission::Full,
+        ..Default::default()
+    };
+    let claude = agent_args(AgentId::Claude, &turn);
+    assert_eq!(
+        claude[5..7],
+        strings(&["--permission-mode", "bypassPermissions"])
+    );
+    assert!(!claude.contains(&"--allowedTools".to_owned()));
+    assert!(
+        agent_args(AgentId::Codex, &turn)
+            .contains(&"sandbox_mode=\"danger-full-access\"".to_owned())
+    );
+}
+
+#[test]
+fn a_message_without_a_permission_edits() {
+    let message =
+        ChatMessage::from_value(json!({ "text": "Hi", "permission": "sudo" })).expect("a message");
+    assert_eq!(message.permission, Permission::Edit);
+    let message =
+        ChatMessage::from_value(json!({ "text": "Hi", "permission": "read" })).expect("a message");
+    assert_eq!(message.permission, Permission::Read);
+}
+
 // ---------------------------------------------------------------------------
 // turn_prompt
 
@@ -160,6 +218,7 @@ fn context(first: bool) -> PromptContext {
         lilypond: Some("/bin/lilypond".into()),
         first,
         selection: None,
+        read_only: false,
     }
 }
 
@@ -210,6 +269,16 @@ fn later_turns_only_say_where_the_user_is() {
         },
     );
     assert!(prompt.contains("The user has selected line 5 of it:"));
+    assert!(!prompt.contains("read-only"));
+    let prompt = turn_prompt(
+        "Why?",
+        &PromptContext {
+            read_only: true,
+            ..context(false)
+        },
+    );
+    assert!(prompt.contains("This turn is read-only"));
+    assert!(prompt.ends_with("\n\nWhy?"));
 }
 
 // ---------------------------------------------------------------------------
@@ -794,6 +863,7 @@ fn chat_message_is_read_leniently() {
                 end_line: 2,
                 text: "c".into()
             }),
+            permission: Permission::Edit,
         }
     );
     let message: ChatMessage =

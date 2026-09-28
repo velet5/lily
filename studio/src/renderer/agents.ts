@@ -3,7 +3,7 @@
 // a message starts a turn of Claude Code or Codex in the folder. Agent setup:
 // where each agent is, its version, and the model it uses. `textRuns` is pure
 // so the tests can run it without a DOM.
-import type { AgentId, AgentStatus, ChatEntry, ChatEvent, ChatInfo, OpenChat } from '../ipc'
+import type { AgentId, AgentStatus, ChatEntry, ChatEvent, ChatInfo, OpenChat, Permission } from '../ipc'
 import type { StudioApi } from './bridge'
 import { button } from './files'
 
@@ -48,6 +48,33 @@ export const SELECTION_ACTIONS: readonly { id: string; label: string; prompt?: s
   },
 ]
 
+/** The permission modes under the message box (D43), in the order shown. */
+export const PERMISSIONS: readonly { id: Permission; label: string; title: string }[] = [
+  { id: 'read', label: 'Read only', title: 'The agent reads the scores and answers; it changes nothing.' },
+  { id: 'edit', label: 'Edit files', title: 'The agent edits the files of this folder and checks them with LilyPond.' },
+  {
+    id: 'full',
+    label: 'Full access',
+    title: 'The agent may run any command and change any file, without asking. Use with care.',
+  },
+]
+
+const MODELS: Record<AgentId, readonly string[]> = {
+  claude: ['opus', 'sonnet', 'haiku'],
+  codex: ['gpt-5-codex', 'gpt-5'],
+}
+
+/**
+ * The models the menu under the message box offers `agent`: its default
+ * (value ''), the usual ones, and `current` when it is none of them, as the
+ * setup lets any model be typed.
+ */
+export function modelChoices(agent: AgentId, current?: string): { value: string; label: string }[] {
+  const models = [...MODELS[agent]]
+  if (current && !models.includes(current)) models.push(current)
+  return [{ value: '', label: 'Default model' }, ...models.map((model) => ({ value: model, label: model }))]
+}
+
 /** What goes with a message, as the line above the message box says it. */
 export function contextLabel(context: EditorContext, name: (file: string) => string): string | undefined {
   if (!context.file) return undefined
@@ -79,6 +106,7 @@ export interface AgentPanelOptions {
 }
 
 const AGENT_KEY = 'lily-studio.agent'
+const PERMISSION_KEY = 'lily-studio.permission'
 
 type View = { kind: 'list' } | { kind: 'chat'; chat: OpenChat }
 
@@ -88,6 +116,7 @@ export class AgentPanel {
   private view: View = { kind: 'list' }
   private folder: string | undefined
   private agent: AgentId = 'claude'
+  private permission: Permission = 'edit'
   /** A message is on its way, before its chat is known. */
   private sending = false
   private readonly toolbar = document.createElement('div')
@@ -97,12 +126,17 @@ export class AgentPanel {
   /** What goes with the message: the file in the editor, and the selected lines. */
   private readonly attached = document.createElement('div')
   private readonly sendButton = document.createElement('button')
+  private readonly permissionSelect = document.createElement('select')
+  /** The model of the agent the next message goes to: the open chat's, or the one chosen for a new chat. */
+  private readonly modelSelect = document.createElement('select')
 
   constructor(private readonly options: AgentPanelOptions) {
     try {
       if (localStorage.getItem(AGENT_KEY) === 'codex') this.agent = 'codex'
+      const permission = PERMISSIONS.find((p) => p.id === localStorage.getItem(PERMISSION_KEY))
+      if (permission) this.permission = permission.id
     } catch {
-      // No storage: Claude Code first.
+      // No storage: Claude Code first, editing files.
     }
     this.toolbar.className = 'chat-toolbar'
     this.content.className = 'chat-content'
@@ -113,7 +147,22 @@ export class AgentPanel {
     this.sendButton.type = 'submit'
     this.sendButton.className = 'primary'
     this.attached.className = 'chat-context'
-    this.composer.append(this.attached, this.input, this.sendButton)
+    this.permissionSelect.setAttribute('aria-label', 'What the agent may do')
+    for (const { id, label, title } of PERMISSIONS) {
+      const option = document.createElement('option')
+      option.value = id
+      option.textContent = label
+      option.title = title
+      option.selected = id === this.permission
+      this.permissionSelect.append(option)
+    }
+    this.permissionSelect.addEventListener('change', () => this.choosePermission())
+    this.modelSelect.setAttribute('aria-label', 'Model')
+    this.modelSelect.addEventListener('change', () => void this.chooseModel(this.modelSelect.value))
+    const bar = document.createElement('div')
+    bar.className = 'chat-composer-bar'
+    bar.append(this.permissionSelect, this.modelSelect, this.sendButton)
+    this.composer.append(this.attached, this.input, bar)
     this.composer.addEventListener('submit', (event) => {
       event.preventDefault()
       void this.sendOrStop()
@@ -221,7 +270,12 @@ export class AgentPanel {
       await this.options.beforeSend()
       // A chat whose agent is still working is left to it; the message starts another.
       const chatId = this.view.kind === 'chat' && !this.view.chat.running ? this.view.chat.id : undefined
-      const id = await studio.chatSend({ text, ...(chatId ? { chatId } : { agent: this.agent }), ...this.options.context() })
+      const id = await studio.chatSend({
+        text,
+        ...(chatId ? { chatId } : { agent: this.agent }),
+        ...this.options.context(),
+        permission: this.permission,
+      })
       if (fromInput) this.input.value = ''
       if (chatId === undefined) {
         this.sending = false
@@ -271,6 +325,10 @@ export class AgentPanel {
     this.sendButton.disabled = noFolder || (this.sending && !working)
     this.composer.dataset.running = String(working)
     this.refreshContext()
+    this.renderModels()
+    this.permissionSelect.disabled = noFolder
+    this.permissionSelect.title = PERMISSIONS.find((p) => p.id === this.permission)?.title ?? ''
+    this.composer.dataset.permission = this.permission
 
     if (this.view.kind === 'chat') {
       const { chat } = this.view
@@ -351,6 +409,50 @@ export class AgentPanel {
     this.content.append(list)
   }
 
+  /** The agent the next message goes to. */
+  private target(): AgentId {
+    return this.view.kind === 'chat' ? this.view.chat.agent : this.agent
+  }
+
+  private renderModels(): void {
+    const agent = this.target()
+    const current = this.statuses.find((s) => s.id === agent)?.model ?? ''
+    this.modelSelect.replaceChildren(
+      ...modelChoices(agent, current).map(({ value, label }) => {
+        const option = document.createElement('option')
+        option.value = value
+        option.textContent = label
+        option.selected = value === current
+        return option
+      }),
+    )
+    this.modelSelect.title = `The model ${agentName(agent)} uses, from the next message on`
+    this.modelSelect.disabled = this.folder === undefined
+  }
+
+  private choosePermission(): void {
+    this.permission = PERMISSIONS.find((p) => p.id === this.permissionSelect.value)?.id ?? 'edit'
+    try {
+      localStorage.setItem(PERMISSION_KEY, this.permission)
+    } catch {
+      // Remembered for this run only.
+    }
+    this.render()
+  }
+
+  /** Keeps `model` as the agent's, as the setup's Model field does; the setup shows it too. */
+  private async chooseModel(model: string): Promise<void> {
+    const agent = this.target()
+    const status = this.statuses.find((s) => s.id === agent)
+    if (status) status.model = model || undefined
+    this.renderSetup()
+    try {
+      await this.options.studio.setAgentModel(agent, model)
+    } catch (error) {
+      this.options.onError(error)
+    }
+  }
+
   private async deleteChat(chat: OpenChat): Promise<void> {
     if (!window.confirm(`Delete the chat “${chat.title}”? This cannot be undone.`)) return
     try {
@@ -400,6 +502,7 @@ export class AgentPanel {
       modelInput.spellcheck = false
       modelInput.addEventListener('change', () => {
         status.model = modelInput.value.trim() || undefined
+        this.renderModels()
         void studio.setAgentModel(status.id, modelInput.value).catch(this.options.onError)
       })
       model.append(modelText, modelInput)

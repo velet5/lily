@@ -1984,3 +1984,39 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   goes through a symlink, so the test installs into the real path of the temp
   directory (`/var` is a link to `/private/var`). Not run: `npm run dist`,
   which notarizes with Apple.
+
+---
+
+## D43 — Lily Studio: permission mode and model under the message box
+
+**Status:** proposed · **Refines:** D40
+
+- **What.** Under the message box, left of Send, two menus: what the agent may
+  do, and its model. Both apply from the next message on, in a new chat or
+  the open one.
+- **Permission mode.** D40 had one fixed set of limits and "no switch for
+  more access"; there are now three, sent with each message
+  (`ChatMessage.permission`, `edit` when missing or unknown):
+  - *Read only*: Claude Code with `--permission-mode default` and only
+    `Read Glob Grep LS TodoWrite` allowed, so edits and commands are denied;
+    Codex in its `read-only` sandbox. The turn's prompt says it is read-only,
+    so the agent does not try.
+  - *Edit files*: D40's limits, unchanged, and the default.
+  - *Full access*: Claude Code with `--permission-mode bypassPermissions`,
+    Codex with `sandbox_mode="danger-full-access"`. Nothing is asked or
+    limited; the menu turns the warning colour and its tooltip says so.
+
+  The choice is kept in the window's `localStorage`
+  (`lily-studio.permission`), like the agent of a new chat. It is not kept
+  per chat: it is about the next message, not about the chat.
+- **Model.** The menu offers the agent's default, the usual models (Claude
+  Code's aliases `opus`, `sonnet`, `haiku`; Codex's `gpt-5-codex`, `gpt-5`)
+  and, when the setup's Model field holds another, that one. It is the same
+  setting as that field (`settings.json`, D40), for the open chat's agent or
+  the one chosen for a new chat; changing either updates the other.
+- **Verified.** `cargo test -p lily-agents`: each mode's arguments for both
+  agents, the read-only line of the prompt, and a message's permission read
+  from the renderer. `npm run test:unit`: the modes and the model choices.
+  `npm run test:smoke`: every agent step passes with the menus in place (the
+  sidebar-drag step fails on `main` too). Not covered: the real agents in
+  each mode.

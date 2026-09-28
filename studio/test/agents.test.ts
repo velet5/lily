@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict'
 import * as path from 'node:path'
 import { describe, test } from 'node:test'
-import { contextLabel, SELECTION_ACTIONS, textRuns } from '../src/renderer/agents'
+import { contextLabel, modelChoices, PERMISSIONS, SELECTION_ACTIONS, textRuns } from '../src/renderer/agents'
 import { clampHeight, clampWidth, FILES_MIN, SIDEBAR_WIDTH } from '../src/renderer/sidebar'
 
 // Runs under `node --test` from out/test/ (npm run test:unit in studio/): the
@@ -53,5 +53,16 @@ describe('the selection and the agent', () => {
       ['Fix Selection with Agent', true],
     ])
     assert.match(SELECTION_ACTIONS[1]!.prompt!, /Do not change any files/)
+  })
+
+  test('the permission modes, from least to most', () => {
+    assert.deepEqual(PERMISSIONS.map((p) => p.id), ['read', 'edit', 'full'])
+  })
+
+  test('modelChoices: the default, the usual models, and one typed in the setup', () => {
+    assert.deepEqual(modelChoices('claude').map((c) => c.value), ['', 'opus', 'sonnet', 'haiku'])
+    assert.deepEqual(modelChoices('claude', 'sonnet').map((c) => c.value), ['', 'opus', 'sonnet', 'haiku'])
+    assert.deepEqual(modelChoices('codex', 'o4-mini').map((c) => c.value), ['', 'gpt-5-codex', 'gpt-5', 'o4-mini'])
+    assert.equal(modelChoices('codex')[0]!.label, 'Default model')
   })
 })

@@ -17,6 +17,7 @@
   --accent: #2f6fb0;
   --hover: rgba(0, 0, 0, 0.05);
   --selected: rgba(47, 111, 176, 0.14);
+  --warning: #a8570a;
 
   color-scheme: light dark;
 }
@@ -31,6 +32,7 @@
     --accent: #4d9be6;
     --hover: rgba(255, 255, 255, 0.05);
     --selected: rgba(77, 155, 230, 0.2);
+    --warning: #e0a060;
   }
 }
 
@@ -1130,8 +1132,35 @@ body[data-resizing] .preview {
   outline-offset: -1px;
 }
 
-.chat-composer button {
-  align-self: flex-end;
+/* What the agent may do and its model, then Send (D43). */
+.chat-composer-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.chat-composer-bar select {
+  min-width: 0;
+  flex: 0 1 auto;
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 4px;
+  text-overflow: ellipsis;
+}
+
+.chat-composer[data-permission='full'] .chat-composer-bar select:first-child {
+  color: var(--warning);
+  border-color: var(--warning);
+}
+
+.chat-composer-bar button {
+  flex: none;
+  margin-left: auto;
 }
 
 .chat-composer[data-running='true'] button.primary {
