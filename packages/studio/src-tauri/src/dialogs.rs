@@ -3,7 +3,7 @@
 //! main thread, application-modal, and the async caller waits for the answer.
 //! AppKit's own panels do what the setup needs and Tauri's dialog plugin
 //! cannot: one panel that takes a file or a folder, a message above the list,
-//! hidden files shown.
+//! hidden files shown, a checkbox in a save panel (D54).
 use std::path::PathBuf;
 
 use tauri::{AppHandle, WebviewWindow};
@@ -34,6 +34,14 @@ pub struct Save {
     pub directory: Option<PathBuf>,
     pub name: Option<String>,
     pub extensions: Vec<String>,
+    /// A checkbox below the list, and whether it starts checked.
+    pub checkbox: Option<(String, bool)>,
+}
+
+/// Where a save panel was told to save, and whether its checkbox was checked.
+pub struct Saved {
+    pub path: PathBuf,
+    pub checked: bool,
 }
 
 /// An alert; the first button is the default, a "Cancel" button answers Escape.
@@ -64,6 +72,11 @@ pub async fn open(app: &AppHandle, options: Open) -> Result<Option<PathBuf>, Str
 }
 
 pub async fn save(app: &AppHandle, options: Save) -> Result<Option<PathBuf>, String> {
+    Ok(save_checking(app, options).await?.map(|saved| saved.path))
+}
+
+/// A save panel whose checkbox's answer matters too.
+pub async fn save_checking(app: &AppHandle, options: Save) -> Result<Option<Saved>, String> {
     on_main(app, move || mac::save(options)).await
 }
 
@@ -83,14 +96,16 @@ mod mac {
     use std::path::PathBuf;
 
     use objc2::MainThreadMarker;
+    use objc2::MainThreadOnly as _;
+    use objc2::rc::Retained;
     use objc2_app_kit::{
-        NSAlert, NSAlertFirstButtonReturn, NSAlertStyle, NSModalResponseOK, NSOpenPanel,
-        NSSavePanel, NSWindow,
+        NSAlert, NSAlertFirstButtonReturn, NSAlertStyle, NSButton, NSControlStateValueOff,
+        NSControlStateValueOn, NSModalResponseOK, NSOpenPanel, NSSavePanel, NSView, NSWindow,
     };
-    use objc2_foundation::{NSArray, NSString, NSURL};
+    use objc2_foundation::{NSArray, NSPoint, NSRect, NSSize, NSString, NSURL};
     use tauri::WebviewWindow;
 
-    use super::{Alert, Open, Save};
+    use super::{Alert, Open, Save, Saved};
 
     fn main_thread() -> MainThreadMarker {
         MainThreadMarker::new().expect("dialogs run on the main thread")
@@ -150,7 +165,32 @@ mod mac {
         path(panel.URL())
     }
 
-    pub fn save(options: Save) -> Option<PathBuf> {
+    /// A checkbox in a view of its own, with room around it, below the panel's list.
+    fn checkbox(panel: &NSSavePanel, title: &str, checked: bool) -> Retained<NSButton> {
+        let mtm = main_thread();
+        // SAFETY: no target and no action; the box is read when the panel has closed.
+        let button = unsafe {
+            NSButton::checkboxWithTitle_target_action(&NSString::from_str(title), None, None, mtm)
+        };
+        button.setState(if checked {
+            NSControlStateValueOn
+        } else {
+            NSControlStateValueOff
+        });
+        button.sizeToFit();
+        let size = button.frame().size;
+        let frame = NSRect::new(
+            NSPoint::new(0.0, 0.0),
+            NSSize::new(size.width + 40.0, size.height + 24.0),
+        );
+        let view = NSView::initWithFrame(NSView::alloc(mtm), frame);
+        button.setFrameOrigin(NSPoint::new(20.0, 12.0));
+        view.addSubview(&button);
+        panel.setAccessoryView(Some(&view));
+        button
+    }
+
+    pub fn save(options: Save) -> Option<Saved> {
         let panel = NSSavePanel::savePanel(main_thread());
         common(
             &panel,
@@ -164,10 +204,15 @@ mod mac {
         }
         panel.setCanCreateDirectories(true);
         panel.setShowsTagField(false);
+        let checkbox = options
+            .checkbox
+            .as_ref()
+            .map(|(title, checked)| checkbox(&panel, title, *checked));
         if panel.runModal() != NSModalResponseOK {
             return None;
         }
-        path(panel.URL())
+        let checked = checkbox.is_some_and(|button| button.state() == NSControlStateValueOn);
+        path(panel.URL()).map(|path| Saved { path, checked })
     }
 
     pub fn alert(options: Alert) -> usize {
@@ -197,12 +242,12 @@ mod mac {
 
     use tauri::WebviewWindow;
 
-    use super::{Alert, Open, Save};
+    use super::{Alert, Open, Save, Saved};
 
     pub fn open(_: Open) -> Option<PathBuf> {
         None
     }
-    pub fn save(_: Save) -> Option<PathBuf> {
+    pub fn save(_: Save) -> Option<Saved> {
         None
     }
     pub fn alert(options: Alert) -> usize {

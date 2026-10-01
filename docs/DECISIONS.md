@@ -2378,3 +2378,42 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   px changed its width from 640 to 640", which fails the same way on `main`
   before the move. A fresh checkout needs `node esbuild.mjs` in the studio
   before `cargo test`, which wants `dist/runtime`; that was so before as well.
+
+## D54 — Lily Studio: Export MIDI, without the muted parts if wanted
+
+**Status:** proposed · **Refines:** D45, D35
+
+- **What.** *File › Export MIDI…* and **Export MIDI…** at the foot of the
+  Parts fold save the music the transport plays: the bytes of the last
+  compile's first MIDI file, with live preview's unsaved edits if it made
+  them. A save panel asks where. It opens on the score's folder with the
+  score's name and `.mid`, and asks before it replaces a file. Export PDF
+  writes next to the score without asking (D33). A MIDI file is more often
+  made in versions, with and without parts, so the user names it here.
+- **Muted parts.** While the Parts fold mutes some parts, the save panel has
+  a checkbox, checked at first: *Leave out the muted part Tenor*, or *the
+  muted parts S.A and Bass*, or *the 4 muted parts* when there are more than
+  three. Checked, the muted parts' tracks are left out of the file. Unchecked,
+  the file is lilypond's. When every part is muted there is no checkbox: a
+  file of only the control track would be silent. The status line says
+  *Exported ode.mid, without the 2 muted parts*.
+- **How.** The renderer sends the bytes (base64), the root file (checked like
+  any path) and the muted parts' tracks and names (`mutedParts`, in
+  `playbackSetup.ts`). `src-tauri/src/midi_export.rs` drops the `MTrk`
+  chunks at those indexes, counting `MTrk` chunks only, as midi.js does. It
+  sets the header's track count to the tracks that remain. Every other byte
+  stays as lilypond wrote it. The checkbox is an `NSButton` in the panel's
+  accessory view (`dialogs::save_checking`). The smoke test answers no panel
+  and takes the suggestion with the box checked.
+- **Not done.** The instruments chosen in the fold are not written into the
+  file: their program changes are in the tracks lilypond wrote, and rewriting
+  them means rewriting events, not chunks. The start bar is ignored too. A
+  score with several `\score` blocks exports only the first one's MIDI, which
+  is the one the transport plays. The extension has no Export MIDI.
+- **Verified.** `midi_export.rs`'s tests drop a track from the extension's
+  `sample.midi` (a control track and three staves), keep the other chunks
+  byte for byte, and refuse a file that is not MIDI, is cut short, or would
+  have no tracks left. `playbackSetup.test.ts` covers `mutedParts`. In
+  `npm run test:smoke`, *File › Export MIDI…* with the only part muted writes
+  `smoke.mid` with its two tracks. The panel and its checkbox were not seen
+  in a run.

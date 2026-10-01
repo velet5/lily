@@ -19,6 +19,7 @@ pub const COMMANDS: &[&str] = &[
     "open-folder",
     "save",
     "save-all",
+    "export-midi",
     "welcome",
     "setup-lilypond",
 ];
@@ -57,6 +58,8 @@ pub fn build<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         .separator()
         .item(&item("save", "Save", "CmdOrCtrl+S")?)
         .item(&item("save-all", "Save All", "CmdOrCtrl+Alt+S")?)
+        .separator()
+        .text("export-midi", "Export MIDI…")
         .separator()
         .close_window()
         .build()?;

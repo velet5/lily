@@ -5,6 +5,7 @@
 mod commands;
 mod dialogs;
 mod menu;
+mod midi_export;
 mod playback;
 mod recent;
 mod smoke;
@@ -116,6 +117,7 @@ pub fn run() {
             commands::reveal_source,
             commands::compile_pdf,
             commands::export_pdf,
+            commands::export_midi,
             commands::confirm_reload,
             commands::edited,
             commands::set_live,

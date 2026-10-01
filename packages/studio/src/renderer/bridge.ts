@@ -2,7 +2,7 @@
 // D28, D42): `studio`, one Tauri command per call (src-tauri/src/commands.rs),
 // and one channel that brings everything the Rust side starts itself —
 // menu commands, compiles, changes on disk and the agents' chats. Binary data
-// comes as base64 and leaves here as Uint8Array.
+// travels as base64 and is a Uint8Array here.
 import { Channel, invoke } from '@tauri-apps/api/core'
 import type {
   AgentId,
@@ -13,10 +13,12 @@ import type {
   Command,
   Decision,
   CompileEvent,
+  ExportedMidi,
   CompileOutcome,
   FileChange,
   FolderListing,
   LilyPondStatus,
+  MutedPart,
   OpenChat,
   Opened,
   PdfOutcome,
@@ -46,6 +48,12 @@ function bytes(base64: string): Uint8Array {
   const data = new Uint8Array(binary.length)
   for (let i = 0; i < binary.length; i++) data[i] = binary.charCodeAt(i)
   return data
+}
+
+function base64(data: Uint8Array): string {
+  let binary = ''
+  for (let i = 0; i < data.length; i += 0x8000) binary += String.fromCharCode(...data.subarray(i, i + 0x8000))
+  return btoa(binary)
 }
 
 function outcome(wire: WireOutcome): CompileOutcome {
@@ -162,6 +170,13 @@ export const studio = {
   },
   /** Writes the PDF of `rootFile` next to it; resolves with the files written. */
   exportPdf: (rootFile: string): Promise<string[]> => call('export_pdf', { rootFile }),
+  /**
+   * Asks where to save `midi`, the music `rootFile` plays, and writes it
+   * (D54); the panel offers to leave out the `muted` parts. Undefined when
+   * it was cancelled.
+   */
+  exportMidi: (rootFile: string, midi: Uint8Array, muted: MutedPart[]): Promise<ExportedMidi | undefined> =>
+    call<ExportedMidi | null>('export_midi', { rootFile, midi: base64(midi), muted }).then(orUndefined),
   /**
    * Asks, in a dialog, whether to reload `file` from disk and lose its unsaved
    * changes; true for Reload.

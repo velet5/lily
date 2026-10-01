@@ -30,7 +30,7 @@ export interface Opened {
 }
 
 /** Commands sent from the application menu to the renderer. */
-export type Command = 'new-score' | 'open-file' | 'open-folder' | 'save' | 'save-all' | 'welcome' | 'setup-lilypond'
+export type Command = 'new-score' | 'open-file' | 'open-folder' | 'save' | 'save-all' | 'export-midi' | 'welcome' | 'setup-lilypond'
 
 /**
  * How a compile ended (D31). `no-root`: a saved include that no score in the
@@ -211,6 +211,19 @@ export interface PastedImage {
 export interface PlaybackSetup {
   parts?: Record<string, { program?: number; muted?: boolean }>
   startBar?: number
+}
+
+/** A part muted in the Parts fold, as Export MIDI names it in its save panel (D54). */
+export interface MutedPart {
+  /** Its MIDI track. */
+  track: number
+  name: string
+}
+
+/** Where Export MIDI wrote (D54), and how many muted parts it left out. */
+export interface ExportedMidi {
+  file: string
+  leftOut: number
 }
 
 /** An entry of the recent list (D49): a folder or a score opened lately. */

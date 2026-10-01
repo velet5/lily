@@ -749,9 +749,15 @@ button:focus-visible,
   white-space: nowrap;
 }
 
-.playback-setup .part-reset {
-  align-self: flex-start;
+.playback-setup .part-actions {
+  display: flex;
+  gap: 8px;
   margin-top: 4px;
+}
+
+/* Export MIDI at the far end, away from Play as written (D54). */
+.playback-setup .part-export {
+  margin-left: auto;
 }
 
 .start-mark {

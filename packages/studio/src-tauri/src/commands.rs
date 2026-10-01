@@ -1,9 +1,9 @@
 //! The commands behind src/renderer/bridge.ts (DECISIONS D42), one per call,
 //! as main.ts's IPC handlers were: file access (D29), compiling (D31, D33,
 //! D36, D39), point-and-click (D32), changes on disk (D34), LilyPond's setup
-//! and the sample (D37), the agents (D40), each score's playback setup (D45)
-//! and the recent list (D49). Every path from the page is checked against what the user opened;
-//! only the window "main" may call.
+//! and the sample (D37), the agents (D40), each score's playback setup (D45),
+//! Export MIDI (D54) and the recent list (D49). Every path from the page is
+//! checked against what the user opened; only the window "main" may call.
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -15,13 +15,14 @@ use lily_engrave::templates::{SAMPLE, TEMPLATES, template};
 use lily_engrave::{
     CompileOutcome, FolderListing, LilyPondStatus, PdfOutcome, SourceLocation, parse_text_edit,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, State, WebviewWindow};
 use tauri_plugin_opener::OpenerExt;
 
-use crate::dialogs::{self, Alert, Open, Save};
+use crate::dialogs::{self, Alert, Open, Save, Saved};
+use crate::midi_export;
 use crate::recent::{self, Listed, RecentKind};
 use crate::state::{Studio, StudioEvent, lock};
 
@@ -204,6 +205,7 @@ pub async fn new_score(
                 .file_name()
                 .map(|n| n.to_string_lossy().into_owned()),
             extensions: score_extensions(),
+            checkbox: None,
         },
     )
     .await?;
@@ -564,6 +566,82 @@ pub async fn set_playback_setup(
     setup: Value,
 ) -> Answer<()> {
     studio.playback.set(&root_file, &setup).await
+}
+
+/// A part muted in the Parts fold (D45): its MIDI track, and what the fold calls it.
+#[derive(Deserialize)]
+pub struct MutedPart {
+    track: usize,
+    name: String,
+}
+
+/// Where Export MIDI wrote, and how many muted parts it left out.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportedMidi {
+    file: PathBuf,
+    left_out: usize,
+}
+
+/// Writes `midi`, the music the transport of `root_file` plays, where the
+/// user chooses (D54); null when the panel was cancelled. While some parts
+/// are muted, and not all of them, the panel's checkbox leaves them out.
+#[tauri::command]
+pub async fn export_midi(
+    app: AppHandle,
+    studio: Studios<'_>,
+    root_file: Value,
+    midi: String,
+    muted: Vec<MutedPart>,
+) -> Answer<Option<ExportedMidi>> {
+    use base64::Engine as _;
+    let allowed = check(&studio, &root_file)?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(midi)
+        .map_err(|error| format!("The MIDI could not be exported: {error}"))?;
+    // Read before the panel, so a file that is not MIDI is not asked about.
+    midi_export::without_tracks(&bytes, &[])?;
+    let names: Vec<String> = muted.iter().map(|part| part.name.clone()).collect();
+    let checkbox = (!names.is_empty()).then(|| (midi_export::checkbox_title(&names), true));
+    let directory = allowed.parent().map(Path::to_path_buf);
+    let name = midi_export::suggested_name(&allowed);
+    let saved = match (&studio.smoke, directory) {
+        // The smoke test answers no panels: it takes the suggestion, as it is checked.
+        (Some(_), Some(directory)) => Some(Saved {
+            path: directory.join(name),
+            checked: checkbox.is_some(),
+        }),
+        (_, directory) => {
+            dialogs::save_checking(
+                &app,
+                Save {
+                    title: "Export MIDI".into(),
+                    prompt: Some("Export".into()),
+                    directory,
+                    name: Some(name),
+                    extensions: vec!["mid".into(), "midi".into()],
+                    checkbox,
+                },
+            )
+            .await?
+        }
+    };
+    let Some(Saved { path, checked }) = saved else {
+        return Ok(None);
+    };
+    let tracks: Vec<usize> = if checked {
+        muted.iter().map(|part| part.track).collect()
+    } else {
+        Vec::new()
+    };
+    let out = midi_export::without_tracks(&bytes, &tracks)?;
+    tokio::fs::write(&path, out)
+        .await
+        .map_err(|error| format!("{} could not be written: {error}", path.display()))?;
+    Ok(Some(ExportedMidi {
+        file: path,
+        left_out: tracks.len(),
+    }))
 }
 
 fn home() -> Option<PathBuf> {
