@@ -14,7 +14,8 @@
 // the second message (D40). A selection's context menu explains it with the
 // agent, the lines attached (D41), and an image pasted into the message box
 // goes with the next message (D46). The Parts fold mutes the part, puts it on
-// another instrument and starts playback at a bar marked on the pages (D45).
+// another instrument and starts playback at a bar marked on the pages (D45);
+// Export MIDI writes smoke.mid (D54).
 //
 // The Rust side prepares the folder and the stand-in agent, and answers the
 // smoke_* commands: files on disk as another program sees them, and the menu.
@@ -289,6 +290,13 @@ async function main(): Promise<void> {
       const setup = await invoke<{ parts?: Record<string, unknown>; startBar?: number } | null>('playback_setup', { rootFile: smoke.score })
       return setup?.startBar === 2 && JSON.stringify(Object.values(setup.parts ?? {})) === '[{"muted":true,"program":73}]' ? setup : null
     })
+    // File › Export MIDI (D54). The only part is muted, so there is nothing
+    // to offer to leave out: smoke.mid is the whole music, its control track
+    // and the part. The smoke test takes the panel's suggestion.
+    await menu('export-midi')
+    playback.exportedMidi = await until('Export MIDI to report', () => (statusMessage().startsWith('Exported smoke.mid') ? statusMessage() : ''), 30_000)
+    const midi = await disk.read(`${smoke.folder}/smoke.mid`)
+    if (!midi?.startsWith('MThd') || midi.split('MTrk').length !== 3) problems.push('Export MIDI did not write smoke.mid with its two tracks')
     click('.playback-setup .part-reset')
     click('.transport-parts')
     playback.reset = await until('the setup to be cleared', async () =>

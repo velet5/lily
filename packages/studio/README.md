@@ -16,7 +16,9 @@ LilyPond installed in the same way.
   preview switches with them. Save with <kbd>⌘S</kbd>, or just type: the score
   follows as you type (*Live preview* in the status line). Click a note to find it in the
   text. The SVG/PDF switch shows the printable PDF, and *Export PDF* saves it
-  next to the score. ▶ plays the music and marks the notes as they sound.
+  next to the score. ▶ plays the music and marks the notes as they sound;
+  *Parts* mutes a part or plays it on another instrument, and *File › Export
+  MIDI…* saves the music, with or without the muted parts.
 - **Mistakes** are underlined, and a note above the score explains the first
   one in plain words, for example *“\stacato” is not a LilyPond command*.
   Click it to go there.

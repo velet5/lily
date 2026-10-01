@@ -4,11 +4,12 @@
 // sound, with a playhead through the system (D26), from preview.js's pure half. The
 // main process reads the MIDI and its map together with the pages. The Parts
 // fold plays each part on an instrument of its own or mutes it, and ▶ starts
-// from a marked bar (D45).
+// from a marked bar (D45). Export MIDI saves the music, without the muted
+// parts if the user likes (D54).
 import { formatTime, instrumentName, momentTime, parseMidi, Player, type Midi } from '@lily/common/web/midi.js'
 import { barAt, cursorAt, scrollToShow, soundingAt, timelineOf, type Box, type Timeline } from '@lily/common/web/preview.js'
-import type { CompileEvent, CompileOutcome, PlaybackSetup, PlaybackTiming } from '../ipc'
-import { barTime, INSTRUMENT_GROUPS, mixMidi, momentAt, partsOf, withPart, withStartBar } from './playbackSetup'
+import type { CompileEvent, CompileOutcome, ExportedMidi, MutedPart, PlaybackSetup, PlaybackTiming } from '../ipc'
+import { barTime, INSTRUMENT_GROUPS, mixMidi, momentAt, mutedParts, partsOf, withPart, withStartBar } from './playbackSetup'
 
 /** The music the player has: the score, the MIDI bytes and their map. */
 export interface Loaded {
@@ -63,6 +64,10 @@ export interface ScorePlayerOptions {
   /** The setup kept for a score, and keeping it (D45). */
   loadSetup(rootFile: string): Promise<PlaybackSetup | undefined>
   saveSetup(rootFile: string, setup: PlaybackSetup): Promise<void>
+  /** Asks where to save the MIDI and writes it (D54); undefined when cancelled. */
+  exportMidi(rootFile: string, midi: Uint8Array, muted: MutedPart[]): Promise<ExportedMidi | undefined>
+  /** Tells the status line what Export MIDI wrote. */
+  onExported(message: string): void
 }
 
 export class ScorePlayer {
@@ -86,6 +91,8 @@ export class ScorePlayer {
   private readonly startMark = document.createElement('div')
   /** While the slider is dragged it shows where the drag is, not where the music is. */
   private seeking = false
+  /** While Export MIDI's panel is open, another export does not start. */
+  private exporting = false
 
   // The playhead (D26).
   /** The map resolved against the pages on screen: built when first drawn, dropped by a render. */
@@ -220,6 +227,34 @@ export class ScorePlayer {
   refresh(): void {
     if (this.player.state !== 'playing') this.drawPlayhead()
     this.drawStartMark()
+  }
+
+  /**
+   * Export MIDI (D54): the bytes of the last compile, as the transport plays
+   * them, offering to leave out the parts the setup mutes.
+   */
+  async exportMidi(): Promise<void> {
+    const loaded = this.loaded
+    if (!loaded?.midi || !this.parsed) {
+      this.options.onError(this.unplayable ? `The MIDI cannot be exported: ${this.unplayable}` : 'The score has no MIDI to export: press Add MIDI first')
+      return
+    }
+    if (this.exporting) return
+    this.exporting = true
+    this.fillPanel()
+    try {
+      const muted = mutedParts(partsOf(this.parsed, loaded.timing?.staves), this.setup)
+      const exported = await this.options.exportMidi(loaded.rootFile, loaded.midi, muted)
+      if (!exported) return
+      const name = exported.file.split(/[\\/]/).pop()
+      const without = exported.leftOut === 0 ? '' : exported.leftOut === 1 ? ', without the muted part' : `, without the ${exported.leftOut} muted parts`
+      this.options.onExported(`Exported ${name}${without}`)
+    } catch (error) {
+      this.options.onError(error instanceof Error ? error.message : String(error))
+    } finally {
+      this.exporting = false
+      this.fillPanel()
+    }
   }
 
   private async play(): Promise<void> {
@@ -474,7 +509,17 @@ export class ScorePlayer {
       this.changeSetup({})
       this.remix()
     })
-    panel.replaceChildren(...rows, start, reset)
+    const exportButton = document.createElement('button')
+    exportButton.type = 'button'
+    exportButton.className = 'part-export'
+    exportButton.textContent = 'Export MIDI…'
+    exportButton.title = 'Save the music as a MIDI file, with or without the muted parts'
+    exportButton.disabled = this.exporting
+    exportButton.addEventListener('click', () => void this.exportMidi())
+    const actions = document.createElement('div')
+    actions.className = 'part-actions'
+    actions.append(reset, exportButton)
+    panel.replaceChildren(...rows, start, actions)
   }
 
   /** Right-click on the pages: start playback at the bar under the pointer. */

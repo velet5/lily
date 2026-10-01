@@ -5,7 +5,7 @@ import * as path from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { momentTime, parseMidi, type Midi } from '@lily/common/web/midi.js'
 import type { TimedStaff } from '@lily/common/types'
-import { barTime, mixMidi, momentAt, partNames, partsOf, withPart, withStartBar } from '../src/renderer/playbackSetup'
+import { barTime, mixMidi, momentAt, mutedParts, partNames, partsOf, withPart, withStartBar } from '../src/renderer/playbackSetup'
 import { realOutcome } from './outcome'
 
 // Runs under `node --test` from out/test/, in packages/studio/ (npm run test:unit).
@@ -60,6 +60,17 @@ describe('the parts and the mix', () => {
     assert.equal(mixed.duration, MIDI.duration)
     // The parsed music is not changed.
     assert.equal(MIDI.notes[1].program, 0)
+  })
+
+  test('Export MIDI offers to leave out the muted parts, unless that is all of them (D54)', () => {
+    const parts = partsOf(MIDI)
+    assert.deepEqual(mutedParts(parts, undefined), [])
+    assert.deepEqual(mutedParts(parts, { parts: { 2: { program: 73 } } }), [])
+    assert.deepEqual(mutedParts(parts, { parts: { 1: { muted: true }, 3: { muted: true }, 0: { muted: true } } }), [
+      { track: 1, name: 'Violin' },
+      { track: 3, name: 'Drums' },
+    ])
+    assert.deepEqual(mutedParts(parts, { parts: { 1: { muted: true }, 2: { muted: true }, 3: { muted: true } } }), [])
   })
 
   test('a part back to the way it is written leaves the setup', () => {

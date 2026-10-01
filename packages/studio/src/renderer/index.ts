@@ -146,6 +146,8 @@ const player = new ScorePlayer({
   panel: previewPane.querySelector<HTMLElement>('.playback-setup')!,
   loadSetup: (rootFile) => studio.playbackSetup(rootFile),
   saveSetup: (rootFile, setup) => studio.setPlaybackSetup(rootFile, setup),
+  exportMidi: (rootFile, midi, muted) => studio.exportMidi(rootFile, midi, muted),
+  onExported: status,
 })
 // Space plays or pauses when the preview has the focus; a click on the pages gives it.
 previewBody.tabIndex = -1
@@ -496,6 +498,8 @@ studio.onCommand((command) => {
       return void save(false)
     case 'save-all':
       return void save(true)
+    case 'export-midi':
+      return void player.exportMidi()
     case 'welcome':
       monacoHost.hidden = true
       return welcome.show(!!editor.file)

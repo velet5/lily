@@ -1,10 +1,11 @@
 // The pure half of the playback setup (DECISIONS D45): the instruments a part
 // can be given, the music as the setup plays it, and the bars playback can
-// start from. player.ts shows it; the Rust side keeps it per score.
+// start from, and the parts Export MIDI may leave out (D54). player.ts shows
+// it; the Rust side keeps it per score.
 import { trackInstruments, type Midi } from '@lily/common/web/midi.js'
 import type { Moment, System } from '@lily/common/web/preview.js'
 import type { TimedStaff } from '@lily/common/types'
-import type { PlaybackSetup } from '../ipc'
+import type { MutedPart, PlaybackSetup } from '../ipc'
 
 const DRUMS = 9 // channel 10
 
@@ -269,6 +270,15 @@ export function mixMidi(midi: Midi, setup: PlaybackSetup | undefined): Midi {
     else notes.push(part.program === undefined || note.channel === DRUMS ? note : { ...note, program: part.program })
   }
   return { ...midi, notes }
+}
+
+/**
+ * The parts Export MIDI offers to leave out (D54): those `setup` mutes.
+ * None when it mutes every part: a file without them would be silent.
+ */
+export function mutedParts(parts: Part[], setup: PlaybackSetup | undefined): MutedPart[] {
+  const muted = parts.filter((part) => setup?.parts?.[part.track]?.muted)
+  return muted.length === parts.length ? [] : muted.map(({ track, name }) => ({ track, name }))
 }
 
 /** `setup` with part `track` changed; what is back to the score's way is dropped. */
