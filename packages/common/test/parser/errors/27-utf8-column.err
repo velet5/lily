@@ -1,0 +1,7 @@
+27-utf8-column.ly:2:20: error: unknown command: `\foo'
+\markup "äöü" { c4 
+                   \foo }
+27-utf8-column.ly:2:20: error: string outside of text script or \lyricmode
+\markup "äöü" { c4 
+                   \foo }
+fatal error: failed files: "27-utf8-column.ly"

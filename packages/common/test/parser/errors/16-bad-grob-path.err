@@ -1,0 +1,4 @@
+16-bad-grob-path.ly:2:13: error: bad grob property path
+{ \override 
+            color = #red c4 }
+fatal error: failed files: "16-bad-grob-path.ly"

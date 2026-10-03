@@ -1,0 +1,4 @@
+04-comment-eof.ly:3:3: error: EOF found inside a comment
+%{
+   never closed
+fatal error: failed files: "04-comment-eof.ly"

@@ -1,0 +1,10 @@
+28-error-count.ly:2:6: error: unknown command: `\foo'
+{ c4 
+     \foo d \bar e }
+28-error-count.ly:2:6: error: string outside of text script or \lyricmode
+{ c4 
+     \foo d \bar e }
+28-error-count.ly:2:18: error: wrong type for argument 1.  Expecting string, found (ly:make-pitch -1 2)
+{ c4 \foo d \bar 
+                 e }
+fatal error: failed files: "28-error-count.ly"

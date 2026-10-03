@@ -1,0 +1,4 @@
+14-not-a-duration.ly:2:4: error: not a duration
+{ c
+   3 d }
+fatal error: failed files: "14-not-a-duration.ly"

@@ -1,0 +1,10 @@
+24-embedded-lily.ly:2:5: error: unknown command: `\foo'
+ c4 
+    \foo 
+24-embedded-lily.ly:2:5: error: string outside of text script or \lyricmode
+ c4 
+    \foo 
+24-embedded-lily.ly:3:3: error: error in #{ ... #}
+{ 
+  \m }
+fatal error: failed files: "24-embedded-lily.ly"

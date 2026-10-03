@@ -1,0 +1,4 @@
+13-not-a-note-name.ly:2:6: error: not a note name: foo
+{ c4 
+     foo d }
+fatal error: failed files: "13-not-a-note-name.ly"

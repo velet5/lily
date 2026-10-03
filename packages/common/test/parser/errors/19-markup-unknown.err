@@ -1,0 +1,4 @@
+19-markup-unknown.ly:2:11: error: unknown command: `\boldd'
+\markup { 
+          \boldd text }
+fatal error: failed files: "19-markup-unknown.ly"

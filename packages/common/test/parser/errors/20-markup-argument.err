@@ -1,0 +1,5 @@
+20-markup-argument.ly:2:19: error: wrong type for argument 1.  Expecting number, found "big"
+\markup \fontsize 
+                  #"big" text
+ERROR: In procedure ly:parse-file:
+In procedure reverse!: Wrong type argument in position 1: ("big" . #f)

@@ -1,0 +1,4 @@
+15-context-mod.ly:2:18: error: not a context mod
+\new Staff \with 
+                 #5 { c4 }
+fatal error: failed files: "15-context-mod.ly"
