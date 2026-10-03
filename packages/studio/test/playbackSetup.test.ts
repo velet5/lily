@@ -21,7 +21,7 @@ after(async () => {
 })
 
 function note(track: number, channel: number, program: number, time = 0) {
-  return { time, duration: 0.5, track, channel, key: 60, program }
+  return { time, duration: 0.5, track, channel, key: 60, velocity: 90 / 127, program, gain: 1, pan: 0, detune: 0 }
 }
 
 const MIDI: Midi = {
