@@ -7,6 +7,10 @@
 // by `lily-studio --smoke-test` (D42). @lily/common's runtime/ is copied to
 // dist/runtime/, which the app bundles as a resource: timing.ly for the
 // playhead (D35), the warm compiler and glyph cache for live preview (D36).
+// With `--site`, the engine's worker is bundled as engine.worker.js, and the
+// engine's files, when its build left them in dist/engine/, are copied to
+// dist/site/engine/ under names that carry a hash of their bytes (chapter 08
+// of docs/research/wasm-engine).
 //
 //   node esbuild.mjs                one-off development build
 //   node esbuild.mjs --watch        rebuild on change
@@ -14,7 +18,8 @@
 //   node esbuild.mjs --tests        test/*.test.ts → out/test/, for node --test
 //   node esbuild.mjs --e2e          test/e2e/*.test.ts → out/test/e2e/, the packaged app's test (D37)
 import * as esbuild from 'esbuild'
-import { cpSync, mkdirSync, readdirSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 
 const production = process.argv.includes('--production')
@@ -82,6 +87,35 @@ const nodeBuild = (dir, outdir) => ({
   logLevel: 'warning',
 })
 
+/**
+ * The engine's files and their manifest (src/web/engine/protocol.ts), as the
+ * engine's build left them in `from`, copied to `to` with a hash of their
+ * bytes in each name, so that a name never changes its bytes and the cache
+ * never holds a stale file. Without an engine build the page compiles on the
+ * server, as before.
+ */
+function copyEngine(from, to) {
+  if (!existsSync(`${from}/manifest.json`)) return
+  const manifest = JSON.parse(readFileSync(`${from}/manifest.json`, 'utf8'))
+  rmSync(to, { recursive: true, force: true })
+  mkdirSync(to, { recursive: true })
+  const hashed = (file) => {
+    const bytes = readFileSync(`${from}/${file}`)
+    const name = file.replace(/(\.[^.]+)?$/, `.${createHash('sha256').update(bytes).digest('hex').slice(0, 12)}$1`)
+    writeFileSync(`${to}/${name}`, bytes)
+    return name
+  }
+  manifest.core.wasm = hashed(manifest.core.wasm)
+  manifest.core.image = hashed(manifest.core.image)
+  for (const module of Object.values(manifest.modules)) module.file = hashed(module.file)
+  writeFileSync(`${to}/manifest.json`, JSON.stringify(manifest))
+}
+
+// The engine runs in the web's page only (chapter 08 of docs/research/wasm-engine).
+if (process.argv.includes('--site')) {
+  builds.push({ ...shared, entryPoints: { 'engine.worker': 'src/web/engine/worker.ts' }, outdir: 'dist/site' })
+  copyEngine('dist/engine', 'dist/site/engine')
+}
 // Tests import only modules without the DOM or Tauri.
 if (tests) builds.splice(0, builds.length, nodeBuild('test', 'out/test'))
 // Run by `npm run test:e2e` after `npm run dist`; it drives the DMG, not the sources.

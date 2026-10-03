@@ -82,8 +82,9 @@ times.
   brotli; `onig.wasm`, the one wasm the studio already ships, is 456 KB, 102
   KB with brotli. A core of 1.5 MB is 1.2 s at 10 Mbit/s, which leaves B5c
   room for compiling and initialising. Uncompressed size matters on its own
-  (B3): Safari and Chrome compile the whole module before the first call, and
-  the compiled code counts against the memory iOS allows.
+  (B3): every function is compiled, though lazily, on its first call
+  (chapter 08 §3.2 measured it in Chromium and WebKit), and the compiled code
+  counts against the memory iOS allows.
 - **B4, memory.** The whole native process peaks at 79–137 MB RSS on the
   corpus **[measured]**, Guile, Pango and fonts included. iOS reliably gives
   a reloaded page 300 MB for everything: the engine, the page, the inline SVG
