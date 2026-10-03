@@ -84,17 +84,18 @@ times.
   room for compiling and initialising. Uncompressed size matters on its own
   (B3): Safari and Chrome compile the whole module before the first call, and
   the compiled code counts against the memory iOS allows.
-- **B4, memory.** The whole native process peaks at 79–138 MB RSS on the
+- **B4, memory.** The whole native process peaks at 79–137 MB RSS on the
   corpus **[measured]**, Guile, Pango and fonts included. iOS reliably gives
   a reloaded page 300 MB for everything: the engine, the page, the inline SVG
   DOM and the audio. The engine gets less than half of what LilyPond uses,
   and a declared maximum of 256 MiB makes an oversized score a reported
   error instead of a killed tab. WebAssembly memory never shrinks, so the
   high-water mark is also what the tab keeps until the worker is recycled.
-- **B5, cold start.** LilyPond's warm parent (D25) is ready 0.13 s after
-  spawn, and a fork that only reads `init.ly` and a trivial score takes
-  another 0.21 s **[measured]**. Projected onto the Android reference
-  (0.45× and about 1.5× for wasm), that start alone would be 1.1 s; the
+- **B5, cold start.** A cold compile of the trivial T01 takes 0.34 s
+  with the glyph cache **[measured]**, almost all of it LilyPond starting:
+  the warm parent (D25) is ready after 0.13 s, and a fork reading `init.ly`
+  and T01 takes another 0.22 s. Projected onto the Android reference (0.45×
+  and about 1.5× for wasm), that start alone would be 1.1 s; the
   engine must not repeat LilyPond's init work per run. It initialises once
   per Worker and keeps a pristine copy of its state to reset to, which is
   what `worker.scm`'s fork per request does natively (D25): each compile
@@ -106,8 +107,9 @@ times.
   reference, recomputing everything would take ≈ 1.1 s for T02 and ≈ 3 s for
   T29. B6 can only be met by recomputing what an edit affects (chapters 04
   and 05), which is the point of the budget. A provisional split of the
-  Android S Must of 250 ms, for the roadmap (step 11) to confirm: parse 20, Scheme and
-  music 40, layout 120, SVG 30, transfer to the page and DOM update 40.
+  Android S Must of 250 ms, for the roadmap (step 11) to confirm: parse 20,
+  Scheme and music 40, layout 120, SVG 30, transfer to the page and DOM
+  update 40.
 - **B7–B8.** The engine runs in a Worker; what the page does with a result
   (parsing the SVG, swapping a page node, D17's page reuse) must stay below
   the 50 ms that counts as a long task. A compile superseded by a newer edit
