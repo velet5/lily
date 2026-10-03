@@ -1043,6 +1043,17 @@ playback part of *Out of scope*
 - **Hidden webviews.** A preview behind another tab is destroyed (D17), and its
   music with it. `PreviewPanel.play()` on a hidden panel reveals it and plays
   on the next `ready`. Playback does not survive a window reload either.
+- **Phones** (added with chapter 07 of `docs/research/wasm-engine`). The
+  first ▶ sets `navigator.audioSession.type` to `playback` where it exists
+  (Safari 16.4 and later). Without it, Safari treats the music as ambient
+  sound, which is silent while an iPhone's ring switch is on silent and stops
+  in the background. When the system stops the audio clock under a playing
+  `Player` (Safari's and Chrome 136's `interrupted` state during a call, or
+  `suspended`), the player pauses where the music was, so ▶, a gesture,
+  resumes it. **Verified** with fakes in `test/midi/midi.test.ts`, and in
+  Playwright's WebKit 26.4 and Chromium 147: the session became `playback`,
+  and `suspend()` under a playing T02 paused it at 1.44 s. Not tried on a
+  phone (step 10).
 - **Untrusted input.** A `.midi` file is parsed by hand in the webview, never
   `eval`ed; track names are set as `textContent`. The parser throws on anything
   that is not a metrical SMF 0/1, and the message is shown instead of a player.

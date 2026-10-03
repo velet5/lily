@@ -396,4 +396,52 @@ describe('Player', () => {
       mock.timers.reset()
     }
   })
+
+  test('pauses where the music was when the system takes the audio away', async () => {
+    mock.timers.enable({ apis: ['setInterval', 'setTimeout'] })
+    try {
+      const { context, starts } = fakeContext('running')
+      const listeners: Array<() => void> = []
+      Object.assign(context, { addEventListener: (type: string, listener: () => void) => type === 'statechange' && listeners.push(listener) })
+      const states: string[] = []
+      const player = new midi.Player({ createContext: () => context, onChange: () => states.push(player.state) })
+      player.load(song())
+      assert.strictEqual(await player.play(), true)
+      assert.strictEqual(listeners.length, 1)
+      context.currentTime = 10.06 + 1.2
+      mock.timers.tick(50)
+
+      // A phone call: Safari's `interrupted`, which stops the audio clock.
+      Object.assign(context, { state: 'interrupted' })
+      listeners[0]()
+      assert.deepStrictEqual([player.state, Math.round(player.position * 10), player.suspended], ['paused', 12, true])
+      assert.strictEqual(states[states.length - 1], 'paused')
+      mock.timers.tick(1000)
+      assert.strictEqual(starts.length, 2, 'nothing is scheduled while paused')
+
+      // ▶ again once it is over; a change of state while not playing does nothing.
+      Object.assign(context, { state: 'running' })
+      listeners[0]()
+      assert.strictEqual(await player.play(), true)
+      assert.strictEqual(listeners.length, 1, 'one listener per context')
+    } finally {
+      mock.timers.reset()
+    }
+  })
+
+  test('asks to be played as music where the browser has audio sessions', async () => {
+    const session = { type: 'auto' }
+    Object.defineProperty(globalThis.navigator, 'audioSession', { value: session, configurable: true })
+    try {
+      const { context } = fakeContext('running')
+      const player = new midi.Player({ createContext: () => context })
+      player.load(song())
+      assert.strictEqual(session.type, 'auto', 'not before the first play')
+      assert.strictEqual(await player.play(), true)
+      assert.strictEqual(session.type, 'playback')
+      player.stop()
+    } finally {
+      Reflect.deleteProperty(globalThis.navigator, 'audioSession')
+    }
+  })
 })

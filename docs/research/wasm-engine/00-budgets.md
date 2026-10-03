@@ -297,15 +297,16 @@ without the tab-expanded column, which is derived (§3.5 of ARCHITECTURE.md).
 | --- | --- | --- | --- | --- |
 | C0 Diagnostics | stderr through `parseStderr` (D15) | first error's file, line, column, severity and message equal; same error count | exact | exact |
 | C1 Events | the playback map's events: performance, link, moment, grace moment, length | Dice coefficient of the two multisets | 1.0 | 1.0 |
-| C2 MIDI | notes of every `.midi` (`parseMidi` of `packages/common/web/midi.js`): file, track, channel, key, program, time and duration to 0.1 ms | Dice coefficient | 1.0 | 1.0 |
+| C2 MIDI | notes of every `.midi` (`parseMidi` of `packages/common/web/midi.js`): file, track, channel, key, program, velocity, time and duration to 0.1 ms | Dice coefficient | 1.0 | 1.0 |
 | C3 Breaks | page count, and the moments where a new system starts: where the music's columns jump back left by more than 10 staff spaces, or onto a new page | pages equal; Dice of the break moments | 0.9 | 1.0 |
 | C4 Positions | each linked element's `translate(x, y)`, paired in document order per link, on elements whose page agrees | median and p95 of \|Δx\| and \|Δy\| in staff spaces (the SVG's units) | median ≤ 0.5, p95 ≤ 2 | median ≤ 0.1, p95 ≤ 0.5 |
 
 A score **passes** when every layer meets its Must; a milestone reports, per
 layer, how many of the 30 pass. C0 applies to T03 only until chapter 02
-adds an error corpus. `midi.js` does not keep velocities; C2 must add them
-before T18 can test dynamics. A page whose SVG has no links (none in the
-corpus, after the capture) can only be compared by C3's page count;
+adds an error corpus. C2 compares velocities too (`velocity` × 127, which
+`parseMidi` keeps), as chapter 07 §4.3 added, so that T18 tests dynamics. A
+page whose SVG has no links (none in the corpus, after the capture) can only
+be compared by C3's page count;
 comparing rasterised pages is left as an aid for reviewing, not a gate.
 
 The comparator expects each linked element as LilyPond writes it: `<a
@@ -429,7 +430,7 @@ function read(dir) {
   const timing = files(dir, /\.timing\.json$/).map((f) => JSON.parse(readFileSync(path.join(dir, f), 'utf8')))[0] ?? []
   const events = timing.flatMap((perf, i) => perf.events.map((e) => `${i}|${key(e.href)}|${e.at}|${e.grace}|${e.length}`))
   const notes = files(dir, /\.midi?$/).flatMap((f) => parseMidi(readFileSync(path.join(dir, f))).notes
-    .map((n) => `${f}|${n.track}|${n.channel}|${n.key}|${n.program}|${n.time.toFixed(4)}|${n.duration.toFixed(4)}`))
+    .map((n) => `${f}|${n.track}|${n.channel}|${n.key}|${n.program}|${Math.round(n.velocity * 127)}|${n.time.toFixed(4)}|${n.duration.toFixed(4)}`))
   // A system break is where the music's columns jump back to the left, or onto a new page.
   const moments = new Map()
   for (const perf of timing.slice(0, 1)) for (const e of perf.events) {

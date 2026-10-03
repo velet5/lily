@@ -501,6 +501,23 @@
     return low
   }
 
+  /**
+   * Asks to be played as music. Safari plays Web Audio as `ambient` sound by
+   * default: silent while an iPhone's ring switch is on silent, and stopped
+   * in the background. `playback` is heard through both (iOS 17.5 for the
+   * background). Safari 16.4 and later have `navigator.audioSession`; other
+   * browsers do not, and nothing changes there.
+   */
+  function playbackSession() {
+    const session = globalThis.navigator?.audioSession
+    if (!session || session.type === 'playback') return
+    try {
+      session.type = 'playback'
+    } catch {
+      // Refused: the default is still heard with the switch off.
+    }
+  }
+
   /** `m:ss`, the way a player shows a position. */
   function formatTime(seconds) {
     const whole = Math.max(0, Math.floor(Number.isFinite(seconds) ? seconds : 0))
@@ -578,7 +595,16 @@
 
     async play() {
       if (!this.midi || this.state === 'playing') return this.state === 'playing'
-      this.context ??= this.createContext()
+      playbackSession()
+      if (!this.context) {
+        this.context = this.createContext()
+        // A phone call, another app or the page going into the background
+        // stops the audio clock (Safari's and, since Chrome 136, Chrome's
+        // `interrupted`): show it as paused, and the next ▶ goes on from there.
+        this.context.addEventListener?.('statechange', () => {
+          if (this.midi && this.state === 'playing' && this.context.state !== 'running') this.pause()
+        })
+      }
       this.synth ??= new Synth(this.context)
       const attempt = (this.attempt = (this.attempt ?? 0) + 1)
       if (this.context.state !== 'running') {
