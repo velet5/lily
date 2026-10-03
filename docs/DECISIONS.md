@@ -2428,3 +2428,93 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   `npm run test:smoke`, *File › Export MIDI…* with the only part muted writes
   `smoke.mid` with its two tracks. The panel and its checkbox were not seen
   in a run.
+
+---
+
+## D56 — An engine of our own: LilyPond in WebAssembly
+
+**Status:** proposed · **Refines:** D1, D24, D26, D42, D53, D55
+
+- **What.** We build our own engine: a small LilyPond in Rust, compiled to
+  WebAssembly, that runs in the browser. It parses the whole syntax, runs a
+  score's Scheme, lays the music out as LilyPond does, and writes SVG pages,
+  MIDI and the playback map (D26). PDF comes from a module fetched at the
+  first export. LilyPond 2.26.0 is the reference: the engine's output is
+  compared with LilyPond's layer by layer (diagnostics, events, MIDI, breaks,
+  positions, beam and slur shapes) on 30 test scores. The investigation is
+  `docs/research/wasm-engine/`, chapters 00–09. Its README is the roadmap:
+  budgets per module, milestones MS0–MS8, effort, risks and test coverage.
+- **Why.** LilyPond re-renders a two-page score in 0.32 s and an orchestral
+  page in 0.91 s on the desktop, before any network round trip. On a
+  mid-range Android phone that would be seconds per edit. LilyPond itself in
+  wasm (Guile by Emscripten) is 3.5 MB of brotli and a 15.9 MB data file,
+  ten times the core's 1.5 MB budget, and needs wasm exception handling,
+  which Safari 17 lacks. An engine that recomputes only what an edit changes
+  can fit 250 ms per edit there. A spike of the engine's shape
+  (`crates/engine-spike`), run through the studio's worker on an iPhone SE
+  and a Fire Max 11, was 38 KB of brotli wasm, ready 111–297 ms after
+  navigation, and re-rendered a page in one frame. And a score's Scheme run
+  in the user's browser gets no file system, which D55 needs bubblewrap for.
+- **The parts.** A hand-written parser that re-parses only the edited item
+  and block. A Scheme interpreter of our own, with Guile's spellings and
+  error texts, a precise collector, a heap image of LilyPond's Scheme after
+  init, versioned globals and an undo log. s7 is the fallback if the
+  interpreter's first milestone misses its budgets by more than twice. A
+  music model of frozen trees, contexts and translators, with checkpoints,
+  convergence and partitions. A layout that ports LilyPond's searches with
+  their parameters and approximates none, re-laying out cells, the visible
+  page first. Emmentaler in packs per optical size, each glyph defined once
+  per page, links as LilyPond writes them (D1). MIDI performers in the core,
+  run after the page. Oscillators stay the sound (D24); a sampled piano
+  would be the player's optional pack. PDF in its own wasm module with its
+  own CFF subsetter.
+- **The build.** `wasm32-unknown-unknown`, `opt-level = "z"`, fat LTO,
+  `-Cpanic=immediate-abort` and `-Zbuild-std` on a pinned nightly (stable is
+  14–26 % larger and still fits). No `core::fmt` on any core path. A
+  declared maximum of 256 MiB. Only the wasm features Safari 17 has: no
+  threads, wasm tail calls, exception handling or GC. One dedicated worker
+  per page steps the engine through a C ABI, so a newer edit stops an older
+  compile within 50 ms. Modules on demand are data (the image, Scheme parts,
+  font packs), code with its own memory (PDF), or code split from the linked
+  core by call graph with `wasm-split`. Files carry their hash and are kept
+  in Cache Storage, without a service worker. Diagnostics come in
+  LilyPond's stderr format and as `LyDiagnostic[]`, so the apps read them
+  unchanged (D42's parser included).
+- **Budgets.** Chapter 00's B1–B10 stand. The README shares them out per
+  module: the core's 1.5 MB of brotli, and the 250 ms per edit of a small
+  score on Android, by phase. Projections use the factors the phones gave:
+  0.25× the M1 for allocating code and 0.38× for an interpreter loop on
+  Android, 0.7× on iOS. Android is the binding platform. The page, not the
+  engine, failed the 50 ms main-thread budget in the spike, so the page
+  inserts one changed page per task.
+- **Where.** A fourth package, `packages/engine`, with its own Cargo
+  workspace and `rust-toolchain.toml`, so the nightly touches nothing else
+  (refines D53). MS0's first step creates it and moves the spike into it;
+  AGENTS.md changes then.
+- **Hosts.** Lily Studio on the web first (D55). The page compiles with the
+  engine while it is ready, and sends any compile the engine fails or cannot
+  do to the server's LilyPond, so the web never gets worse than D55. The
+  desktop app and the extension keep LilyPond. Whether they adopt the engine
+  is decided after MS7, on their own measurements. LilyPond stays the
+  reference, and the authority for exports until the engine's pass the
+  gates.
+- **Licence.** The engine ports LilyPond's C++ and carries LilyPond's Scheme
+  and `ly/` files in its image, so it is GPL-3.0-or-later. Its font packs
+  take Emmentaler under the GPL with the font exception. The apps stay MIT.
+  The page talks to the engine only through the worker's messages, and the
+  MIT worker script that calls its exports may be distributed with it under
+  the GPL. The source is this repository at the commit the engine's manifest
+  names. The PDF module ships the URW text fonts unmodified, with their AGPL
+  licence and source; their exception covers embedding them in PDFs. That is
+  checked again before the PDF module ships.
+- **Decision points.** Every milestone ends on the comparator's layers and
+  on the phones, through chapter 09's harness. Three can change the plan:
+  MS1 (the interpreter's size and speed, else s7), MS3 (layout at most 120
+  µs a grob on Android, where a straight port projects to 209) and MS6 (B6
+  phase by phase on four scores and three kinds of edit).
+- **Not done.** Nothing is built beyond the spike and chapter 08's host side
+  in `packages/studio/src/web/engine/`, which no page loads yet. Not
+  measured: Cache Storage on iOS after a reload, a throttled first visit,
+  the worker's JS heap, and the Android floor device. The effort is
+  estimated at 80,000–90,000 lines of Rust and 84–102 engineer-weeks, 67–83
+  of them to ship on the web, at an assumed rate that MS1 measures.
