@@ -1,0 +1,13 @@
+[package]
+name = "lily-engine-spike"
+description = "A stripped-down engine timed on phones: notes and durations on one staff, a tiny Scheme, SVG (docs/research/wasm-engine/09-spike.md)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+publish = false
+
+# The cdylib is the wasm core of chapter 08 §4.2; the rlib is for the native tests.
+# No dependencies: everything a byte of the wasm costs is in this crate.
+[lib]
+crate-type = ["cdylib", "rlib"]

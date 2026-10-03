@@ -2035,6 +2035,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "lily-engine-spike"
+version = "0.1.0"
+
+[[package]]
 name = "lily-engrave"
 version = "0.1.0"
 dependencies = [
