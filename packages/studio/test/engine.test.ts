@@ -150,11 +150,14 @@ const CORE = { core: true } as unknown as WebAssembly.Module
 const SPLIT = { split: true } as unknown as WebAssembly.Module
 const real = { instantiate: WebAssembly.instantiate, imports: WebAssembly.Module.imports }
 
-function driver(pause: () => Promise<void> = async () => {}) {
+function driver(pause: () => Promise<void> = async () => {}, unreachable: string[] = []) {
   const posted: FromEngine[] = []
   const loader = {
     module: async (file: string) => (file === MANIFEST.core.wasm ? CORE : SPLIT),
-    bytes: async () => new Uint8Array(4),
+    bytes: async (file: string) => {
+      if (unreachable.includes(file)) throw new Error(`${file}: 503 Service Unavailable`)
+      return new Uint8Array(4)
+    },
   }
   return { posted, driver: new Driver(MANIFEST, loader, (message) => posted.push(message), pause) }
 }
@@ -236,6 +239,22 @@ describe('Driver', () => {
     assert.equal(instances, 2)
     assert.equal(splitInstances, 1)
     assert.equal(posted.at(-1)?.type, 'finished')
+  })
+
+  test('a module that cannot be fetched is a compile that did not run, and says which', async () => {
+    script = ['done']
+    const { driver: engine, posted } = driver(undefined, ['chords.1.part'])
+    await engine.start()
+    engine.receive(request(1, { '/s/score.ly': '\\chordmode { c }' }))
+    await settle()
+    const last = posted.at(-1)
+    assert.equal(last?.type === 'finished' && last.revision, 1)
+    assert.equal(last?.type === 'finished' && last.outcome.state, 'error')
+    assert.match(last?.type === 'finished' ? (last.outcome.message ?? '') : '', /could not compile the score: chords\.1\.part: 503/)
+    engine.receive(request(2))
+    await settle()
+    const next = posted.at(-1)
+    assert.equal(next?.type === 'finished' && next.outcome.state, 'ok')
   })
 
   test('a trap is a compile that did not run, and the next one starts afresh', async () => {

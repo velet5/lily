@@ -397,7 +397,9 @@ When the engine needs something it does not have, `lily_step` returns 2:
   `null`, and the engine reports LilyPond's own error for it.
 - **A module**: the worker fetches it from the manifest and puts it into
   the core, or instantiates it into the core's memory if it is a split
-  module.
+  module. If it cannot be fetched (offline, never cached), the compile ends
+  as one that did not run (`state: 'error'`, *The engine could not compile
+  the score: …*, naming the file), and the page compiles elsewhere (§7).
 
 Then the compile starts again with the same revision. Chapter 03 §6
 designed this restart because a worker cannot wait for a fetch in the
@@ -423,14 +425,15 @@ runs on the new instance.
 
 ### 4.6 Tests
 
-`test/engine.test.ts` (15 tests, with `npm run test:unit` in
+`test/engine.test.ts` (16 tests, with `npm run test:unit` in
 `packages/studio`) runs the driver against an engine written in JavaScript
 behind the same ABI. Each test scripts the engine's steps. A compile runs in
 steps to its outcome. A newer request supersedes the running one between
 steps. A missing file is asked of the page, and `null` passes to the engine
 as no such file. A placeholder leads to a new instance with the split module
 in it. A trap is a compile that did not run, and the next one starts afresh.
-A trap at the memory maximum says so. They also cover the triggers, the
+A trap at the memory maximum says so. A module that cannot be fetched ends
+its compile with a message, and the next compile runs. They also cover the triggers, the
 outcome's mapping, and the host's answers.
 
 **[measured]** end to end: a 27,196-byte stand-in engine in Rust (Appendix

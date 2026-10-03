@@ -89,7 +89,14 @@ export class Driver {
     try {
       while (this.latest) {
         const request = this.latest
-        await this.compile(request)
+        const started = performance.now()
+        try {
+          await this.compile(request)
+        } catch (error) {
+          // A module that could not be fetched (offline, never cached), or outputs that do not read:
+          // the compile did not run, and the page compiles elsewhere (chapter 08 §7).
+          this.finish(request, failure(request.rootFile, `The engine could not compile the score: ${messageOf(error)}`, started))
+        }
         if (this.latest === request) this.latest = undefined
       }
     } finally {
@@ -114,7 +121,12 @@ export class Driver {
         // cannot be trusted after either: a new instance starts from the image.
         const full = this.exports().memory.buffer.byteLength > MAX_MEMORY - 2 ** 20
         await this.instantiate()
-        if (!(error instanceof Missing)) return this.finish(request, failure(request.rootFile, error, full, started))
+        if (!(error instanceof Missing)) {
+          const message = full
+            ? `The score needs more memory than the engine may use (${MAX_MEMORY / 2 ** 20} MiB).`
+            : `The engine stopped: ${messageOf(error)}`
+          return this.finish(request, failure(request.rootFile, message, started))
+        }
         await this.load(error.module)
         this.begin(request)
         continue
@@ -277,8 +289,10 @@ export function outcomeOf(rootFile: string, outputs: EngineOutputs, durationMs: 
   }
 }
 
-/** The engine stopped: the renderer shows this as a compile that did not run. */
-function failure(rootFile: string, error: unknown, full: boolean, started: number): CompileOutcome {
+const messageOf = (error: unknown) => (error instanceof Error ? error.message : String(error))
+
+/** A compile that did not run, as the renderer shows one: `message` says why. */
+function failure(rootFile: string, message: string, started: number): CompileOutcome {
   return {
     state: 'error',
     rootFile,
@@ -289,8 +303,6 @@ function failure(rootFile: string, error: unknown, full: boolean, started: numbe
     svg: [],
     midi: [],
     durationMs: performance.now() - started,
-    message: full
-      ? `The score needs more memory than the engine may use (${MAX_MEMORY / 2 ** 20} MiB).`
-      : `The engine stopped: ${error instanceof Error ? error.message : String(error)}`,
+    message,
   }
 }
