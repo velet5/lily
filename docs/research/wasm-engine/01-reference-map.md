@@ -185,8 +185,8 @@ reference).
 Match: the lexer's modes (notes, chords, figures, drums, lyrics, markup) and
 how `\notemode`, `\lyricmode` and friends switch them; the lookahead
 compensation that `init.ly`'s comments mention; `#` (read now) and `$`
-(evaluated, then spliced) in `parse-scm.cc`; `ly:parser-include-string` and
-`ly:parse-string-expression` (T16); every error message of the grammar and
+(evaluated, then spliced) in `parse-scm.cc`; `ly:parser-include-string` (T16) and
+`ly:parse-string-expression`; every error message of the grammar and
 lexer, worded and located alike (C0, e.g. ``unknown command: `\x'`` from
 the lexer, `string outside of text script or \lyricmode` from the
 grammar).
@@ -633,7 +633,7 @@ run of chapter 00 §3.
 
 | Chapter | Reads first | Must match | May leave for later |
 | --- | --- | --- | --- |
-| 02 parser | P1–P3; `ly-syntax-constructors.scm`, `parser-ly-from-scheme.scm`, `define-note-names.scm`, `chord-entry.scm`, `parser-clef.scm`; `init.ly` and the parse order of `declarations-init.ly` | the music that `ly-syntax-constructors.scm` builds, locations (P2), the syntax errors of C0 | nothing: the task is the whole syntax, and every input mode is reached (`\chordmode` T05, `\figuremode` T06, `\drummode` T07, `\lyricmode` T04) |
+| 02 parser | P1–P3; `ly-syntax-constructors.scm`, `parser-ly-from-scheme.scm`, `define-note-names.scm`, `chord-entry.scm`, `parser-clef.scm`; `init.ly` and the parse order of `declarations-init.ly` | the music that `ly-syntax-constructors.scm` builds, locations (P2), the syntax errors of C0 | nothing: the task is the whole syntax, and every input mode is reached (`\chordmode` T05, `\figures` T06, `\drummode` T07, `\lyricmode` T04) |
 | 03 Scheme | S1; `lily.scm`, `lily-library.scm`, `c++.scm`; the 520 `ly:` names `scm/` and `ly/` use; the init list (§2, step 1) | the Guile features those files and the scores use, `lily-imports.cc`'s callbacks, the session snapshot | the docs and debugging files of §4 |
 | 04 music | M1–M4, E6, how E1–E5 run; `define-music-types.scm`, `define-event-classes.scm`, `define-context-properties.scm`, `engraver-init.ly`, `performer-init.ly`, `music-functions-init.ly` | C1 on all 30 scores; the 59 music types and 49 event classes of §5 | part combining, quoting, the 58 music types §5 lists as unreached |
 | 05 layout | L1–L5, E1–E4; `define-grobs.scm`, `output-lib.scm`, `paper-defaults-init.ly` | C3 and C4; the 83 grobs of §5 | E5 and the 84 unreached grobs; page-turn and other breakers |
