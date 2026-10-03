@@ -202,7 +202,8 @@ and parse the rest) against 800.
 B4's Musts are 64 MB (S) and 128 MB (L) with a declared maximum of 256 MiB.
 The shares below are what each module designs for, in MB. With chapter
 03's Goal of 8 MB for the heap after init they sum to 28 and 56, under B4's
-Goals. With its Must of 16 MB they sum to 36 and 64, half of B4's Musts.
+Goals. With its Must of 16 MB they sum to 36 and 64: 4 MB over the S
+Goal, and still well inside both Musts.
 
 | Part | Owner | S | L | Now |
 | --- | --- | --- | --- | --- |
@@ -254,7 +255,8 @@ The Scheme steps:
   init, writes the heap with indices instead of pointers, and `lily_start`,
   which restores it (03 §5.6; this is K3).
 - **S5** Undo for re-parsing: dependency tracking on global reads, the
-  write barrier and the undo log by epoch, turned on (R10, R11). S1–S3
+  write barrier and the undo log by epoch, turned on (03's requirements R10
+  and R11). S1–S3
   design them in; MS6 uses them.
 - **S6** The parts on demand of 03 §6: compiled, fetched by trigger, loaded
   into the heap; the full `ice-9 format`, `pretty-print`, a record in place
@@ -289,7 +291,7 @@ measuring tools on day one.
   background tabs answered on both phones.
 - **Effort.** About 3,500 lines (2,500 Rust, 1,000 TypeScript and
   JavaScript); 4–5 engineer-weeks.
-- **Risks.** R7 (iOS unknowns), R8 (toolchain).
+- **Risks.** R6 (the page and B7), R7 (iOS unknowns), R8 (toolchain).
 
 ### MS1 — The Scheme core
 
