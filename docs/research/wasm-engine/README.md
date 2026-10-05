@@ -7,6 +7,8 @@ merges them: what they concluded (§2), the speed factors the phones gave
 (§3), a size, speed and memory budget for every module (§4), the milestones
 that build it, with effort, gates and test coverage (§5–§7), and the risks
 (§8). [D56](../../DECISIONS.md) records the decision to build it.
+[IMPLEMENT.md](IMPLEMENT.md) is the prompt that builds it, one milestone
+per run. For now the budgets are measured, not enforced.
 
 The reference throughout is LilyPond 2.26.0 at tag `v2.26.0` (commit
 `3596756be0fac1f81066a99d2054329212172b2d`) and chapter 00's 30 test scores
