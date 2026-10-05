@@ -7,10 +7,9 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use lily_session::{Studio, StudioEvent};
 use serde::Serialize;
 use tauri::{AppHandle, State};
-
-use crate::state::{Studio, StudioEvent};
 
 /// Answers as `claude -p --input-format stream-json --output-format stream-json`
 /// does, and says whether it was resumed. Asked to convert a PDF, it asks to
@@ -60,6 +59,9 @@ pub struct SmokeFolder {
     #[serde(skip)]
     pub profile: PathBuf,
 }
+
+/// The app's smoke folder, in the smoke test only; managed beside the studio.
+pub struct Smoke(pub Option<SmokeFolder>);
 
 /// Writes the scratch folder and a private profile.
 pub fn prepare() -> std::io::Result<SmokeFolder> {
@@ -131,25 +133,24 @@ pub const LOAD_DRIVER: &str = r#"(() => {
   document.head.append(script)
 })()"#;
 
-fn smoke(studio: &Studio) -> Result<&SmokeFolder, String> {
-    studio
-        .smoke
+type Studios<'a> = State<'a, std::sync::Arc<Studio>>;
+
+fn smoke<'a>(smoke: &'a State<'_, Smoke>) -> Result<&'a SmokeFolder, String> {
+    smoke
+        .0
         .as_ref()
         .ok_or_else(|| "Only in the smoke test.".to_string())
 }
 
 #[tauri::command]
-pub fn smoke_folder(studio: State<'_, std::sync::Arc<Studio>>) -> Result<SmokeFolder, String> {
-    smoke(&studio).cloned()
+pub fn smoke_folder(state: State<'_, Smoke>) -> Result<SmokeFolder, String> {
+    smoke(&state).cloned()
 }
 
 /// A file's text, or null when it is missing; a PDF reads as its lossy text.
 #[tauri::command]
-pub async fn smoke_read(
-    studio: State<'_, std::sync::Arc<Studio>>,
-    file: PathBuf,
-) -> Result<Option<String>, String> {
-    smoke(&studio)?;
+pub async fn smoke_read(state: State<'_, Smoke>, file: PathBuf) -> Result<Option<String>, String> {
+    smoke(&state)?;
     Ok(tokio::fs::read(&file)
         .await
         .ok()
@@ -159,22 +160,19 @@ pub async fn smoke_read(
 /// Writes as another program would: not through the studio.
 #[tauri::command]
 pub async fn smoke_write(
-    studio: State<'_, std::sync::Arc<Studio>>,
+    state: State<'_, Smoke>,
     file: PathBuf,
     text: String,
 ) -> Result<(), String> {
-    smoke(&studio)?;
+    smoke(&state)?;
     tokio::fs::write(&file, text)
         .await
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub async fn smoke_list(
-    studio: State<'_, std::sync::Arc<Studio>>,
-    dir: PathBuf,
-) -> Result<Vec<String>, String> {
-    smoke(&studio)?;
+pub async fn smoke_list(state: State<'_, Smoke>, dir: PathBuf) -> Result<Vec<String>, String> {
+    smoke(&state)?;
     let mut names = Vec::new();
     let mut entries = tokio::fs::read_dir(&dir)
         .await
@@ -188,22 +186,19 @@ pub async fn smoke_list(
 /// As a click in the application menu.
 #[tauri::command]
 pub fn smoke_menu(
-    studio: State<'_, std::sync::Arc<Studio>>,
+    studio: Studios<'_>,
+    state: State<'_, Smoke>,
     command: String,
 ) -> Result<(), String> {
-    smoke(&studio)?;
+    smoke(&state)?;
     studio.send(StudioEvent::Command { command });
     Ok(())
 }
 
 /// A warning or an error of the page.
 #[tauri::command]
-pub fn smoke_log(
-    studio: State<'_, std::sync::Arc<Studio>>,
-    level: String,
-    message: String,
-) -> Result<(), String> {
-    smoke(&studio)?;
+pub fn smoke_log(state: State<'_, Smoke>, level: String, message: String) -> Result<(), String> {
+    smoke(&state)?;
     eprintln!("page {level}: {message}");
     Ok(())
 }
@@ -212,11 +207,11 @@ pub fn smoke_log(
 #[tauri::command]
 pub fn smoke_done(
     app: AppHandle,
-    studio: State<'_, std::sync::Arc<Studio>>,
+    state: State<'_, Smoke>,
     ok: bool,
     report: String,
 ) -> Result<(), String> {
-    smoke(&studio)?;
+    smoke(&state)?;
     println!("{report}");
     app.exit(if ok { 0 } else { 1 });
     Ok(())

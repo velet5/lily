@@ -1,0 +1,309 @@
+/* Lily Studio on the web (DECISIONS D55): the menu bar above the layout of
+   D28, the page's own dialogs and what covers the page while it is
+   disconnected. layout.css's colours; no agents (D40), so the files take the
+   whole sidebar. */
+
+:root {
+  --menubar-height: 30px;
+}
+
+body.hosted .studio {
+  height: calc(100vh - var(--menubar-height));
+}
+
+body.hosted [data-pane='agents'],
+body.hosted .splitter-rows {
+  display: none;
+}
+
+/* The menu bar. */
+
+.web-menubar {
+  height: var(--menubar-height);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px;
+  background: var(--bg-side);
+  border-bottom: 1px solid var(--border);
+}
+
+.web-brand {
+  font-weight: 600;
+  margin-right: 10px;
+}
+
+.web-menu {
+  position: relative;
+}
+
+.web-menubar button {
+  border: 0;
+  background: transparent;
+  padding: 3px 8px;
+}
+
+.web-menubar button:hover,
+.web-menubar button[aria-expanded='true'] {
+  background: var(--hover);
+}
+
+.web-menu-items {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 50;
+  min-width: 240px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+.web-menu-items[hidden] {
+  display: none;
+}
+
+.web-menubar .web-menu-items button {
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  width: 100%;
+  padding: 4px 10px;
+  text-align: left;
+  border-radius: 4px;
+}
+
+.web-menubar .web-menu-items button:hover,
+.web-menubar .web-menu-items button:focus-visible {
+  background: var(--accent);
+  color: #fff;
+  outline: none;
+}
+
+.web-menu-items kbd {
+  font: inherit;
+  color: var(--fg-muted);
+}
+
+.web-menu-items button:hover kbd,
+.web-menu-items button:focus-visible kbd {
+  color: inherit;
+}
+
+.web-menu-items [role='separator'] {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border);
+}
+
+.web-menu-heading {
+  padding: 4px 10px 2px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.web-account {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.web-user {
+  color: var(--fg-muted);
+}
+
+/* Dialogs, as the setup's (layout.css). */
+
+.web-dialog {
+  width: min(520px, calc(100vw - 32px));
+  padding: 20px 24px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+.web-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.web-dialog h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.web-dialog p {
+  margin: 0 0 12px;
+  user-select: text;
+}
+
+.web-dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.web-dialog-buttons button {
+  padding: 6px 12px;
+}
+
+.web-new-folder {
+  margin-right: auto;
+}
+
+.web-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.web-field {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+}
+
+.web-field[hidden] {
+  display: none;
+}
+
+.web-field input {
+  font: inherit;
+  padding: 6px 8px;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.web-crumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.web-crumbs button {
+  border: 0;
+  background: transparent;
+  padding: 2px 6px;
+  color: var(--accent);
+}
+
+.web-crumbs button[aria-current] {
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.web-crumb-gap {
+  color: var(--fg-muted);
+}
+
+.web-list {
+  height: 280px;
+  margin: 0;
+  padding: 4px;
+  overflow: auto;
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.web-list:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.web-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: default;
+}
+
+.web-list li:hover {
+  background: var(--hover);
+}
+
+.web-list li[aria-selected='true'] {
+  background: var(--selected);
+}
+
+.web-list li[aria-disabled='true'] {
+  color: var(--fg-muted);
+}
+
+.web-list li.web-empty {
+  color: var(--fg-muted);
+  font-style: italic;
+}
+
+.web-list svg {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.2;
+  stroke-linejoin: round;
+}
+
+.web-list li[data-kind='folder'] svg {
+  color: var(--accent);
+}
+
+.web-message {
+  margin: 8px 0 0;
+  color: #b42318;
+}
+
+/* While the page cannot reach its worker. */
+
+.web-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.web-overlay[hidden] {
+  display: none;
+}
+
+.web-overlay > div {
+  width: min(420px, calc(100vw - 32px));
+  padding: 20px 24px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+
+.web-overlay h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.web-overlay p {
+  margin: 0 0 12px;
+  color: var(--fg-muted);
+}
+
+.web-overlay button {
+  padding: 6px 12px;
+}

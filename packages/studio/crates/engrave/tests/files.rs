@@ -111,6 +111,36 @@ fn allows_the_open_folder_and_picked_files_nothing_else() {
 }
 
 #[test]
+fn a_rooted_access_allows_the_whole_workspace_and_nothing_outside_it() {
+    let mut access = Access::rooted("/data/users/u1/scores");
+    access.folder = Some("/data/users/u1/scores/songs".into());
+    // Anywhere in the workspace, open folder or not.
+    assert!(access.allows("/data/users/u1/scores/hymns/a.ly"));
+    assert_eq!(
+        access.check("/data/users/u1/scores/songs/../b.ly"),
+        Ok(PathBuf::from("/data/users/u1/scores/b.ly"))
+    );
+    // Not beside it, above it, or by climbing out of it; picking does not widen it.
+    access.allow_file("/data/users/u2/scores/c.ly");
+    for outside in [
+        "/data/users/u2/scores/c.ly",
+        "/data/users/u1/scores-old/d.ly",
+        "/data/users/u1/scores/../settings.ly",
+    ] {
+        assert!(
+            access
+                .check(outside)
+                .unwrap_err()
+                .contains("outside your scores"),
+            "{outside}"
+        );
+    }
+    assert!(access.within_root("/data/users/u1/scores"));
+    assert!(!access.within_root("/data/users/u1"));
+    assert!(Access::new().within_root("/anywhere"));
+}
+
+#[test]
 fn rejects_relative_paths_non_strings_and_files_that_are_not_scores() {
     let mut access = Access::new();
     access.folder = Some("/music".into());

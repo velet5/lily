@@ -1,0 +1,18 @@
+[package]
+name = "lily-session"
+description = "Lily Studio's main process without a window: the state and commands both the app and the web server's workers use."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+lily-engrave.workspace = true
+lily-agents.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+futures.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

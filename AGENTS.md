@@ -18,7 +18,8 @@ An npm workspace of three packages (DECISIONS D53):
 - `packages/vscode` (`lily`): the VS Code extension and `lily-check`. Read
   `packages/vscode/docs/ARCHITECTURE.md` §3 for its layout.
 - `packages/studio` (`lily-studio`): Lily Studio, a Tauri app whose Rust side
-  is a Cargo workspace in that directory (D42).
+  is a Cargo workspace in that directory (D42), and `lily-studio-server`, the
+  same studio on the web (D55).
 
 `docs/DECISIONS.md` records the decisions of all three; read it before changing
 a convention and record new ones there.

@@ -1,8 +1,8 @@
-//! What the studio's commands share (DECISIONS D42): the open folder and what
-//! the page may touch (D29), the settings (D37), the compiler with live
+//! What the studio's commands share (DECISIONS D42, D55): the open folder and
+//! what the page may touch (D29), the settings (D37), the compiler with live
 //! preview (D31, D36), the watch on the files behind them (D34), the agent
-//! chats (D40), and the channel everything the Rust side starts itself goes
-//! to the page on.
+//! chats (D40), and the sink everything the Rust side starts itself goes to
+//! the page through: the app's channel, or the web worker's stdout.
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -12,6 +12,7 @@ use futures::FutureExt;
 use lily_agents::{
     AgentChats, AgentChatsOptions, AgentId, AgentStatus, ChatEvent, ChatStore, DetectAgentOptions,
 };
+use lily_engrave::setup::AgentsSettings;
 use lily_engrave::setup::{self, AgentSettings, DetectOptions};
 use lily_engrave::{
     Acceleration, Access, CompileEvent, CompileOutcome, CompileService, CompileServiceOptions,
@@ -19,11 +20,9 @@ use lily_engrave::{
     SearchPath, Settings, StudioCompiler, StudioCompilerOptions,
 };
 use serde::Serialize;
-use tauri::ipc::Channel;
 
 use crate::playback::PlaybackSetups;
 use crate::recent::RecentList;
-use crate::smoke::SmokeFolder;
 
 /// What the page hears without asking, as src/renderer/bridge.ts reads it.
 #[derive(Clone, Serialize)]
@@ -72,9 +71,17 @@ pub struct Studio {
     pub waiting_for_lilypond: AtomicBool,
     /// Whether the page reports unsaved changes; guards closing the window.
     pub dirty: AtomicBool,
-    channel: Mutex<Option<Channel<StudioEvent>>>,
-    pub smoke: Option<SmokeFolder>,
+    /// Where the sample score goes (D37).
+    pub sample_folder: PathBuf,
+    /// The workspace of a web user (D55): every path the page names is inside it.
+    pub root: Option<PathBuf>,
+    sink: Mutex<Option<Sink>>,
+    /// The Tokio runtime the studio was built on; callbacks from other threads spawn on it.
+    runtime: tokio::runtime::Handle,
 }
+
+/// Takes what the page hears without asking.
+pub type Sink = Box<dyn Fn(StudioEvent) + Send + Sync>;
 
 pub fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex
@@ -90,25 +97,50 @@ pub struct Paths {
     pub runtime: PathBuf,
 }
 
+/// How a studio is built: by the app (D42), its smoke test, or a web worker (D55).
+pub struct StudioOptions {
+    pub paths: Paths,
+    /// Agent settings that replace the saved ones, as the smoke test's stand-in for Claude Code.
+    pub agents: Option<AgentsSettings>,
+    /// The folder open from the start.
+    pub folder: Option<PathBuf>,
+    /// A workspace the page may not leave (D55); the page may use anything inside it.
+    pub root: Option<PathBuf>,
+    /// Where the sample score goes; Documents › Lily Studio when not given.
+    pub sample_folder: Option<PathBuf>,
+}
+
+impl StudioOptions {
+    pub fn new(paths: Paths) -> StudioOptions {
+        StudioOptions {
+            paths,
+            agents: None,
+            folder: None,
+            root: None,
+            sample_folder: None,
+        }
+    }
+}
+
 impl Studio {
-    /// Builds the studio. Its parts call each other back, so they reach it
-    /// through a cell that is filled once everything exists.
-    pub async fn new(paths: Paths, smoke: Option<SmokeFolder>) -> Arc<Studio> {
+    /// Builds the studio, inside the Tokio runtime it will run on. Its parts
+    /// call each other back, so they reach it through a cell that is filled
+    /// once everything exists.
+    pub async fn new(options: StudioOptions) -> Arc<Studio> {
+        let StudioOptions {
+            paths,
+            agents,
+            folder,
+            root,
+            sample_folder,
+        } = options;
         let cell: Arc<OnceLock<Arc<Studio>>> = Arc::new(OnceLock::new());
         let settings_file = paths.data.join("settings.json");
         let mut settings = setup::read_settings(&settings_file).await;
         let playback = PlaybackSetups::load(paths.data.join("playback.json")).await;
         let recent = RecentList::load(paths.data.join("recent.json")).await;
-        if let Some(smoke) = &smoke {
-            // A stand-in for Claude Code that answers and edits without a network (D40).
-            let claude = AgentSettings {
-                path: Some(smoke.agent.to_string_lossy().into_owned()),
-                model: None,
-            };
-            settings.agents = Some(setup::AgentsSettings {
-                claude: Some(claude),
-                codex: None,
-            });
+        if agents.is_some() {
+            settings.agents = agents;
         }
         // An app opened from the Finder has a bare PATH; lilypond's own helpers (gs) need more.
         let search_path = SearchPath::new(setup::search_path(
@@ -229,10 +261,12 @@ impl Studio {
             },
         ));
 
-        let mut access = Access::new();
-        if let Some(smoke) = &smoke {
-            access.folder = Some(smoke.folder.clone());
-        }
+        let mut access = match &root {
+            Some(root) => Access::rooted(root),
+            None => Access::new(),
+        };
+        access.folder = folder;
+        let sample_folder = sample_folder.unwrap_or_else(|| paths.documents.join("Lily Studio"));
         let studio = Arc::new(Studio {
             access: Mutex::new(access),
             settings: Mutex::new(settings),
@@ -249,24 +283,38 @@ impl Studio {
             lilypond_binary: Mutex::new(None),
             waiting_for_lilypond: AtomicBool::new(false),
             dirty: AtomicBool::new(false),
-            channel: Mutex::new(None),
-            smoke,
+            sample_folder,
+            root,
+            sink: Mutex::new(None),
+            runtime: tokio::runtime::Handle::current(),
         });
         let _ = cell.set(studio.clone());
         studio
     }
 
-    /// The page's channel; everything sent before it subscribed is dropped.
-    pub fn subscribe(&self, channel: Channel<StudioEvent>) {
-        *lock(&self.channel) = Some(channel);
+    /// Where events go from now on; everything sent before is dropped.
+    pub fn subscribe(&self, sink: impl Fn(StudioEvent) + Send + Sync + 'static) {
+        *lock(&self.sink) = Some(Box::new(sink));
     }
 
     pub fn send(&self, event: StudioEvent) {
-        if let Some(channel) = lock(&self.channel).as_ref()
-            && let Err(error) = channel.send(event)
-        {
-            eprintln!("studio channel: {error}");
+        if let Some(sink) = lock(&self.sink).as_ref() {
+            sink(event);
         }
+    }
+
+    /// The Tokio runtime the studio was built on.
+    pub fn runtime(&self) -> &tokio::runtime::Handle {
+        &self.runtime
+    }
+
+    /// Runs `future` on the studio's runtime, from any thread.
+    pub fn spawn<F>(&self, future: F) -> tokio::task::JoinHandle<F::Output>
+    where
+        F: std::future::Future + Send + 'static,
+        F::Output: Send + 'static,
+    {
+        self.runtime.spawn(future)
     }
 
     fn compiled(self: &Arc<Self>, event: CompileEvent) {
@@ -282,7 +330,7 @@ impl Studio {
                 // A compile may have added or removed an include: watch the score as it is now.
                 let watcher = self.watcher.clone();
                 let root = outcome.root_file.clone();
-                tauri::async_runtime::spawn(async move { watcher.watch_score(&root).await });
+                self.spawn(async move { watcher.watch_score(&root).await });
             }
             self.waiting_for_lilypond
                 .store(outcome.state == CompileState::NoLilypond, Ordering::SeqCst);

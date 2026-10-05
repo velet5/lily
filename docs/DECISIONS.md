@@ -2431,6 +2431,103 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
 
 ---
 
+## D55 — Lily Studio on the web: a gateway, and a sandboxed worker per user
+
+**Status:** proposed · **Refines:** D42, D28, D29 · **Leaves out:** D40 on the web
+
+- **What.** `packages/studio/crates/server` builds `lily-studio-server`, which
+  serves the studio's page to browsers for many users. `serve` runs the
+  gateway: accounts, sign-in, the page and its files, and a WebSocket per
+  page. Each signed-in user gets a worker, `lily-studio-server worker`, which
+  does for one page what the app's main process does for its window. It
+  runs the same compiler, live preview, watcher, recent list and playback
+  setups. The page is the app's renderer: `node esbuild.mjs --site` bundles
+  it into `dist/site/`. The agents (D40, D41) are not on the web; MCP may
+  bring an agent there later.
+- **Shared with the app.** The Tauri-free part of `src-tauri` moved to
+  `crates/session` (`lily-session`): `Studio` (was `state.rs`),
+  `playback.rs`, `recent.rs`, `midi_export.rs`, and `ops.rs`, the commands'
+  bodies without their dialogs. `src-tauri/src/commands.rs` now opens a
+  panel and calls `ops`; the worker calls the same `ops` with what the
+  page's dialogs chose. `Studio` sends events to a sink, the app's channel
+  or the worker's stdout. It spawns on the runtime it was built on. The
+  smoke folder is the app's own managed state.
+- **Accounts.** `users.json` in the data directory: a name, a random id that
+  names the user's directory, and an Argon2 hash. `lily-studio-server user
+  add|password|remove|list` manages accounts, and the running server reads
+  the file again when it changes. `--signup` lets anyone create an account.
+  A session is a random token in an HttpOnly, SameSite=Lax cookie, Secure
+  with `--secure-cookies`. `sessions.json` keeps only its SHA-256, for 30
+  days. A new password or a removed account signs the user out. After five
+  wrong passwords a name waits a minute, and an unknown name costs a hash
+  too. Every POST and the socket must come from this host, checked by the
+  Origin header, else the Referer.
+- **A user's files.** `users/<id>/scores/` is all the page may touch. It is
+  shown as *My Scores*, and the sample is written there. `users/<id>/studio/`
+  is the app's userData: settings, playback setups, the recent list.
+  `Access::rooted` allows the whole workspace and nothing outside it,
+  whatever was opened, so a page that reconnects needs nothing granted again.
+- **The sandbox.** A score is a program: LilyPond runs its Scheme, which can
+  read and write any file the process can. So each worker, and the lilypond
+  it runs, starts under bubblewrap (`--sandbox bwrap`, the default `auto`).
+  The sandbox shows `/usr`, `/bin`, `/lib*`, `/etc`, `/opt`, the program, the
+  runtime and LilyPond's install read-only. It hides the data directory under
+  a tmpfs and shows the user's own directory read-write inside it. It
+  unshares every namespace, network included, drops all capabilities and
+  has its own `/tmp`. `--sandbox-bind` shows more directories. The server
+  will not start when bubblewrap is missing or fails a probe run.
+  `--sandbox none` is for development on a Mac, or for users who trust each
+  other, and the server warns at start. In Docker, bubblewrap needs
+  `seccomp`, `apparmor` and `systempaths` unconfined. The `Dockerfile` in
+  `packages/studio` says how.
+- **Workers.** One per user, started when a page connects and stopped after
+  `--idle-minutes` (15) without one. At most `--max-workers` (32) run, and
+  the longest idle one makes room. A worker serves one page at a time, as
+  the app has one window. A second tab takes it over, and the first is told
+  so and can take it back. The gateway passes lines both ways without
+  reading them: `{id, command, args}` in, `{id, ok|error}` and `{event}` out.
+  The gateway itself adds `hello` (the user and the worker's instance),
+  `replaced` and `closed`. The worker answers `edited`, `set_live` and
+  `set_dirty` before reading the next line, as Tauri runs the app's
+  synchronous commands in order.
+- **The page.** `src/renderer/bridge.ts` talks to a `Transport`
+  (`src/ipc.ts`): `src/renderer/transport.ts` for the app, and
+  `src/web/transport.ts`, which `--site` puts in its place. The web
+  transport answers the commands the app answers with a panel by asking
+  first with its own dialogs (`src/web/dialogs.ts`). There is a browser of
+  My Scores that opens a score or a folder, makes folders and names a new
+  score, and questions with buttons and a checkbox. It then passes the path
+  to the worker. A PDF or MIDI file it exports is downloaded too. A menu bar
+  (`src/web/menubar.ts`) takes the app menu's place, and adds *Upload
+  Scores…* (`.ly`, `.ily`, `.lyi`, 2 MB each, replacing a file only when
+  asked) and *Download Score*. ⌘S, ⌥⌘S, ⌘O and ⇧⌘O work. Closing the tab
+  with unsaved changes asks first. After a reconnect the page gives the
+  worker its open folder and the live preview switch again. The setup
+  dialog only says how the server's LilyPond is, and the agents' accordion
+  is hidden.
+- **Not done.** Files cannot be renamed or deleted on the web. A worker has
+  no memory or CPU limit beyond the machine's. Run the server under systemd
+  or in a container with limits. Sessions are not bound to an address. The
+  server speaks plain HTTP; put a proxy that terminates HTTPS in front, and
+  forward the Host header.
+- **Verified.** On a Mac with `--sandbox none`, `crates/server/tests/server.rs`
+  runs the binary end to end. It covers accounts made with `user add`,
+  sign-in refused from another origin and with a wrong password, and the
+  socket. It covers browse, folders, upload, download and new score without
+  replacing, and paths outside the workspace refused however they are
+  spelled. It covers a compile with lilypond, a second tab taking the worker
+  over, a second user unable to read the first's score, and sign-out.
+  Unit tests cover users, sessions, the sign-in page, the origin check and
+  bubblewrap's arguments, and `test/web.test.ts` covers the shortcuts and
+  the checkbox's words. In Chromium (Playwright), the page was driven end
+  to end: sign-up, the sample engraved, the dialogs, ⌘S, upload, download,
+  Export MIDI, and a second tab. In the Docker image on Linux, with
+  bubblewrap, a worker started under `bwrap` and engraved the sample with
+  LilyPond 2.24.1. That one user cannot reach another's files from a score's
+  Scheme was not tried under bubblewrap.
+
+---
+
 ## D56 — An engine of our own: LilyPond in WebAssembly
 
 **Status:** proposed · **Refines:** D1, D24, D26, D42, D53, D55

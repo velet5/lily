@@ -1,0 +1,8 @@
+target
+node_modules
+out
+release
+server-data
+dist/web
+src-tauri/gen
+src-tauri/icons

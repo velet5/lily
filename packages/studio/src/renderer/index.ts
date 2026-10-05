@@ -1,7 +1,8 @@
 // The renderer's entry point, bundled into dist/web/app.js: connects the
 // file list, the editor and the status line to `studio` (bridge.ts),
 // with the welcome screen and LilyPond's setup (D37), and the resizable
-// sidebar with the agents' accordion (D40).
+// sidebar with the agents' accordion (D40). On the web (D55) the same page,
+// without the agents, and with upload and download.
 import type { CompileEvent, FileChange, Opened } from '../ipc'
 import { AgentPanel, SELECTION_ACTIONS } from './agents'
 import { studio, type StudioApi } from './bridge'
@@ -115,7 +116,7 @@ const editor = new ScoreEditor({
   onChange: refreshMarkers,
   onText: (file, unsaved) => studio.edited(file, unsaved ?? null),
   diagnostics: (file) => diagnostics.for(file),
-  onSelection: () => agents.refreshContext(),
+  onSelection: () => agents?.refreshContext(),
 })
 
 // The preview pane: the SVG pages (D32) or the PDF (D33), switched in its header.
@@ -194,7 +195,9 @@ function showBanner(event: CompileEvent): void {
     banner.hidden = false
     banner.dataset.tone = 'error'
     bannerHeading.textContent = 'LilyPond is needed to engrave the score'
-    bannerText.textContent = 'Click here to set it up. It takes a few minutes, once.'
+    bannerText.textContent = studio.hosted
+      ? 'This server cannot engrave yet. Click here to see why.'
+      : 'Click here to set it up. It takes a few minutes, once.'
     bannerAction = () => welcome.openSetup()
     return
   }
@@ -227,12 +230,13 @@ const files = new FileList({
   onNewScore: () => showTemplates(),
 })
 
-// The agents' accordion under the files (D40). A message saves unsaved edits
-// first, so the agent reads what the editor shows; a finished turn lists the
-// folder again, for the files it added. Changed files reload through D34.
+// The agents' accordion under the files (D40), in the app only. A message
+// saves unsaved edits first, so the agent reads what the editor shows; a
+// finished turn lists the folder again, for the files it added. Changed files
+// reload through D34.
 const agentsPane = pane('agents')
 const fold = (name: string) => agentsPane.querySelector<HTMLElement>(`[data-fold="${name}"] .fold-body`)!
-const agents = new AgentPanel({
+const agents = studio.hosted ? undefined : new AgentPanel({
   studio,
   chats: fold('chats'),
   setup: fold('setup'),
@@ -250,20 +254,22 @@ const agents = new AgentPanel({
   onError: report,
 })
 const sidebar = new Sidebar({ studio: document.querySelector<HTMLElement>('.studio')!, sidebar: pane('sidebar'), agents: agentsPane })
-void agents.refreshSetup()
-// The selection's context menu: ask, explain or fix it with the agent (D41).
-SELECTION_ACTIONS.forEach((action, order) =>
-  editor.addSelectionAction({
-    id: action.id,
-    label: action.label,
-    order,
-    ...(action.prompt ? {} : { key: 'I' as const }),
-    run: () => {
-      sidebar.show('chats')
-      agents.ask(action.prompt)
-    },
-  }),
-)
+if (agents) {
+  void agents.refreshSetup()
+  // The selection's context menu: ask, explain or fix it with the agent (D41).
+  SELECTION_ACTIONS.forEach((action, order) =>
+    editor.addSelectionAction({
+      id: action.id,
+      label: action.label,
+      order,
+      ...(action.prompt ? {} : { key: 'I' as const }),
+      run: () => {
+        sidebar.show('chats')
+        agents.ask(action.prompt)
+      },
+    }),
+  )
+}
 
 /** A path as the file list shows it, else its name. */
 function displayName(file: string): string {
@@ -387,7 +393,7 @@ async function run(opening: Promise<Opened | undefined>): Promise<void> {
     const opened = await opening
     if (!opened) return
     files.show(opened.listing)
-    void agents.folderChanged(opened.listing.folder)
+    void agents?.folderChanged(opened.listing.folder)
     refreshMarkers()
     if (opened.file) await open(opened.file)
   } catch (error) {
@@ -505,6 +511,11 @@ studio.onCommand((command) => {
       return welcome.show(!!editor.file)
     case 'setup-lilypond':
       return welcome.openSetup()
+    case 'upload':
+      return void run(studio.upload(files.folder?.folder))
+    case 'download':
+      if (!editor.file) return status('Open a score to download it')
+      return void studio.download(editor.file).catch(report)
   }
 })
 
@@ -519,5 +530,5 @@ void welcome.check(true).catch(report)
 void studio.listFolder().then((listing) => {
   if (!listing) return
   files.show(listing)
-  void agents.folderChanged(listing.folder)
+  void agents?.folderChanged(listing.folder)
 }, report)

@@ -1,9 +1,9 @@
 // The only bridge between the renderer and Lily Studio's Rust side (DECISIONS
-// D28, D42): `studio`, one Tauri command per call (src-tauri/src/commands.rs),
-// and one channel that brings everything the Rust side starts itself —
-// menu commands, compiles, changes on disk and the agents' chats. Binary data
-// travels as base64 and is a Uint8Array here.
-import { Channel, invoke } from '@tauri-apps/api/core'
+// D28, D42): `studio`, one command per call (src-tauri/src/commands.rs), and
+// one channel that brings everything the Rust side starts itself — menu
+// commands, compiles, changes on disk and the agents' chats. Binary data
+// travels as base64 and is a Uint8Array here. `transport` carries them: the
+// app's Tauri IPC, or on the web the socket to the user's worker (D55).
 import type {
   AgentId,
   AgentStatus,
@@ -28,6 +28,7 @@ import type {
   SourceLocation,
   TemplateId,
 } from '../ipc'
+import { transport } from './transport'
 
 /** How the Rust side sends a CompileOutcome: MIDI as base64. */
 type WireOutcome = Omit<CompileOutcome, 'midiData'> & { midiData?: string }
@@ -71,7 +72,7 @@ function compileEvent(wire: WireCompileEvent): CompileEvent {
  */
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   try {
-    return await invoke<T>(command, args)
+    return await transport.call<T>(command, args)
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error))
   }
@@ -79,7 +80,7 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
 
 /** Fire and forget, like an IPC `send`: a failure is only logged. */
 function send(command: string, args?: Record<string, unknown>): void {
-  invoke(command, args).catch((error: unknown) => console.error(`${command}:`, error))
+  transport.send(command, args)
 }
 
 type Listener<T> = (value: T) => void
@@ -116,12 +117,12 @@ function subscribe<T>(set: Set<Listener<T>>, listener: Listener<T>): () => void 
   return () => set.delete(listener)
 }
 
-const channel = new Channel<StudioEvent>()
-channel.onmessage = dispatch
 /** Resolves once the Rust side sends on the channel; commands that start compiles wait for it. */
-const subscribed = call<void>('subscribe', { channel })
+const subscribed = transport.subscribe((event) => dispatch(event as StudioEvent))
 
 export const studio = {
+  /** On the web (D55): no agents, a LilyPond the server's, files uploaded and downloaded. */
+  hosted: transport.hosted,
   /** The templates of New Score, as the Rust side has them. */
   templates: (): Promise<{ id: TemplateId; label: string }[]> => call('templates'),
 
@@ -249,6 +250,10 @@ export const studio = {
   onCommand: (listener: Listener<Command>): (() => void) => subscribe(listeners.command, listener),
   /** Runs `listener` when a compile starts or ends; saving a file starts one (D31). */
   onCompile: (listener: Listener<CompileEvent>): (() => void) => subscribe(listeners.compile, listener),
+  /** Web only: asks for scores to upload into `folder`, the workspace when not given, and opens them. */
+  upload: (folder: string | undefined): Promise<Opened | undefined> => transport.upload?.(folder) ?? Promise.resolve(undefined),
+  /** Web only: saves `file` in the browser's downloads. */
+  download: (file: string): Promise<void> => transport.download?.(file) ?? Promise.resolve(),
   /** Runs `listener` when open files or the score's includes change on disk (D34). */
   onFilesChanged: (listener: Listener<FileChange[]>): (() => void) => subscribe(listeners.filesChanged, listener),
 }

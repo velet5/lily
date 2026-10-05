@@ -46,12 +46,40 @@ right-click › Open.
 keychain and a notarization profile named `lily-notary`, stored once with
 `xcrun notarytool store-credentials lily-notary --apple-id <id> --team-id <team>`.
 
+## On the web
+
+`lily-studio-server` serves the same studio to browsers, for many users. It
+has no agents. Each user signs in and works in their own *My Scores*. Scores
+are uploaded and downloaded through the menu bar, and engraved on the
+server. Each user's work runs in its own [bubblewrap](https://github.com/containers/bubblewrap)
+sandbox, because a score can run programs (DECISIONS D55).
+
+```sh
+npm run serve          # on a Mac, for development: no sandbox, sign-up on, http://127.0.0.1:8080
+npm run build:site     # dist/site/ and a release build of lily-studio-server
+```
+
+On a Linux server, with `lilypond` and `bubblewrap` installed:
+
+```sh
+lily-studio-server user add ada --data /srv/lily     # asks for a password
+lily-studio-server serve --data /srv/lily --site dist/site --runtime dist/runtime \
+  --listen 127.0.0.1:8080 --secure-cookies
+```
+
+Put a proxy that terminates HTTPS in front of it, and forward the Host
+header and WebSocket upgrades. `--signup` lets anyone create an account.
+`lily-studio-server serve --help` lists the rest. The `Dockerfile` builds an
+image with LilyPond and bubblewrap, and its first lines say how to run it.
+
 ## Development
 
 `npm run lint:rust` runs `cargo fmt` and `clippy`. The Rust side is a Cargo
 workspace here: `crates/engrave` (compiling, live preview, files, settings),
-`crates/agents` (Claude Code and Codex) and `src-tauri` (the app). The page is
-`renderer/` and `src/renderer/`. `docs/DECISIONS.md` at the repository's root
+`crates/agents` (Claude Code and Codex), `crates/session` (the main process
+without a window, shared by the app and the server), `crates/server` (the
+web) and `src-tauri` (the app). The page is `renderer/` and `src/renderer/`;
+`src/web/` is what the web adds to it. `docs/DECISIONS.md` at the repository's root
 records the studio's decisions from D28 on.
 
 ## License

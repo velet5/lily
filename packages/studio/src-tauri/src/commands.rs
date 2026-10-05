@@ -4,100 +4,43 @@
 //! and the sample (D37), the agents (D40), each score's playback setup (D45),
 //! Export MIDI (D54) and the recent list (D49). Every path from the page is
 //! checked against what the user opened; only the window "main" may call.
+//! What a command does once the user has chosen is crates/session's (D55),
+//! shared with the web server; the native dialogs are the app's.
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use lily_agents::{AGENTS, AgentId, AgentStatus, ChatInfo, ChatMessage, Decision, OpenChat};
-use lily_engrave::files::{self, SCORE_EXTENSIONS};
 use lily_engrave::setup::{self, DetectOptions, LilyPondState};
-use lily_engrave::templates::{SAMPLE, TEMPLATES, template};
-use lily_engrave::{
-    CompileOutcome, FolderListing, LilyPondStatus, PdfOutcome, SourceLocation, parse_text_edit,
+use lily_engrave::{FolderListing, LilyPondStatus, PdfOutcome, SourceLocation};
+use lily_session::ops::score_extensions;
+use lily_session::{
+    MutedPart, Opened, RecentAnswer, Shown, Studio, StudioEvent, TemplateInfo, lock, midi_export,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::Value;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, State, WebviewWindow};
 use tauri_plugin_opener::OpenerExt;
 
 use crate::dialogs::{self, Alert, Open, Save, Saved};
-use crate::midi_export;
-use crate::recent::{self, Listed, RecentKind};
-use crate::state::{Studio, StudioEvent, lock};
+use crate::smoke::Smoke;
 
 type Studios<'a> = State<'a, Arc<Studio>>;
 type Answer<T> = Result<T, String>;
 
-/// A folder was opened, or a file whose folder becomes the open folder.
-#[derive(Serialize)]
-pub struct Opened {
-    listing: FolderListing,
-    /// The file to show in the editor, if one was chosen.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    file: Option<PathBuf>,
-}
-
-/// A template of New Score, without its text.
-#[derive(Serialize)]
-pub struct TemplateInfo {
-    id: &'static str,
-    label: &'static str,
-}
-
-/// The score the editor now shows, and its last result if one is kept (D39).
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Shown {
-    root_file: PathBuf,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    kept: Option<CompileOutcome>,
-}
-
-fn score_extensions() -> Vec<String> {
-    SCORE_EXTENSIONS
-        .iter()
-        .map(|e| e.trim_start_matches('.').to_string())
-        .collect()
-}
-
-/// Every open ends here, so each goes on the recent list (D49): the file when
-/// one was chosen, else the folder.
-async fn open_folder_at(studio: &Studio, folder: &Path, file: Option<PathBuf>) -> Opened {
-    let folder = lily_engrave::paths::resolve(folder);
-    lock(&studio.access).folder = Some(folder.clone());
-    let added = match &file {
-        Some(file) => studio.recent.add(file, RecentKind::File).await,
-        None => studio.recent.add(&folder, RecentKind::Folder).await,
-    };
-    // The open itself went well; a list that could not be saved only loses this entry.
-    if let Err(error) = added {
-        eprintln!("{error}");
-    }
-    Opened {
-        listing: files::list_folder(&folder).await,
-        file,
-    }
-}
-
-fn check(studio: &Studio, file: &Value) -> Answer<PathBuf> {
-    lock(&studio.access).check_value(file)
-}
-
 #[tauri::command]
 pub fn subscribe(studio: Studios<'_>, channel: Channel<StudioEvent>) {
-    studio.subscribe(channel);
+    studio.subscribe(move |event| {
+        if let Err(error) = channel.send(event) {
+            eprintln!("studio channel: {error}");
+        }
+    });
 }
 
 #[tauri::command]
 pub fn templates() -> Vec<TemplateInfo> {
-    TEMPLATES
-        .iter()
-        .map(|t| TemplateInfo {
-            id: t.id,
-            label: t.label,
-        })
-        .collect()
+    lily_session::templates()
 }
 
 #[tauri::command]
@@ -115,7 +58,7 @@ pub async fn open_folder(app: AppHandle, studio: Studios<'_>) -> Answer<Option<O
     )
     .await?;
     Ok(match chosen {
-        Some(folder) => Some(open_folder_at(&studio, &folder, None).await),
+        Some(folder) => Some(studio.open_folder_at(&folder, None).await),
         None => None,
     })
 }
@@ -134,50 +77,25 @@ pub async fn open_file(app: AppHandle, studio: Studios<'_>) -> Answer<Option<Ope
         },
     )
     .await?;
-    let Some(file) = chosen else { return Ok(None) };
-    let file = lily_engrave::paths::resolve(&file);
-    lock(&studio.access).allow_file(&file);
-    let folder = file
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("/"));
-    Ok(Some(open_folder_at(&studio, &folder, Some(file)).await))
-}
-
-#[tauri::command]
-pub async fn list_folder(studio: Studios<'_>) -> Answer<Option<FolderListing>> {
-    let folder = lock(&studio.access).folder.clone();
-    Ok(match folder {
-        Some(folder) => Some(files::list_folder(&folder).await),
+    Ok(match chosen {
+        Some(file) => Some(studio.open_file_at(&file).await),
         None => None,
     })
 }
 
 #[tauri::command]
+pub async fn list_folder(studio: Studios<'_>) -> Answer<Option<FolderListing>> {
+    Ok(studio.list_folder().await)
+}
+
+#[tauri::command]
 pub async fn read_file(studio: Studios<'_>, file: Value) -> Answer<String> {
-    let allowed = check(&studio, &file)?;
-    let text = files::read_score(&allowed)
-        .await
-        .map_err(|error| error.to_string())?;
-    // The editor keeps the file open when another folder is opened; it must
-    // still be able to save it then.
-    lock(&studio.access).allow_file(&allowed);
-    // Watched from now on, from what the editor shows.
-    studio.watcher.open(&allowed, &text).await;
-    Ok(text)
+    studio.read_file(&file).await
 }
 
 #[tauri::command]
 pub async fn save_file(studio: Studios<'_>, file: Value, text: String) -> Answer<()> {
-    let allowed = check(&studio, &file)?;
-    studio.watcher.writing(&allowed, &text).await;
-    files::write_score(&allowed, &text)
-        .await
-        .map_err(|error| error.to_string())?;
-    // The save is done; the compile reports on the channel when it ends.
-    let compiler = studio.compiler.clone();
-    tauri::async_runtime::spawn(async move { compiler.saved(&allowed).await });
-    Ok(())
+    studio.save_file(&file, &text).await
 }
 
 #[tauri::command]
@@ -186,15 +104,10 @@ pub async fn new_score(
     studio: Studios<'_>,
     template: String,
 ) -> Answer<Option<Opened>> {
-    let template =
-        self::template(&template).ok_or_else(|| format!("Unknown template: {template}"))?;
-    let folder = lock(&studio.access).folder.clone();
-    let suggested = files::unused_name(
-        folder.as_deref().unwrap_or(&studio.documents),
-        "Untitled",
-        ".ly",
-    )
-    .await;
+    if lily_engrave::templates::template(&template).is_none() {
+        return Err(format!("Unknown template: {template}"));
+    }
+    let suggested = studio.new_score_suggestion().await;
     let chosen = dialogs::save(
         &app,
         Save {
@@ -209,40 +122,17 @@ pub async fn new_score(
         },
     )
     .await?;
-    let Some(chosen) = chosen else {
-        return Ok(None);
-    };
-    let file = if files::is_score_file(&chosen) {
-        chosen
-    } else {
-        chosen.with_extension("ly")
-    };
-    files::create_from_template(&file, template.id).await?;
-    let file = lily_engrave::paths::resolve(&file);
-    lock(&studio.access).allow_file(&file);
-    // A score saved outside the open folder brings its own folder along.
-    let folder = match folder {
-        Some(folder) if files::is_inside(&folder, &file) => folder,
-        _ => file
-            .parent()
-            .map(Path::to_path_buf)
-            .unwrap_or_else(|| PathBuf::from("/")),
-    };
-    Ok(Some(open_folder_at(&studio, &folder, Some(file)).await))
+    match chosen {
+        Some(chosen) => studio.create_score(&chosen, &template).await.map(Some),
+        None => Ok(None),
+    }
 }
 
 /// The score `file` belongs to, with its last result; the compile that
 /// brings it up to date follows on the channel (D39).
 #[tauri::command]
 pub async fn show_score(studio: Studios<'_>, file: Value) -> Answer<Option<Shown>> {
-    let allowed = check(&studio, &file)?;
-    let Some(root_file) = studio.compiler.root_for(&allowed).await else {
-        return Ok(None);
-    };
-    let kept = studio.kept(&root_file);
-    // Always compiled too: an include may have changed while another score was shown.
-    drop(studio.compiler.compile(&root_file));
-    Ok(Some(Shown { root_file, kept }))
+    studio.show_score(&file).await
 }
 
 #[tauri::command]
@@ -253,31 +143,29 @@ pub fn set_dirty(window: WebviewWindow, studio: Studios<'_>, dirty: bool) {
 
 #[tauri::command]
 pub fn reveal_source(studio: Studios<'_>, href: Value) -> Answer<Option<SourceLocation>> {
-    let Some(mut location) = href.as_str().and_then(parse_text_edit) else {
-        return Ok(None);
-    };
-    // A note from a file the studio may not open (lilypond's own ly/ files) goes nowhere.
-    location.file = lock(&studio.access).check(&location.file.to_string_lossy())?;
-    Ok(Some(location))
+    studio.reveal_source(&href)
 }
 
 #[tauri::command]
 pub async fn compile_pdf(studio: Studios<'_>, root_file: Value) -> Answer<Option<PdfOutcome>> {
-    let allowed = check(&studio, &root_file)?;
-    Ok(studio.compiler.pdf(&allowed).await)
+    studio.compile_pdf(&root_file).await
 }
 
 #[tauri::command]
 pub async fn export_pdf(studio: Studios<'_>, root_file: Value) -> Answer<Vec<PathBuf>> {
-    let allowed = check(&studio, &root_file)?;
-    studio.compiler.export_pdf(&allowed).await
+    studio.export_pdf(&root_file).await
 }
 
 #[tauri::command]
-pub async fn confirm_reload(app: AppHandle, studio: Studios<'_>, file: Value) -> Answer<bool> {
-    let allowed = check(&studio, &file)?;
+pub async fn confirm_reload(
+    app: AppHandle,
+    studio: Studios<'_>,
+    smoke: State<'_, Smoke>,
+    file: Value,
+) -> Answer<bool> {
+    let allowed = studio.check(&file)?;
     // The smoke test does not answer dialogs; it keeps the edits.
-    if studio.smoke.is_some() {
+    if smoke.0.is_some() {
         return Ok(false);
     }
     let name = allowed
@@ -300,22 +188,15 @@ pub async fn confirm_reload(app: AppHandle, studio: Studios<'_>, file: Value) ->
 
 // Synchronous, as the next is: Tauri runs those in order on the main thread,
 // as the page sent them, where async ones may overtake each other and an older
-// text would replace a newer one. They enter the Tokio runtime that live
-// preview's timers run on.
+// text would replace a newer one.
 #[tauri::command]
 pub fn edited(studio: Studios<'_>, file: Value, text: Option<String>) {
-    if let Ok(allowed) = check(&studio, &file) {
-        let runtime = tauri::async_runtime::handle();
-        let _entered = runtime.inner().enter();
-        studio.live.edited(allowed, text);
-    }
+    studio.edited(&file, text);
 }
 
 #[tauri::command]
 pub fn set_live(studio: Studios<'_>, on: bool) {
-    let runtime = tauri::async_runtime::handle();
-    let _entered = runtime.inner().enter();
-    studio.live.set_enabled(on);
+    studio.set_live(on);
 }
 
 #[tauri::command]
@@ -384,26 +265,7 @@ pub fn open_link(app: AppHandle, link: Value) -> Answer<()> {
 
 #[tauri::command]
 pub async fn open_sample(studio: Studios<'_>) -> Answer<Opened> {
-    let folder = studio.documents.join("Lily Studio");
-    let file = folder.join(SAMPLE.name);
-    tokio::fs::create_dir_all(&folder)
-        .await
-        .map_err(|error| error.to_string())?;
-    // An edited sample is the user's now: it is opened, never written over.
-    let created = tokio::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&file)
-        .await;
-    match created {
-        Ok(_) => tokio::fs::write(&file, SAMPLE.text)
-            .await
-            .map_err(|error| error.to_string())?,
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
-        Err(error) => return Err(error.to_string()),
-    }
-    lock(&studio.access).allow_file(&file);
-    Ok(open_folder_at(&studio, &folder, Some(file)).await)
+    studio.open_sample().await
 }
 
 #[tauri::command]
@@ -430,9 +292,6 @@ pub async fn choose_agent(
 ) -> Answer<Option<AgentStatus>> {
     let id = agent_id(&agent)?;
     let info = lily_agents::agents::agent(id);
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_default();
     let chosen = dialogs::open(
         &app,
         Open {
@@ -444,7 +303,7 @@ pub async fn choose_agent(
             prompt: Some("Choose".into()),
             files: true,
             hidden_files: true,
-            directory: Some(home.join(".local").join("bin")),
+            directory: Some(home().unwrap_or_default().join(".local").join("bin")),
             ..Open::default()
         },
     )
@@ -568,13 +427,6 @@ pub async fn set_playback_setup(
     studio.playback.set(&root_file, &setup).await
 }
 
-/// A part muted in the Parts fold (D45): its MIDI track, and what the fold calls it.
-#[derive(Deserialize)]
-pub struct MutedPart {
-    track: usize,
-    name: String,
-}
-
 /// Where Export MIDI wrote, and how many muted parts it left out.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -590,12 +442,13 @@ pub struct ExportedMidi {
 pub async fn export_midi(
     app: AppHandle,
     studio: Studios<'_>,
+    smoke: State<'_, Smoke>,
     root_file: Value,
     midi: String,
     muted: Vec<MutedPart>,
 ) -> Answer<Option<ExportedMidi>> {
     use base64::Engine as _;
-    let allowed = check(&studio, &root_file)?;
+    let allowed = studio.check(&root_file)?;
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(midi)
         .map_err(|error| format!("The MIDI could not be exported: {error}"))?;
@@ -605,7 +458,7 @@ pub async fn export_midi(
     let checkbox = (!names.is_empty()).then(|| (midi_export::checkbox_title(&names), true));
     let directory = allowed.parent().map(Path::to_path_buf);
     let name = midi_export::suggested_name(&allowed);
-    let saved = match (&studio.smoke, directory) {
+    let saved = match (&smoke.0, directory) {
         // The smoke test answers no panels: it takes the suggestion, as it is checked.
         (Some(_), Some(directory)) => Some(Saved {
             path: directory.join(name),
@@ -648,47 +501,16 @@ fn home() -> Option<PathBuf> {
     std::env::var_os("HOME").map(PathBuf::from)
 }
 
-/// The recent list (D49) for the welcome screen, and the home directory it shortens to `~`.
-#[derive(Serialize)]
-pub struct RecentAnswer {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    home: Option<PathBuf>,
-    entries: Vec<Listed>,
-}
-
 #[tauri::command]
 pub async fn recent_list(studio: Studios<'_>) -> Answer<RecentAnswer> {
-    Ok(RecentAnswer {
-        home: home(),
-        entries: studio.recent.listed().await,
-    })
+    Ok(studio.recent_list(home()).await)
 }
 
 /// Opens an entry of the recent list; only those, so the page cannot name
 /// any other path. One that is gone rejects with where it was.
 #[tauri::command]
 pub async fn open_recent(studio: Studios<'_>, path: String) -> Answer<Opened> {
-    let entry = studio
-        .recent
-        .find(&path)
-        .await
-        .ok_or_else(|| format!("{path} is not on the recent list."))?;
-    let target = PathBuf::from(&entry.path);
-    if !entry.kind.exists_at(&target).await {
-        return Err(recent::missing_message(&entry, home().as_deref()));
-    }
-    Ok(match entry.kind {
-        RecentKind::Folder => open_folder_at(&studio, &target, None).await,
-        RecentKind::File => {
-            let file = lily_engrave::paths::resolve(&target);
-            lock(&studio.access).allow_file(&file);
-            let folder = file
-                .parent()
-                .map(Path::to_path_buf)
-                .unwrap_or_else(|| PathBuf::from("/"));
-            open_folder_at(&studio, &folder, Some(file)).await
-        }
-    })
+    studio.inner().open_recent(&path, home().as_deref()).await
 }
 
 #[tauri::command]

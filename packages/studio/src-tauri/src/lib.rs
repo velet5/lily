@@ -5,11 +5,7 @@
 mod commands;
 mod dialogs;
 mod menu;
-mod midi_export;
-mod playback;
-mod recent;
 mod smoke;
-mod state;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -23,7 +19,10 @@ use tauri::{
 };
 use tauri_plugin_opener::OpenerExt;
 
-use crate::state::{Paths, Studio, StudioEvent};
+use lily_engrave::setup::{AgentSettings, AgentsSettings};
+use lily_session::{Paths, Studio, StudioEvent, StudioOptions};
+
+use crate::smoke::Smoke;
 
 const WINDOW: &str = "main";
 
@@ -65,8 +64,22 @@ pub fn run() {
                     .or_else(|_| resolver.home_dir().map(|home| home.join("Documents")))?,
                 runtime: resolver.resource_dir()?.join("runtime"),
             };
-            let studio = tauri::async_runtime::block_on(Studio::new(paths, smoke.clone()));
+            let mut options = StudioOptions::new(paths);
+            if let Some(smoke) = &smoke {
+                // A stand-in for Claude Code that answers and edits without a network (D40).
+                options.agents = Some(AgentsSettings {
+                    claude: Some(AgentSettings {
+                        path: Some(smoke.agent.to_string_lossy().into_owned()),
+                        model: None,
+                    }),
+                    codex: None,
+                });
+                options.folder = Some(smoke.folder.clone());
+            }
+            let smoking = smoke.is_some();
+            let studio = tauri::async_runtime::block_on(Studio::new(options));
             app.manage(studio.clone());
+            app.manage(Smoke(smoke.clone()));
             app.set_menu(menu::build(&handle)?)?;
             // File › Open Recent and the welcome screen follow the recent list (D49).
             let entries = tauri::async_runtime::block_on(studio.recent.entries());
@@ -90,8 +103,8 @@ pub fn run() {
                 }
             });
             app.on_menu_event(move |app, event| menu_clicked(app, event.id().as_ref()));
-            create_window(&handle, studio.smoke.is_some())?;
-            if studio.smoke.is_some() {
+            create_window(&handle, smoking)?;
+            if smoking {
                 tauri::async_runtime::spawn(async move {
                     tokio::time::sleep(smoke::TIMEOUT).await;
                     eprintln!(
@@ -164,7 +177,7 @@ pub fn run() {
         if let RunEvent::Exit = event {
             let studio = app.state::<Arc<Studio>>().inner().clone();
             tauri::async_runtime::block_on(studio.dispose());
-            if let Some(smoke) = &studio.smoke {
+            if let Some(smoke) = &app.state::<Smoke>().0 {
                 smoke::clean(smoke);
             }
         }
@@ -211,7 +224,7 @@ fn create_window(app: &AppHandle, smoke: bool) -> tauri::Result<WebviewWindow> {
     window.on_window_event(move |event| {
         if let WindowEvent::CloseRequested { api, .. } = event {
             let studio = guarded.state::<Arc<Studio>>().inner().clone();
-            if studio.dirty.load(Ordering::SeqCst) && studio.smoke.is_none() {
+            if studio.dirty.load(Ordering::SeqCst) && !smoke {
                 api.prevent_close();
                 tauri::async_runtime::spawn(confirm_close(guarded.clone(), studio));
             }

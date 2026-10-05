@@ -6,3 +6,6 @@ declare module '*.wasm' {
   const bytes: Uint8Array
   export default bytes
 }
+
+// A stylesheet a script imports goes into the bundle's CSS: the web's (D55).
+declare module '*.css' {}

@@ -125,15 +125,38 @@ pub fn is_inside(folder: impl AsRef<Path>, file: impl AsRef<Path>) -> bool {
 
 /// What the renderer may touch: the open folder and single files the user
 /// picked in a dialog. Every command that takes a path asks `check` first.
+/// A rooted access, a web user's (D55), allows all of the workspace and
+/// nothing outside it, whatever was opened.
 #[derive(Debug, Clone, Default)]
 pub struct Access {
     pub folder: Option<PathBuf>,
     picked: HashSet<PathBuf>,
+    root: Option<PathBuf>,
 }
 
 impl Access {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn rooted(root: impl AsRef<Path>) -> Self {
+        Access {
+            root: Some(paths::resolve(root)),
+            ..Self::default()
+        }
+    }
+
+    /// The workspace of a rooted access.
+    pub fn root(&self) -> Option<&Path> {
+        self.root.as_deref()
+    }
+
+    /// True when `path`, a file or a folder, is inside the workspace, or
+    /// there is none.
+    pub fn within_root(&self, path: impl AsRef<Path>) -> bool {
+        self.root
+            .as_ref()
+            .is_none_or(|root| is_inside(root, paths::resolve(path)))
     }
 
     pub fn allow_file(&mut self, file: impl AsRef<Path>) {
@@ -142,6 +165,9 @@ impl Access {
 
     pub fn allows(&self, file: impl AsRef<Path>) -> bool {
         let absolute = paths::resolve(file);
+        if let Some(root) = &self.root {
+            return is_inside(root, &absolute);
+        }
         self.picked.contains(&absolute)
             || self
                 .folder
@@ -158,7 +184,10 @@ impl Access {
             return Err(format!("Not a LilyPond file: {}", paths::basename(file)));
         }
         if !self.allows(file) {
-            return Err(format!("{file} is outside the open folder."));
+            return Err(match self.root {
+                Some(_) => format!("{file} is outside your scores."),
+                None => format!("{file} is outside the open folder."),
+            });
         }
         Ok(paths::resolve(file))
     }

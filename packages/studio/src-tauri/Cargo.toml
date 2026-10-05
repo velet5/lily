@@ -15,6 +15,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 lily-engrave.workspace = true
 lily-agents.workspace = true
+lily-session.workspace = true
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"

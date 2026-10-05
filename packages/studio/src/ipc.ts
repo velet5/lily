@@ -29,8 +29,21 @@ export interface Opened {
   file?: string
 }
 
-/** Commands sent from the application menu to the renderer. */
-export type Command = 'new-score' | 'open-file' | 'open-folder' | 'save' | 'save-all' | 'export-midi' | 'welcome' | 'setup-lilypond'
+/**
+ * Commands sent from the application menu to the renderer. `upload` and
+ * `download` come only from the web's menu bar (D55).
+ */
+export type Command =
+  | 'new-score'
+  | 'open-file'
+  | 'open-folder'
+  | 'save'
+  | 'save-all'
+  | 'export-midi'
+  | 'welcome'
+  | 'setup-lilypond'
+  | 'upload'
+  | 'download'
 
 /**
  * How a compile ended (D31). `no-root`: a saved include that no score in the
@@ -247,5 +260,25 @@ export type ChatEvent =
   | { kind: 'running'; chatId: string; running: boolean }
   | { kind: 'ask'; chatId: string; ask: Ask }
   | { kind: 'answered'; chatId: string; askId: string }
+
+/**
+ * How bridge.ts reaches the Rust side (D42, D55): the app's Tauri commands and
+ * channel (src/renderer/transport.ts), or the web's socket to the user's
+ * worker (src/web/transport.ts), which `esbuild.mjs --site` puts in its place.
+ */
+export interface Transport {
+  /** True on the web: no agents, no LilyPond to choose, files uploaded and downloaded. */
+  readonly hosted: boolean
+  /** A command's result; rejects with what the Rust side said, as a string or an Error. */
+  call<T>(command: string, args?: Record<string, unknown>): Promise<T>
+  /** Fire and forget, in the order sent. */
+  send(command: string, args?: Record<string, unknown>): void
+  /** Delivers what the Rust side sends by itself to `onEvent`; resolves once it does. */
+  subscribe(onEvent: (event: unknown) => void): Promise<void>
+  /** Web only: asks for scores to upload into `folder` (the workspace when not given) and opens what came. */
+  upload?(folder: string | undefined): Promise<Opened | undefined>
+  /** Web only: saves `file` of the workspace in the browser's downloads. */
+  download?(file: string): Promise<void>
+}
 
 export type { PlaybackTiming, SourceLocation }

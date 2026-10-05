@@ -6,8 +6,10 @@
   "private": true,
   "license": "MIT",
   "scripts": {
-    "build": "node esbuild.mjs && cargo build -p lily-studio",
+    "build": "node esbuild.mjs && node esbuild.mjs --site && cargo build -p lily-studio -p lily-studio-server",
     "start": "node esbuild.mjs && tauri dev",
+    "build:site": "node esbuild.mjs --site --production && cargo build --release -p lily-studio-server",
+    "serve": "node esbuild.mjs --site && cargo run -p lily-studio-server -- serve --sandbox none --signup",
     "check-types": "tsc --noEmit -p .",
     "lint:rust": "cargo fmt --all --check && cargo clippy --workspace --all-targets -- -D warnings",
     "test:rust": "cargo test --workspace",
