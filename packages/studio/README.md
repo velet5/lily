@@ -22,6 +22,18 @@ LilyPond installed in the same way.
 - **Mistakes** are underlined, and a note above the score explains the first
   one in plain words, for example *“\stacato” is not a LilyPond command*.
   Click it to go there.
+- **Stems.** The *Scores | Stems* switch at the top of the sidebar opens the
+  Stems workspace, which splits a song into stems on Apple Silicon with
+  RoFormer MLX. Drop a song on the window, or click to choose one. Then pick a
+  model: *Karaoke* gives lead vocals and instrumental, and *All instruments*
+  gives vocals, drums, bass, guitar, piano and other. Choose Fast, Balanced or
+  Best and WAV, FLAC or MP3, and press *Make karaoke* or *Separate
+  instruments*. Each stem gets a player. Ticked stems export as one mix, and
+  *Show in Finder* opens the stems' folder, `<song> (stems)` or
+  `<song> (karaoke)` next to the song. A stem's *Score…* writes a score for
+  it beside the stems, such as `bass.ly` with a bass staff, and opens it in
+  Scores. The stem then plays above the preview's transport, alone or *With
+  score*, so the part can be written by ear.
 
 ## Build and install
 
@@ -51,6 +63,20 @@ Lily Studio*, and installing a new DMG leaves them there.
 `npm run dist` needs the Developer ID Application certificate in the login
 keychain and a notarization profile named `lily-notary`, stored once with
 `xcrun notarytool store-credentials lily-notary --apple-id <id> --team-id <team>`.
+
+## Stems
+
+Stems runs RoFormer MLX's `karaoke-mlx` with [uv](https://docs.astral.sh/uv/),
+as RoFormer's own app does (DECISIONS D112). It needs an Apple Silicon Mac, uv
+and ffmpeg (`brew install uv ffmpeg`), and RoFormer MLX's project. The studio
+looks for the project in `KARAOKE_MLX_ROOT`, then in `packages/separate` of
+this repository, where its Python is to move, then in RoFormer MLX's checkout,
+`/Volumes/T5/Workspace/roformer-karaoke-mlx`. When it finds no project or no
+uv, Stems says which, with *Check again*. Run `uv sync` in the project once,
+so the first separation does not wait for it. Each model downloads on its
+first separation (0.7 to 1.7 GB, into `~/.cache/karaoke-mlx`).
+
+The web has no Stems: separating needs the Mac app.
 
 ## On the web
 
@@ -84,9 +110,20 @@ image with LilyPond and bubblewrap, and its first lines say how to run it.
 workspace here: `crates/engrave` (compiling, live preview, files, settings),
 `crates/agents` (Claude Code and Codex), `crates/session` (the main process
 without a window, shared by the app and the server), `crates/server` (the
-web) and `src-tauri` (the app). The page is `renderer/` and `src/renderer/`;
+web), `crates/separate` (running karaoke-mlx, for the app alone) and
+`src-tauri` (the app). The page is `renderer/` and `src/renderer/`;
 `src/web/` is what the web adds to it. `docs/DECISIONS.md` at the repository's root
 records the studio's decisions from D28 on.
+
+The smoke test separates a song too when it is given one. It drops the song
+on the window, splits it into six stems with BS-RoFormer SW at Fast, plays
+each, exports a mix and writes a score for the bass. That takes about a
+minute on an M1 Max:
+
+```sh
+LILY_SMOKE_SONG=~/Music/song.mp3 npm run test:smoke   # a copy of the song, in a scratch folder
+LILY_E2E_SONG=~/Music/song.mp3 npm run test:e2e       # the same, in the installed app
+```
 
 ## License
 
