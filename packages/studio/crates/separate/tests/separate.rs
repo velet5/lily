@@ -353,10 +353,17 @@ wait"#,
         let sink = heard.sink();
         async move { separator.separate(&sidecar, &request(input), sink).await }
     });
+    // Up to 20 s: a loaded machine (the whole workspace's tests at once) is slow to start it.
     let pid_file = dir.join("child.pid");
-    for _ in 0..200 {
+    for _ in 0..800 {
         if std::fs::read_to_string(&pid_file).is_ok_and(|text| text.ends_with('\n')) {
             break;
+        }
+        if running.is_finished() {
+            panic!(
+                "the separation ended before its child started: {:?}",
+                running.await
+            );
         }
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
