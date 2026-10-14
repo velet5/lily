@@ -3,12 +3,14 @@
 // the panel; a model is picked from Karaoke or All instruments, with a quality
 // and a format; Separate runs karaoke-mlx, with its progress and Cancel. Each
 // stem then gets a player, ticked stems export as a mix, and Show in Finder
-// opens the stems' folder. A stem's Score… menu writes a score for it beside
-// the stems and opens it in Scores, where the stem plays under the preview.
+// opens the stems' folder. A stem's Score… menu transcribes it with
+// lily-transcribe (D113) and writes its score beside the stems, or writes an
+// empty one to fill in by ear, and opens it in Scores, where the stem plays
+// under the preview.
 // A separation goes on in Scores, and the status line follows it. The models are asked for when Stems is first shown, not at
 // launch, since uv starts Python for them. The functions above the view are
 // pure so the tests can run them without a DOM.
-import type { FileDrop, Opened, SeparationEvent, SeparationModel, SeparationOutput, SeparationRequest } from '../ipc'
+import type { FileDrop, Opened, SeparationEvent, SeparationModel, SeparationOutput, SeparationRequest, TranscriptionEvent } from '../ipc'
 import type { StudioApi } from './bridge'
 import { button, stemScore } from './files'
 
@@ -142,9 +144,15 @@ export function statusLine(song: string, progress: { label: string; value?: numb
   return `Stems: ${progress.label.toLowerCase()} ${song}${percent}`
 }
 
-/** A stem's score button: the stems #1199 found hardest to write down by ear say so. */
+/** A stem's score button: the stems whose score is a rough draft of chords say so (D113). */
 export function scoreLabel(hard: boolean): string {
-  return hard ? 'Score… (hard)' : 'Score…'
+  return hard ? 'Score… (draft)' : 'Score…'
+}
+
+/** The status line while lily-transcribe works on a stem (D113). */
+export function transcriptionStatus(title: string, stage: (TranscriptionEvent & { event: 'progress' })['stage']): string {
+  const doing = { decode: 'reading the song', beats: 'finding the beats', key: 'finding the key', notes: 'hearing the notes' }[stage]
+  return `Transcribing the ${title.toLowerCase()}: ${doing}…`
 }
 
 /** The export button's label for `ticked` stems. */
@@ -172,6 +180,14 @@ function noteIcon(): SVGSVGElement {
   path.setAttribute('d', NOTE)
   svg.append(path)
   return svg
+}
+
+/** A stem a score is made for: karaoke-mlx's name for it, its file, its title in the view, and the song. */
+interface StemRequest {
+  stem: string
+  path: string
+  title: string
+  song: string
 }
 
 export interface SeparateOptions {
@@ -216,6 +232,8 @@ export class SeparateView {
   private readonly players: HTMLAudioElement[] = []
   /** A stem's Score… menu. */
   private readonly menu: HTMLElement
+  /** The stem being transcribed, one at a time (D113). */
+  private transcribing: string | undefined
 
   private readonly reveal: HTMLButtonElement
   private readonly drop: HTMLButtonElement
@@ -627,18 +645,21 @@ export class SeparateView {
   }
 
   /** The Score… button of a stem's row, which opens its menu. */
-  private scoreButton(request: { stem: string; path: string; title: string; song: string }): HTMLButtonElement {
+  private scoreButton(request: StemRequest): HTMLButtonElement {
     const { hard } = stemScore({ ...request, file: request.path })
     const open = button(scoreLabel(hard), () => this.openScoreMenu(open, request))
     open.className = hard ? 'separate-score hard' : 'separate-score'
-    open.title = hard ? `${request.title} is hard to write down by ear` : `Write a score for the ${request.title.toLowerCase()} by ear`
+    const lower = request.title.toLowerCase()
+    open.title = hard ? `A rough draft of the ${lower}’s chords, transcribed from the stem` : `Transcribe the ${lower} into a score`
     open.setAttribute('aria-haspopup', 'menu')
     return open
   }
 
-  /** *New score for bass*, what it writes, and Show in Finder, under `anchor`. */
-  private openScoreMenu(anchor: HTMLElement, { stem, path, title, song }: { stem: string; path: string; title: string; song: string }): void {
+  /** *New score for bass*, what it writes, *Empty score for bass* and Show in Finder, under `anchor`. */
+  private openScoreMenu(anchor: HTMLButtonElement, request: StemRequest): void {
+    const { stem, path, title, song } = request
     const score = stemScore({ stem, title, file: path, song })
+    const lower = title.toLowerCase()
     const item = (label: string, action: () => void) => {
       const entry = button(label, () => {
         this.menu.hidden = true
@@ -647,12 +668,17 @@ export class SeparateView {
       entry.setAttribute('role', 'menuitem')
       return entry
     }
-    const rule = element('hr')
-    rule.setAttribute('role', 'separator')
+    const rule = () => {
+      const line = element('hr')
+      line.setAttribute('role', 'separator')
+      return line
+    }
     const items = [
-      item(`New score for ${title.toLowerCase()}`, () => this.options.onScore(this.options.studio.newScoreForStem(path, score.name, score.text))),
+      item(`New score for ${lower}`, () => void this.transcribe(anchor, request)),
       element('small', undefined, score.hint),
-      rule,
+      item(`Empty score for ${lower}`, () => this.options.onScore(this.options.studio.newScoreForStem(path, score.name, score.text))),
+      element('small', undefined, `Four empty bars to write the ${lower} by ear, with the stem playing under the preview.`),
+      rule(),
       item(`Show ${baseName(path)} in Finder`, () => {
         this.options.studio.revealInFinder(path).catch((error: unknown) => this.showError(String(error)))
       }),
@@ -665,6 +691,43 @@ export class SeparateView {
     this.menu.style.left = `${Math.max(4, Math.min(rect.right - this.menu.offsetWidth, innerWidth - this.menu.offsetWidth - 4))}px`
     this.menu.style.top = `${below ? rect.bottom + 2 : Math.max(4, rect.top - 2 - this.menu.offsetHeight)}px`
     ;(items[0] as HTMLElement).focus()
+  }
+
+  /**
+   * Transcribes a stem with lily-transcribe (D113), then writes its score
+   * beside it and opens it. The status line follows; `anchor`, its Score…
+   * button, says Transcribing… meanwhile. One stem at a time.
+   */
+  private async transcribe(anchor: HTMLButtonElement, { stem, path, title, song }: StemRequest): Promise<void> {
+    if (this.transcribing) {
+      this.options.onStatus(`Wait for the ${baseName(this.transcribing)} to be transcribed`)
+      return
+    }
+    this.transcribing = path
+    this.error.hidden = true
+    const label = anchor.textContent
+    anchor.disabled = true
+    anchor.textContent = 'Transcribing…'
+    const lower = title.toLowerCase()
+    this.options.onStatus(`Transcribing the ${lower}…`)
+    const stop = this.options.studio.onTranscription((event) => {
+      if (event.event === 'progress') this.options.onStatus(transcriptionStatus(title, event.stage))
+    })
+    try {
+      const transcription = await this.options.studio.transcribeStem(path, stem)
+      const score = stemScore({ stem, title, file: path, song, transcription })
+      this.options.onStatus(`Transcribed the ${lower}: ${transcription.bars} bars at ♩ = ${Math.round(transcription.bpm)}`)
+      this.options.onScore(this.options.studio.newScoreForStem(path, score.name, score.text))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      this.showError(`The ${lower} was not transcribed: ${message.replace(/\.?$/, '.')} Empty score for ${lower}, in its Score… menu, writes one to fill in by ear.`)
+      this.options.onStatus(`The ${lower} was not transcribed`)
+    } finally {
+      stop()
+      this.transcribing = undefined
+      anchor.disabled = false
+      anchor.textContent = label
+    }
   }
 
   private boxes(): HTMLInputElement[] {

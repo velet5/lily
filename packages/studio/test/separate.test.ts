@@ -24,6 +24,7 @@ import {
   songName,
   statusLine,
   stemTitle,
+  transcriptionStatus,
 } from '../src/renderer/separate'
 
 // Runs under `node --test` from out/test/ (npm run test:unit in packages/studio/):
@@ -206,12 +207,17 @@ describe('the stems', () => {
     assert.equal(mixLabel(2, false), 'Export mix of 2…')
     assert.equal(mixLabel(2, true), 'Mixing…')
   })
-  test('Score… says which stems are hard to write down, as #1199 found', () => {
+  test('Score… says which stems get a rough draft of chords (D113)', () => {
     const labels = MODELS[1]!.stems.map((stem) => {
       const { title } = stemTitle(stem, 'stems')
       return scoreLabel(stemScore({ stem, title, file: `/s/song - ${stem}.wav`, song: 'song' }).hard)
     })
-    assert.deepEqual(labels, ['Score…', 'Score…', 'Score…', 'Score… (hard)', 'Score… (hard)', 'Score… (hard)'])
+    assert.deepEqual(labels, ['Score…', 'Score…', 'Score…', 'Score… (draft)', 'Score… (draft)', 'Score… (draft)'])
+  })
+
+  test('the status line says what the transcription is doing', () => {
+    assert.equal(transcriptionStatus('Bass', 'beats'), 'Transcribing the bass: finding the beats…')
+    assert.equal(transcriptionStatus('Lead vocals', 'notes'), 'Transcribing the lead vocals: hearing the notes…')
   })
 
   test('a stem’s score is titled after the song’s file, without its extension', () => {
