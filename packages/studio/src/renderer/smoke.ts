@@ -16,10 +16,12 @@
 // it with the agent, the lines attached (D41), and an image pasted into the
 // message box goes with the next message (D46). The Parts fold mutes the part,
 // puts it on another instrument and starts playback at a bar marked on the
-// pages (D45); Export MIDI writes smoke.mid (D54).
+// pages (D45); Export MIDI writes smoke.mid (D54). Given a song, it separates
+// it, plays the stems and a mix of two, and writes a score for the bass (D112).
 //
 // The Rust side prepares the folder and the stand-in agent, and answers the
-// smoke_* commands: files on disk as another program sees them, and the menu.
+// smoke_* commands: files on disk as another program sees them, the menu, and
+// a drop from the Finder.
 // Typing goes through the editor's input element, as the keyboard's would.
 import { invoke } from '@tauri-apps/api/core'
 import type { Command } from '../ipc'
@@ -30,6 +32,8 @@ const PANES = ['files', 'editor', 'preview'] as const
 interface SmokeFolder {
   folder: string
   score: string
+  /** A copy of LILY_SMOKE_SONG's song to separate, in a folder of its own (D112). */
+  song: string | null
 }
 
 const $ = <T extends Element = HTMLElement>(selector: string): T | null => document.querySelector<T>(selector)
@@ -501,8 +505,78 @@ async function main(): Promise<void> {
     return done && answers[4]?.startsWith('The command was allowed') && tools.includes('Allowed: Ran magick -density 300 score.pdf score.png') ? answers[4] : ''
   }, 20_000)
 
+  // A song, when the run is given one (LILY_SMOKE_SONG, D112): dropped on the
+  // window as from the Finder, it shows Stems. BS-RoFormer SW at Fast splits
+  // it into six stems, each of which plays from the asset protocol; the bass
+  // and the drums export as a mix that plays too, and New score for bass
+  // opens bass.ly in Scores, with the bass in the Stem strip.
+  let separation: Record<string, unknown> | undefined
+  if (smoke.song) {
+    const song = smoke.song
+    const name = song.slice(song.lastIndexOf('/') + 1)
+    await invoke('smoke_drop', { paths: [song] })
+    await until('the dropped song in Stems', () => !away('stems') && text('.separate-drop strong') === name)
+    // uv starts Python for the models' list.
+    const model = await until('the models', () => $<HTMLInputElement>('input[name="separate-model"][value="bs-roformer-sw"]'), 120_000)
+    model?.click()
+    $$<HTMLButtonElement>('.separate-segments button').find((choice) => choice.textContent === 'Fast')?.click()
+    const runLabel = text('.separate-run')
+    if (runLabel !== 'Separate instruments') problems.push(`the run button says ${JSON.stringify(runLabel)}`)
+    const started = Date.now()
+    click('.separate-run')
+    // The first separation with a model downloads it.
+    const outcome = await until('the stems of the song', () => {
+      const error = $('.separate-error:not([hidden])')?.textContent
+      if (error) return { error }
+      const stems = $$('.separate-stem').map((row) => row.dataset.stem ?? '')
+      return stems.length > 0 && { stems }
+    }, 15 * 60_000)
+    const seconds = Math.round((Date.now() - started) / 1000)
+    if (outcome?.error) problems.push(`the song was not separated: ${outcome.error}`)
+    const stems = outcome?.stems ?? []
+    if (outcome?.stems && stems.join() !== 'vocals,drums,bass,guitar,piano,other') problems.push(`the stems are ${stems.join(', ')}`)
+    const folder = $('.separate-results-head strong')?.title ?? ''
+    const written = folder ? await disk.list(folder) : []
+
+    // Each loads from the asset protocol, which the CSP's media-src lets in, as long as the song.
+    const loaded = (selector: string) => {
+      const players = $$<HTMLAudioElement>(selector)
+      const failed = players.find((player) => player.error)
+      if (failed) return { error: `${failed.title}: media error ${failed.error?.code}` }
+      const durations = players.map((player) => player.duration)
+      return players.length > 0 && durations.every((duration) => Number.isFinite(duration) && duration > 0) && { durations }
+    }
+    const players = stems.length ? await until('the stems to load', () => loaded('.separate-stems:not(.separate-mix) audio'), 30_000) : undefined
+    const durations = players?.durations ?? []
+    if (players?.error) problems.push(`a stem does not play: ${players.error}`)
+    if (durations.some((duration) => Math.abs(duration - durations[0]!) > 1)) problems.push(`the stems last ${durations.join(', ')} s`)
+
+    // Bass and drums, mixed: the smoke test takes the save panel's suggestion, in the stems' folder.
+    for (const stem of ['bass', 'drums']) $<HTMLInputElement>(`.separate-stem[data-stem="${stem}"] input[type=checkbox]`)?.click()
+    const exportLabel = text('.separate-results-foot button')
+    $<HTMLButtonElement>('.separate-results-foot button')?.click()
+    const mixed = stems.length ? await until('the mix to play', () => loaded('.separate-mix:not([hidden]) audio'), 60_000) : undefined
+    if (exportLabel !== 'Export mix of 2…') problems.push(`the export button says ${JSON.stringify(exportLabel)}`)
+    if (mixed?.error) problems.push(`the mix does not play: ${mixed.error}`)
+
+    // New score for bass: bass.ly beside the stems, open in Scores, and the bass above the transport.
+    $<HTMLButtonElement>('.separate-stem[data-stem="bass"] .separate-score')?.click()
+    $$<HTMLButtonElement>('.separate-menu [role="menuitem"]').find((item) => item.textContent === 'New score for bass')?.click()
+    const score = stems.length
+      ? await until('the bass score with its stem', () => {
+          const strip = $('.stem-strip:not([hidden])')
+          const stem = strip?.querySelector('.stem-strip-name')?.textContent
+          const time = strip?.querySelector('.stem-strip-time')?.textContent ?? ''
+          return away('stems') && editorLines().includes('% Stem:') && stem && /\/ \d+:\d\d$/.test(time) && !time.endsWith('/ 0:00') && { stem, time }
+        }, 30_000)
+      : undefined
+    const scoreFile = folder ? await disk.read(`${folder}/bass.ly`) : null
+    if (score && !scoreFile?.includes('% Stem:')) problems.push(`New score for bass wrote ${JSON.stringify(scoreFile)}`)
+    separation = { song: name, run: runLabel, seconds, stems, written, durations, mix: { label: exportLabel, duration: mixed?.durations?.[0] }, score }
+  }
+
   const ok = problems.length === 0
-  const report = { ok, problems, ...layout, workspaces, welcome, listed, openedPages, switching, monaco: !!shown, colours, saved, compile, sidebar }
+  const report = { ok, problems, ...layout, workspaces, welcome, listed, openedPages, switching, monaco: !!shown, colours, saved, compile, sidebar, separation }
   await invoke('smoke_done', { ok, report: JSON.stringify(report, null, 2) })
 }
 

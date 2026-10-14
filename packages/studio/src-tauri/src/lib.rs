@@ -109,13 +109,10 @@ pub fn run() {
             });
             app.on_menu_event(move |app, event| menu_clicked(app, event.id().as_ref()));
             create_window(&handle, smoking)?;
-            if smoking {
+            if let Some(timeout) = smoke.as_ref().map(smoke::timeout) {
                 tauri::async_runtime::spawn(async move {
-                    tokio::time::sleep(smoke::TIMEOUT).await;
-                    eprintln!(
-                        "smoke test: did not finish within {} s",
-                        smoke::TIMEOUT.as_secs()
-                    );
+                    tokio::time::sleep(timeout).await;
+                    eprintln!("smoke test: did not finish within {} s", timeout.as_secs());
                     handle.exit(1);
                 });
             }
@@ -173,6 +170,7 @@ pub fn run() {
             smoke::smoke_write,
             smoke::smoke_list,
             smoke::smoke_menu,
+            smoke::smoke_drop,
             smoke::smoke_log,
             smoke::smoke_done,
         ])

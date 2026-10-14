@@ -2804,5 +2804,17 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   stem's score, and an unknown stem's, through `lily-outcome`, with no
   error or warning and with MIDI. `separate.rs`'s tests cover writing beside
   the stem without writing over a file, refusing names that are not plain,
-  and which names `attach_stem` takes. Nothing was separated through the
-  app yet.
+  and which names `attach_stem` takes.
+- **Separated in the app.** Given a song as `LILY_SMOKE_SONG`, the smoke
+  test separates a copy of it, in a scratch folder of its own that it
+  deletes. `smoke_drop` sends the page the event Tauri sends for a drop from
+  the Finder, so the song arrives as a dropped one does. BS-RoFormer SW
+  at Fast splits it into six stems. Each must load from the asset protocol
+  and last as long as the others, bass and drums must export as a mix that
+  plays, and *New score for bass* must open `bass.ly` in Scores with the
+  bass in the Stem strip. The run may then take a quarter of an hour longer,
+  since a first separation downloads its model. `npm run test:e2e` does the
+  same in the installed app when `LILY_E2E_SONG` names a song, with the
+  Finder's bare PATH, so RoFormer MLX and uv are found as a user's copy
+  finds them. The operator's desktop was in use, so this replaces driving
+  the window with UI automation. The test song (3:43) took 55 s.

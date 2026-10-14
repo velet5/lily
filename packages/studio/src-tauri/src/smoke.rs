@@ -2,14 +2,16 @@
 //! an include, a file that is no score and a stand-in for Claude Code; the
 //! window is opened on it and src/renderer/smoke.ts is loaded into the page to
 //! drive it. The `smoke_*` commands answer only in this mode: files on disk as
-//! another program sees them, the menu, and the report at the end.
+//! another program sees them, the menu, a drop from the Finder, and the report
+//! at the end. Given a song as LILY_SMOKE_SONG, a copy of it is separated too
+//! (D112).
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use lily_session::{Studio, StudioEvent};
 use serde::Serialize;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, Emitter, EventTarget, State, Webview};
 
 /// Answers as `claude -p --input-format stream-json --output-format stream-json`
 /// does, and says whether it was resumed. Asked to convert a PDF, it asks to
@@ -44,8 +46,15 @@ echo '{"type":"result","subtype":"success","is_error":false,"result":"done"}'
 cat > /dev/null
 "#;
 
-/// How long the whole run may take before it fails.
-pub const TIMEOUT: Duration = Duration::from_secs(90);
+/// How long the whole run may take before it fails. A song adds a quarter
+/// of an hour: its separation may download the model first.
+pub fn timeout(smoke: &SmokeFolder) -> Duration {
+    Duration::from_secs(if smoke.song.is_some() {
+        90 + 15 * 60
+    } else {
+        90
+    })
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -58,6 +67,8 @@ pub struct SmokeFolder {
     /// The settings and chats of this run, apart from the user's.
     #[serde(skip)]
     pub profile: PathBuf,
+    /// A copy of LILY_SMOKE_SONG's song, alone in a folder, where its stems go.
+    pub song: Option<PathBuf>,
 }
 
 /// The app's smoke folder, in the smoke test only; managed beside the studio.
@@ -78,11 +89,27 @@ pub fn prepare() -> std::io::Result<SmokeFolder> {
     std::fs::create_dir(folder.join(".agent"))?;
     std::fs::write(&agent, FAKE_AGENT)?;
     std::fs::set_permissions(&agent, std::fs::Permissions::from_mode(0o755))?;
+    let song = match std::env::var_os("LILY_SMOKE_SONG").filter(|value| !value.is_empty()) {
+        Some(source) => {
+            let source = PathBuf::from(source);
+            let name = source.file_name().ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::InvalidInput,
+                    "LILY_SMOKE_SONG names no file",
+                )
+            })?;
+            let song = make_temp(&temp, "lily-studio-smoke-song-")?.join(name);
+            std::fs::copy(&source, &song)?;
+            Some(song)
+        }
+        None => None,
+    };
     Ok(SmokeFolder {
         folder,
         score,
         agent,
         profile,
+        song,
     })
 }
 
@@ -98,10 +125,13 @@ fn make_temp(parent: &Path, prefix: &str) -> std::io::Result<PathBuf> {
     unreachable!("some name is free")
 }
 
-/// Deletes the folder and the profile.
+/// Deletes the folder, the profile, and the song's folder with its stems.
 pub fn clean(smoke: &SmokeFolder) {
     let _ = std::fs::remove_dir_all(&smoke.folder);
     let _ = std::fs::remove_dir_all(&smoke.profile);
+    if let Some(folder) = smoke.song.as_deref().and_then(Path::parent) {
+        let _ = std::fs::remove_dir_all(folder);
+    }
 }
 
 /// Loads the driver into the page; runs once the page has loaded.
@@ -193,6 +223,25 @@ pub fn smoke_menu(
     smoke(&state)?;
     studio.send(StudioEvent::Command { command });
     Ok(())
+}
+
+/// Files dropped on the window, sent to the page as Tauri sends a drop from
+/// the Finder.
+#[tauri::command]
+pub fn smoke_drop(
+    webview: Webview,
+    state: State<'_, Smoke>,
+    paths: Vec<PathBuf>,
+) -> Result<(), String> {
+    smoke(&state)?;
+    let payload = serde_json::json!({ "paths": paths, "position": { "x": 0.0, "y": 0.0 } });
+    webview
+        .emit_to(
+            EventTarget::webview(webview.label()),
+            "tauri://drag-drop",
+            payload,
+        )
+        .map_err(|error| error.to_string())
 }
 
 /// A warning or an error of the page.
