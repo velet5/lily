@@ -20,6 +20,9 @@ An npm workspace of three packages (DECISIONS D53):
 - `packages/studio` (`lily-studio`): Lily Studio, a Tauri app whose Rust side
   is a Cargo workspace in that directory (D42), and `lily-studio-server`, the
   same studio on the web (D55).
+- `packages/transcribe` (`lily-transcribe`): not an npm package but a uv
+  Python project, which Lily Studio runs to transcribe a stem into notes on
+  the song's beat grid (D113). `uv run pytest` there runs its tests.
 
 `docs/DECISIONS.md` records the decisions of all three; read it before changing
 a convention and record new ones there.

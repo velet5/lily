@@ -2818,3 +2818,133 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   Finder's bare PATH, so RoFormer MLX and uv are found as a user's copy
   finds them. The operator's desktop was in use, so this replaces driving
   the window with UI automation. The test song (3:43) took 55 s.
+
+## D113 — Lily Studio: a stem's score is transcribed from it (lily-transcribe)
+
+**Status:** accepted (the operator approved the design, with a rough draft of
+chords for the hard stems and kick, snare and hi-hat for drums, 2026-10-14)
+· **Refines:** D112 · **Research:** `docs/research/audio-transcription/`
+(#1199)
+
+- **Why.** D112's *New score for bass* wrote four empty bars, titled with the
+  song's raw file name. On a real song (3:43) the operator found that no
+  help. A score from a stem now holds the stem's notes on the song's own
+  tempo, meter and key, from its start to its end.
+- **Where the code lives.** `packages/transcribe` (`lily-transcribe`) is a
+  uv Python project, not an npm package. It is run as karaoke-mlx is (D112):
+  `uv run --quiet --project <root> lily-transcribe --json transcribe <stem>
+  --instrument <stem name>`, one JSON event per line (`progress` with a
+  stage, then `done` with the transcription, or `error`). crates/separate's
+  `Transcriber` runs it, one at a time, in its own process group; separation
+  and transcription share that crate's `Job`. The root is
+  `LILY_TRANSCRIBE_ROOT`, which must be a project, or `packages/transcribe`
+  beside the studio. The command is `transcribe_stem` (separate.rs). It takes
+  only a stem in a folder separated this run, and the instrument must be a
+  plain word. Its events reach the page as `{type: "transcription", event}`.
+  The web stub and the worker refuse it with the other separation commands.
+  Quitting ends a running transcription.
+- **Dependencies.** Python 3.11, which Basic Pitch 0.4 needs; uv fetches it.
+  Basic Pitch 0.4.0 (Spotify, Apache-2.0, a 230 KB model in its wheel, CoreML
+  on a Mac) hears the notes. Beat This! 1.1.0 (CPJKU, MIT for code and
+  weights) finds beats and downbeats; it brings torch (BSD), and its 77 MB
+  checkpoint downloads on the first transcription. madmom's DBN is not used:
+  it is for non-commercial use only. `setuptools<81` is pinned because Basic
+  Pitch pins resampy below 0.4.3, which still imports `pkg_resources`.
+  MuScriptor's weights (CC BY-NC) and YourMT3+ (GPL) were not taken (#1199).
+- **The song's grid.** Beat This runs on all the song's stems mixed back
+  together, not on the stem: a bass or vocal stem has no drums to keep time
+  with. A straight grid is fitted through the beats. It ignores the fills
+  that Beat This counts in eighths, and is snapped to a whole number of beats
+  per minute when it is within 0.1 of one and fits as well (123.015 measured
+  is 123 played to a click). When 80 % of the beats sit on such a grid, the
+  song is *steady*; otherwise the beats are kept as found, with extra ones
+  dropped and missed ones put back, and the score says its MIDI drifts. The
+  downbeats vote for the meter (2, 3 or 4 beats) and for bar 1, which is the
+  first bar line at the start or after it. The time before it is the pickup.
+- **The song's key and tuning.** Basic Pitch hears every stem but the drums,
+  mixed. The key is Temperley's (Kostka–Payne) profile correlated with how
+  long each pitch class sounds. Krumhansl and Kessler's profiles left C major
+  and C minor nearly equal on the test song, and a spectrum's chroma read it
+  as major (every root's fifth harmonic is its major third). The tuning is the
+  median of the notes' pitch bends. Each note is re-centred on it, so a
+  singer's sharp E-flat is not written as E. The grid, key and tuning are
+  kept per song in `~/.cache/lily-transcribe` (`LILY_TRANSCRIBE_HOME`), so
+  the song's other stems take seconds.
+- **The notes, by family** (`instruments.py`). *Melody* (bass, vocals): one
+  note at a time on sixteenths. A note outside the instrument's range is
+  dropped, as is one shorter than most of a sixteenth, or an overtone of a
+  lower note sounding as it starts (+12, +19, +24, +28, +31 semitones, not
+  louder). Of two notes starting together, the stronger stays. A note lasts
+  until the next one starts, and a short silence after it (a sixteenth; an
+  eighth for a voice) is its release. A voice also joins same-pitch fragments
+  and drops notes more than an octave from its middle pitch. *Chords*
+  (guitar, piano, other, the instrumental and any later stem): a rough draft
+  on eighths. The notes starting together are a chord of up to the
+  instrument's voices, lasting until the next. *Drums*: kick (30–150 Hz),
+  snare (600 Hz–2.5 kHz, above the kick's overtones) and hi-hat (5–11 kHz),
+  each a rise of the band's energy above 1 % of its own loud level. Each peak
+  goes to its nearest sixteenth, and is a hit when it is at least 35 % of the
+  band's strongest. Toms and cymbals are not told apart.
+- **The score** (`stemScore` in files.ts, `src/renderer/notation.ts`). It is
+  written as a person would type it: pitches spelled in the key (#1, ♭3, #4,
+  ♭6 and ♭7 in major; ♭2, the raised third, sixth and seventh in minor) in
+  `\relative` without a start pitch. A note is split at the beat where its
+  place asks and tied, also across bar lines; quarters and dotted quarters
+  may start on an eighth, as pop's syncopations do. Rests start on multiples
+  of their length, and empty bars are whole-bar rests (`R1*8`, with
+  `\compressEmptyMeasures`). Bass is in `bass_8`, guitar in `treble_8`, a
+  voice in `treble_8` when its middle note is below A3, piano on two staves
+  parted at middle C, drums in `\drummode`. A bar number comment marks every
+  fourth bar. The title is the song's, from its file name (`artist_-_title`
+  as downloads write it gives "Valeriy Meladze" and "Tekila-lyubov"); the
+  stem is `instrument`. The `% Stem:` line, the Stem strip, writing beside
+  the stems and never over a file are D112's.
+- **With score keeps time.** The stem strip plays the score's MIDI and the
+  stem each from where it is (D112). The pickup bar's MIDI lasts exactly as
+  long as the stem plays before bar 1: a hidden `\once \omit
+  Score.MetronomeMark \tempo 64 = N` sets it, and `\tempo 4 = 123` follows at
+  bar 1. Started together from their starts, they stay together to the end
+  of a steady song. `Score.tempoWholesPerMinute` is not set by hand: 2.24
+  takes a moment and 2.26 a rational, and `\tempo` takes only whole numbers
+  in 2.24. A tempo that is steady but not whole says how far the MIDI drifts
+  by the end.
+- **The menu.** *New score for bass* transcribes, then writes and opens the
+  score. While it runs, the Score… button says *Transcribing…* and the status
+  line names the stage (reading the song, finding the beats, finding the
+  key, hearing the notes). *Empty score for bass* writes D112's four empty
+  bars. A failure says why and points to it. The hard stems' button says
+  *Score… (draft)*.
+- **Measured on the test song** (Tekila-lyubov, 3:43, BS-RoFormer SW at
+  Fast, M1 Max). Grid: ♩ = 123, 4/4, all 109 downbeats on one bar phase,
+  94 % of the beats within 40 ms of the straight grid; bar 1 at 0.21 s. Key
+  C minor (0.80). Against pYIN on the bass stem, sixteenth by sixteenth: the
+  same pitch in 89 % of the slots where both hear a note (82 % before the
+  overtone rule), an octave off in 0.7 %. Most of the rest are slots where
+  Basic Pitch hears a fifth or a twelfth above pYIN, and the spectrum does
+  not say which is right. The drums give a steady groove: kick on 1, 3, 4 and
+  the "and" of 4, snare on 2, the "a" of 2 and the "and" of 3, hi-hat on the
+  eighths. A first transcription of a song took about 25 s, and each further
+  stem about 10 s.
+- **Not done yet.** The vocals are a first draft: vibrato and glides still
+  leave fragments and accidentals. No lyrics. The meter and bar 1 are not yet
+  shown for the user to confirm (#1199 §4), and a drifting song's MIDI does
+  not follow its tempo. Piano has no piano model or hand split beyond middle
+  C, guitar no tablature. Like `packages/separate`, an installed app finds
+  `packages/transcribe` by the path it was built from, or through
+  `LILY_TRANSCRIBE_ROOT`.
+- **Verified.** `uv run pytest` in packages/transcribe: the grid (a click
+  track with a fill, a tempo between whole numbers, three beats a bar, bar 1
+  at the start, a drifting song, cleaned beats), the quantizing (range,
+  blips, the stronger of two, overtones, releases, a voice's fragments and
+  spread, chords and voices), the key (minor, major, transposed), drums on a
+  synthesized rock beat, and the CLI's events with the models replaced,
+  including the cache. crates/separate's tests run lily-transcribe's stand-in
+  for its arguments, events, answer and failures, and its root. notation's
+  tests cover spelling, `\relative`, the pieces of notes and rests, a voice
+  with a pickup, ties across bars and whole-bar rests, and drums.
+  files.test.ts engraves every stem's transcribed score through lily-outcome
+  without warnings, and finds bar 1 of its MIDI at the stem's 0.2 s. The
+  scores of the test song's six stems engrave without warnings on LilyPond
+  2.24.4 and 2.26.0. With `LILY_SMOKE_SONG`, the smoke test transcribes the
+  bass in the real app and checks bass.ly's tempo, notes and bars against
+  the stem.
