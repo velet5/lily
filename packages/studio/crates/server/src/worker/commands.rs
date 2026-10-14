@@ -43,6 +43,7 @@ const DESKTOP_ONLY: &[&str] = &[
     // Separating stems runs uv on the Mac (D112); the page does not ask.
     "separation_status",
     "separation_models",
+    "choose_song",
     "separate",
     "separation_cancel",
     "mix_stems",

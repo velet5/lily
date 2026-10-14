@@ -1,6 +1,7 @@
 // `npm run test:smoke` in packages/studio/ (DECISIONS D42): `lily-studio --smoke-test`
 // opens the real window on a scratch folder and loads this script into it,
-// which drives the page once — layout, Scores | Stems (D112), Monaco, the file
+// which drives the page once — layout, Scores | Stems (D112) and its Separate
+// view, Monaco, the file
 // list, highlighting, an edit, the unsaved marker, a save, the compile it
 // starts, its pages in the preview and a click on a note there, the PDF tab and
 // Export PDF, an error marked, an edit by another program reloaded and
@@ -131,10 +132,14 @@ async function main(): Promise<void> {
   click('.workspace-switch [data-workspace="stems"]')
   const stems = $('[data-pane="stems"]')?.getBoundingClientRect()
   const [, editorPane, previewPane] = layout.panes
+  // The Separate view is drawn, and waits for a song.
+  const run = $<HTMLButtonElement>('.separate-run')
+  const view = { drop: !!$('.separate-drop'), qualities: $$('.separate-segments button').length, run: run?.textContent, runDisabled: run?.disabled }
   const workspaces = {
-    stems: { away: covers.filter(away), shown: !away('stems') && !away('separations'), left: stems?.left, right: stems?.right },
+    stems: { away: covers.filter(away), shown: !away('stems') && !away('separations'), left: stems?.left, right: stems?.right, view },
     scores: { away: [] as string[] },
   }
+  if (!view.drop || view.qualities !== 3 || !view.runDisabled) problems.push(`the Separate view is not ready for a song: ${JSON.stringify(view)}`)
   if (workspaces.stems.away.length !== covers.length || !workspaces.stems.shown) problems.push(`Stems left ${covers.filter((name) => !away(name)).join(', ') || 'its panes'} showing`)
   if (stems && editorPane && previewPane && (Math.abs(stems.left - editorPane.left) > 1 || Math.abs(stems.right - previewPane.left - previewPane.width) > 1)) {
     problems.push(`the Separate view spans ${stems.left}–${stems.right}, not the editor and the preview`)

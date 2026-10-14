@@ -17,6 +17,7 @@ import type {
   ExportedMidi,
   CompileOutcome,
   FileChange,
+  FileDrop,
   FolderListing,
   LilyPondStatus,
   MutedPart,
@@ -99,6 +100,7 @@ const listeners = {
   recentChanged: new Set<Listener<void>>(),
   openRecent: new Set<Listener<string>>(),
   separation: new Set<Listener<SeparationEvent>>(),
+  fileDrop: new Set<Listener<FileDrop>>(),
 }
 
 function dispatch(event: StudioEvent): void {
@@ -129,6 +131,7 @@ function subscribe<T>(set: Set<Listener<T>>, listener: Listener<T>): () => void 
 
 /** Resolves once the Rust side sends on the channel; commands that start compiles wait for it. */
 const subscribed = transport.subscribe((event) => dispatch(event as StudioEvent))
+transport.onFileDrop?.((drop) => listeners.fileDrop.forEach((listener) => listener(drop)))
 
 export const studio = {
   /** On the web (D55): no agents, a LilyPond the server's, files uploaded and downloaded. */
@@ -291,6 +294,12 @@ export const studio = {
   mixStems: (files: string[]): Promise<string | undefined> => call<string | null>('mix_stems', { files }).then(orUndefined),
   /** Shows a separated folder, or a stem in one, in the Finder. */
   revealInFinder: (path: string): Promise<void> => call('reveal_in_finder', { path }),
+  /** Asks for a song to separate; undefined when the panel was cancelled. */
+  chooseSong: (): Promise<string | undefined> => call<string | null>('choose_song').then(orUndefined),
+  /** Where `<audio>` plays a stem from; only stems of a separation finished in this run play. */
+  stemUrl: (path: string): string => transport.fileUrl?.(path) ?? '',
+  /** Runs `listener` for files dragged over the app's window and dropped; never on the web. */
+  onFileDrop: (listener: Listener<FileDrop>): (() => void) => subscribe(listeners.fileDrop, listener),
   /** Runs `listener` for each event of the running separation: progress, then `done` or `error`. */
   onSeparation: (listener: Listener<SeparationEvent>): (() => void) => subscribe(listeners.separation, listener),
   /** Runs `listener` when open files or the score's includes change on disk (D34). */

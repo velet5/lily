@@ -12,6 +12,7 @@ export const separation: SeparationAvailability = { available: false, reason: SE
 export const SEPARATION_COMMANDS: ReadonlySet<string> = new Set([
   'separation_status',
   'separation_models',
+  'choose_song',
   'separate',
   'separation_cancel',
   'mix_stems',

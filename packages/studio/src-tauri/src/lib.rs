@@ -160,6 +160,7 @@ pub fn run() {
             commands::clear_recent,
             separate::separation_status,
             separate::separation_models,
+            separate::choose_song,
             separate::separate,
             separate::separation_cancel,
             separate::mix_stems,

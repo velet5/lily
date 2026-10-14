@@ -2,7 +2,7 @@
 // file list, the editor and the status line to `studio` (bridge.ts),
 // with the welcome screen and LilyPond's setup (D37), and the resizable
 // sidebar with the agents' accordion (D40), and Scores | Stems at its top
-// (D112). On the web (D55) the same page, without the agents or Stems, and
+// with the Separate view (D112). On the web (D55) the same page, without the agents or Stems, and
 // with upload and download.
 import type { CompileEvent, FileChange, Opened } from '../ipc'
 import { AgentPanel, SELECTION_ACTIONS } from './agents'
@@ -14,6 +14,7 @@ import { addMidiBlock } from './midiBlock'
 import { PdfView } from './pdfView'
 import { ScorePlayer } from './player'
 import { ScorePreview } from './preview'
+import { SeparateView } from './separate'
 import { Sidebar, WorkspaceSwitch } from './sidebar'
 import { Welcome } from './welcome'
 
@@ -257,14 +258,23 @@ const agents = studio.hosted ? undefined : new AgentPanel({
 const studioGrid = document.querySelector<HTMLElement>('.studio')!
 const sidebar = new Sidebar({ studio: studioGrid, sidebar: pane('sidebar'), agents: agentsPane })
 // Scores | Stems (D112), where separation runs: Stems covers the files, the
-// editor and the preview, which go on as they were behind it.
-const workspace = studio.separationAvailable().available
+// editor and the preview, which go on as they were behind it. The Separate
+// view asks for its models when Stems is first shown, and a song dropped on
+// the window goes to it.
+const separateView = studio.separationAvailable().available ? new SeparateView({ host: pane('stems'), studio, onStatus: status }) : undefined
+const workspace = separateView
   ? new WorkspaceSwitch({
       studio: studioGrid,
       tabs: pane('sidebar').querySelector<HTMLElement>('.workspace-switch')!,
       panes: { scores: [filesPane, editorPane, previewPane], stems: [pane('separations'), pane('stems')] },
+      onChange: (shown) => {
+        if (shown === 'stems') separateView.activate()
+      },
     })
   : undefined
+studio.onFileDrop((drop) => {
+  if (separateView?.fileDrop(drop)) workspace?.show('stems')
+})
 
 /** Back to Scores, for what opens a score or shows the files or the welcome screen. */
 function showScores(): void {

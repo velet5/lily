@@ -1,6 +1,6 @@
 //! Stem separation's commands (DECISIONS D112), RoFormer MLX's app's
 //! project_root, find_uv, list_models, separate, mix_stems and cancel, run
-//! through crates/separate. Each event goes to the page on the studio's one
+//! through crates/separate, and the open panel that chooses a song. Each event goes to the page on the studio's one
 //! channel as a `separation` event. Before a `done` event is passed on, its
 //! folder is let into the asset protocol's scope, which starts empty, so the
 //! page can play the stems. Mixing and Show in Finder take only files in a
@@ -16,7 +16,7 @@ use serde_json::Value;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
 
-use crate::dialogs::{self, Save};
+use crate::dialogs::{self, Open, Save};
 use crate::smoke::Smoke;
 
 type Answer<T> = Result<T, String>;
@@ -103,6 +103,29 @@ pub fn separation_status(
         problem,
         running: stems.separator.is_running(),
     }
+}
+
+/// What the open panel offers as a song: what ffmpeg decodes for karaoke-mlx,
+/// as RoFormer's app offered.
+const SONG_EXTENSIONS: &[&str] = &[
+    "mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "aiff", "aif", "wma", "mp4", "mkv", "webm",
+];
+
+/// Asks for a song to separate; None when the panel is cancelled.
+#[tauri::command]
+pub async fn choose_song(app: AppHandle) -> Answer<Option<PathBuf>> {
+    dialogs::open(
+        &app,
+        Open {
+            title: "Choose a Song".into(),
+            prompt: Some("Choose".into()),
+            files: true,
+            extensions: SONG_EXTENSIONS.iter().map(|ext| ext.to_string()).collect(),
+            directory: home().map(|home| home.join("Music")),
+            ..Open::default()
+        },
+    )
+    .await
 }
 
 #[tauri::command]

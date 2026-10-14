@@ -2708,7 +2708,26 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   removed or hidden, so Monaco, the preview's zoom and scroll and the file
   list stay as they were behind Stems. Each launch starts in Scores. Opening
   a score or a folder, New Score and Help › Welcome go back to Scores.
-- **Not done yet.** The Separate view, the stems-to-score path, the
+- **The Separate view** (`SeparateView` in `src/renderer/separate.ts`) is
+  RoFormer's page in Lily's panes: the song, the model in *Karaoke* / *All
+  instruments*, Fast, Balanced or Best (2, 4 or 8 overlapping chunks, Balanced
+  first, as RoFormer had them) and WAV, FLAC or MP3 on the left; on the right
+  one `<audio>` per stem, one playing at a time, and the ticked stems' *Export
+  mix…*. Show in Finder is in the pane's header. The run button says *Make
+  karaoke* or *Separate instruments*, and *Cancel* while one runs. Its models
+  are asked for when Stems is first shown, not at launch, since that starts
+  Python, and again after each separation, which may have downloaded one. A
+  missing project or uv shows its reason with *Check again* in place of the
+  models. The status line follows a separation in either workspace.
+- **Choosing the song.** `choose_song` (separate.rs) opens AppKit's panel
+  for the formats karaoke-mlx's ffmpeg reads; the web's stub and the worker
+  refuse it with the others. Tauri takes files dropped on the window, so the
+  page gets no HTML drop: the app's transport passes on Tauri's drag and drop
+  events as `FileDrop`, and a song dropped anywhere in the window goes to the
+  Separate view and shows Stems. The stems play from the asset protocol's
+  URLs (the transport's `fileUrl`, `studio.stemUrl`). A mix saved outside the
+  stems' folder is not in the asset scope, so it is exported but not played.
+- **Not done yet.** The Separations list, the stems-to-score path, the
   `separation.root` setting and its setup card, `separations.json`, and
   moving the Python. Folders
   separated in an earlier run are not in the asset scope until a later step
@@ -2724,5 +2743,9 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   refuses them too; crates/server's test asks a worker to separate.
   `workspaceForKey` has unit tests, and the smoke test, in the real window,
   switches to Stems, sees it cover the files and the editor's and the
-  preview's columns, and goes back to Scores. Nothing was separated through
-  the app yet.
+  preview's columns, sees the Separate view wait for a song, and goes back
+  to Scores. `test/separate.test.ts` covers the view's pure parts: which
+  files are songs, the model groups and names, the qualities and formats,
+  progress and its stages, the stems' names and the mix button, and that the
+  panel's extensions are the view's. Nothing was separated through the app
+  yet.

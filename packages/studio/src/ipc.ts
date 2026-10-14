@@ -327,6 +327,12 @@ export type SeparationEvent =
   | { event: 'done'; outputs: SeparationOutput[]; folder: string; seconds: number }
   | { event: 'error'; message: string; cancelled?: boolean }
 
+/**
+ * Files dragged over the app's window (D112): their paths on `enter`, and on
+ * `drop`. The web has none.
+ */
+export type FileDrop = { kind: 'enter'; paths: string[] } | { kind: 'drop'; paths: string[] } | { kind: 'leave' }
+
 export type ChatEvent =
   | { kind: 'entry'; chatId: string; entry: ChatEntry }
   | { kind: 'running'; chatId: string; running: boolean }
@@ -353,6 +359,10 @@ export interface Transport {
   upload?(folder: string | undefined): Promise<Opened | undefined>
   /** Web only: saves `file` of the workspace in the browser's downloads. */
   download?(file: string): Promise<void>
+  /** App only: where `<audio>` plays `path` from, through the asset protocol (D112). */
+  fileUrl?(path: string): string
+  /** App only: runs `onDrop` for files dragged over the window and dropped (D112). */
+  onFileDrop?(onDrop: (drop: FileDrop) => void): void
 }
 
 export type { PlaybackTiming, SourceLocation }
