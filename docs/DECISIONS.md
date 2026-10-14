@@ -2681,10 +2681,18 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   app ends a running separation's process group, which RoFormer's own app
   did not do.
 - **Web (D55).** Separation needs the Mac. The page asks the bridge
-  `separationAvailable()`. The web transport's stub answers no and rejects
-  every separation call with *Separating stems needs the Mac app*. The
-  switch is not drawn on the web, as the agents are not. The server and the
-  worker do not change, and no `separation` event reaches the socket.
+  `separationAvailable()`, which is the transport's `separation`. The web
+  transport's stub (`src/web/separation.ts`) answers `{available: false,
+  reason}` and rejects every separation call with *Separating stems needs
+  the Mac app.*, without asking the worker. The switch is not drawn on the
+  web, as the agents are not. The worker refuses the separation commands
+  with the app's others it does not offer, should a page send one, and no
+  `separation` event reaches the socket.
+- **The renderer's calls** (`src/renderer/bridge.ts`, typed in
+  `src/ipc.ts`): `separationStatus`, `separationModels`, `separate`
+  (waits for the channel, so no event is missed), `cancelSeparation`,
+  `mixStems`, `revealInFinder`, and `onSeparation` for karaoke-mlx's
+  `status`, `progress`, `done` and `error` events.
 - **Data and identity.** The name stays "Lily Studio", the identifier
   `io.github.velet5.lily-studio`, and the icon the lily. So
   `~/Library/Application Support/Lily Studio`, `~/Documents/Lily Studio`,
@@ -2693,8 +2701,7 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   separations, in Application Support beside the others. Stems go next to
   the song in `<song> (stems)` or `<song> (karaoke)`, as RoFormer writes
   them. RoFormer MLX's own app stays buildable in its repository.
-- **Not done yet.** The renderer's calls and the web stub, the switch, the
-  Separate view, the stems-to-score path, the `separation.root` setting and
+- **Not done yet.** The switch, the Separate view, the stems-to-score path, the `separation.root` setting and
   its setup card, `separations.json`, and moving the Python. Folders
   separated in an earlier run are not in the asset scope until a later step
   lets the recent separations in again.
@@ -2704,4 +2711,7 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   reported from stderr, one job at a time, and Cancel ending the CLI's own
   child too. They also cover `models` and `mix`. `separate.rs`'s tests cover
   which paths count as inside a separated folder, and the mix's name.
+  `test/web.test.ts` checks that the stub rejects each command
+  `src-tauri/src/lib.rs` registers, and only those, and that the worker
+  refuses them too; crates/server's test asks a worker to separate.
   Nothing was separated through the app yet.

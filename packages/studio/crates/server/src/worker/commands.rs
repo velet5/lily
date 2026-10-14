@@ -4,7 +4,7 @@
 //! score goes. Added for a browser, which has no Finder: listing a folder of
 //! the workspace, making a folder, uploading a score and downloading a file.
 //! Every path is checked to be inside the user's scores first; the agents
-//! (D40) and choosing a LilyPond are not offered.
+//! (D40), choosing a LilyPond and separating stems (D112) are not offered.
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -40,6 +40,13 @@ const DESKTOP_ONLY: &[&str] = &[
     "chat_delete",
     "choose_lilypond",
     "confirm_reload",
+    // Separating stems runs uv on the Mac (D112); the page does not ask.
+    "separation_status",
+    "separation_models",
+    "separate",
+    "separation_cancel",
+    "mix_stems",
+    "reveal_in_finder",
 ];
 
 pub struct Worker {

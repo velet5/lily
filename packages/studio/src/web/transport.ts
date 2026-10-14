@@ -5,10 +5,12 @@
 // alert ask with the page's own dialogs first (dialogs.ts), then pass the
 // worker what was chosen. A file the app writes for the user — a PDF, a MIDI
 // file — is downloaded too. The menu bar takes the app menu's place.
+// Separating stems needs the Mac app: separation.ts answers those calls.
 import type { ExportedMidi, MutedPart, Opened, RecentList, Transport } from '../ipc'
 import { Connection } from './connection'
 import { ask, Browser, type Listing, leaveOutLabel } from './dialogs'
 import { MenuBar } from './menubar'
+import { separation, separationStub } from './separation'
 import './web.css'
 
 type Args = Record<string, unknown>
@@ -157,7 +159,10 @@ window.addEventListener('beforeunload', (event) => {
 
 export const transport: Transport = {
   hosted: true,
+  separation,
   call: async <T>(command: string, args: Args = {}): Promise<T> => {
+    const stub = separationStub(command)
+    if (stub) return stub
     const dialog = dialogs[command]
     if (dialog) return (await dialog(args)) as T
     const result = await call<T>(command, args)

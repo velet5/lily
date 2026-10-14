@@ -255,6 +255,78 @@ export interface RecentList {
   entries: RecentEntry[]
 }
 
+/**
+ * Whether stems can be separated here (D112): only in the app on a Mac.
+ * `reason` is what the page shows where the Stems workspace would be.
+ */
+export type SeparationAvailability = { available: true } | { available: false; reason: string }
+
+/** A model karaoke-mlx knows, as `karaoke-mlx --json models` lists it (crates/separate). */
+export interface SeparationModel {
+  id: string
+  title: string
+  description: string
+  /** `karaoke`: lead vocals and instrumental; `stems`: every instrument. */
+  task: 'karaoke' | 'stems'
+  /** The stems it writes, in order. */
+  stems: string[]
+  /** The checkpoint's download size, in bytes. */
+  size: number
+  /** False until its weights are downloaded, on its first separation. */
+  installed: boolean
+  default: boolean
+  /** Chunks overlapping each sample unless a request says otherwise. */
+  num_overlap: number
+}
+
+/** Where the separation's project is (D112): `KARAOKE_MLX_ROOT`, the setting, or a default. */
+export interface SeparationRoot {
+  path: string
+  source: 'variable' | 'setting' | 'default'
+}
+
+/** What the Stems setup says: the project, uv, what is missing, whether one runs. */
+export interface SeparationStatus {
+  root?: SeparationRoot
+  uv?: string
+  /** Why separating cannot start, when the project or uv was not found. */
+  problem?: string
+  running: boolean
+}
+
+/** One separation as the page asks for it; the stems go next to the song. */
+export interface SeparationRequest {
+  /** The song: an absolute path to a file. */
+  input: string
+  /** A `SeparationModel` id, such as `becruily` or `bs-roformer-sw`. */
+  model: string
+  /** Chunks overlapping each sample; the model's own when not given. */
+  overlap?: number
+  format: 'wav' | 'flac' | 'mp3'
+}
+
+/** A file karaoke-mlx wrote: a stem, or the mix. */
+export interface SeparationOutput {
+  stem: string
+  path: string
+}
+
+/**
+ * What karaoke-mlx prints while it separates, one per line (D112). Every
+ * separation ends with `done` or `error`; `cancelled` is set on the `error`
+ * of one that Cancel ended.
+ */
+export type SeparationEvent =
+  | { event: 'status'; message: string }
+  | {
+      event: 'progress'
+      stage: 'download' | 'verify' | 'convert' | 'load' | 'decode' | 'separate' | 'mix' | 'write'
+      /** From 0 to 1. */
+      value: number
+    }
+  | { event: 'done'; outputs: SeparationOutput[]; folder: string; seconds: number }
+  | { event: 'error'; message: string; cancelled?: boolean }
+
 export type ChatEvent =
   | { kind: 'entry'; chatId: string; entry: ChatEntry }
   | { kind: 'running'; chatId: string; running: boolean }
@@ -269,6 +341,8 @@ export type ChatEvent =
 export interface Transport {
   /** True on the web: no agents, no LilyPond to choose, files uploaded and downloaded. */
   readonly hosted: boolean
+  /** Whether the separation commands run here (D112); on the web they reject. */
+  readonly separation: SeparationAvailability
   /** A command's result; rejects with what the Rust side said, as a string or an Error. */
   call<T>(command: string, args?: Record<string, unknown>): Promise<T>
   /** Fire and forget, in the order sent. */

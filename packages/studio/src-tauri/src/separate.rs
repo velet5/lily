@@ -55,8 +55,11 @@ impl Stems {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SeparationStatus {
+    #[serde(skip_serializing_if = "Option::is_none")]
     root: Option<ProjectRoot>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     uv: Option<PathBuf>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     problem: Option<String>,
     running: bool,
 }

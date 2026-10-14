@@ -7,6 +7,8 @@ import type { Transport } from '../ipc'
 
 export const transport: Transport = {
   hosted: false,
+  // Lily Studio's app is the Mac's (D112).
+  separation: { available: true },
   call: (command, args) => invoke(command, args),
   send: (command, args) => {
     invoke(command, args).catch((error: unknown) => console.error(`${command}:`, error))

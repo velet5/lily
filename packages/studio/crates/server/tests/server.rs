@@ -308,6 +308,11 @@ async fn users_sign_in_and_work_only_in_their_own_scores() {
     assert!(error.contains("outside your scores"), "{error}");
     let error = page.call("chat_list", json!({})).await.unwrap_err();
     assert!(error.contains("not of Lily Studio on the web"), "{error}");
+    let error = page
+        .call("separate", json!({ "request": { "input": sample } }))
+        .await
+        .unwrap_err();
+    assert!(error.contains("not of Lily Studio on the web"), "{error}");
 
     // A folder, an upload into it, and the same file back.
     let parts = page

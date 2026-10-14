@@ -1,7 +1,8 @@
 // The only bridge between the renderer and Lily Studio's Rust side (DECISIONS
 // D28, D42): `studio`, one command per call (src-tauri/src/commands.rs), and
 // one channel that brings everything the Rust side starts itself — menu
-// commands, compiles, changes on disk and the agents' chats. Binary data
+// commands, compiles, changes on disk, the agents' chats and stem separations
+// (D112). Binary data
 // travels as base64 and is a Uint8Array here. `transport` carries them: the
 // app's Tauri IPC, or on the web the socket to the user's worker (D55).
 import type {
@@ -24,6 +25,11 @@ import type {
   PdfOutcome,
   PlaybackSetup,
   RecentList,
+  SeparationAvailability,
+  SeparationEvent,
+  SeparationModel,
+  SeparationRequest,
+  SeparationStatus,
   SetupLink,
   SourceLocation,
   TemplateId,
@@ -43,6 +49,7 @@ type StudioEvent =
   | { type: 'chat'; event: ChatEvent }
   | { type: 'recentChanged' }
   | { type: 'openRecent'; path: string }
+  | { type: 'separation'; event: SeparationEvent }
 
 function bytes(base64: string): Uint8Array {
   const binary = atob(base64)
@@ -91,6 +98,7 @@ const listeners = {
   chat: new Set<Listener<ChatEvent>>(),
   recentChanged: new Set<Listener<void>>(),
   openRecent: new Set<Listener<string>>(),
+  separation: new Set<Listener<SeparationEvent>>(),
 }
 
 function dispatch(event: StudioEvent): void {
@@ -109,6 +117,8 @@ function dispatch(event: StudioEvent): void {
       return listeners.recentChanged.forEach((listener) => listener())
     case 'openRecent':
       return listeners.openRecent.forEach((listener) => listener(event.path))
+    case 'separation':
+      return listeners.separation.forEach((listener) => listener(event.event))
   }
 }
 
@@ -254,6 +264,35 @@ export const studio = {
   upload: (folder: string | undefined): Promise<Opened | undefined> => transport.upload?.(folder) ?? Promise.resolve(undefined),
   /** Web only: saves `file` in the browser's downloads. */
   download: (file: string): Promise<void> => transport.download?.(file) ?? Promise.resolve(),
+  /**
+   * Whether stems can be separated here (D112): in the app, not on the web,
+   * where every separation call rejects with `reason`.
+   */
+  separationAvailable: (): SeparationAvailability => transport.separation,
+  /** Where the separation's project and uv are, and what is missing. */
+  separationStatus: (): Promise<SeparationStatus> => call('separation_status'),
+  /** The models karaoke-mlx knows; rejects when the project or uv is missing. */
+  separationModels: (): Promise<SeparationModel[]> => call('separation_models'),
+  /**
+   * Separates `request`'s song next to it, one separation at a time; resolves
+   * with the stems' folder. Its progress, and its `done` or `error`, arrive on
+   * onSeparation; a cancelled one rejects with "Cancelled.".
+   */
+  separate: async (request: SeparationRequest): Promise<string> => {
+    await subscribed
+    return call('separate', { request })
+  },
+  /** Ends the running separation; false when none was running. */
+  cancelSeparation: (): Promise<boolean> => call('separation_cancel'),
+  /**
+   * Asks where to save a mix of `files`, stems of one separation, and writes
+   * it; undefined when the panel was cancelled.
+   */
+  mixStems: (files: string[]): Promise<string | undefined> => call<string | null>('mix_stems', { files }).then(orUndefined),
+  /** Shows a separated folder, or a stem in one, in the Finder. */
+  revealInFinder: (path: string): Promise<void> => call('reveal_in_finder', { path }),
+  /** Runs `listener` for each event of the running separation: progress, then `done` or `error`. */
+  onSeparation: (listener: Listener<SeparationEvent>): (() => void) => subscribe(listeners.separation, listener),
   /** Runs `listener` when open files or the score's includes change on disk (D34). */
   onFilesChanged: (listener: Listener<FileChange[]>): (() => void) => subscribe(listeners.filesChanged, listener),
 }
