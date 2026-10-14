@@ -2718,7 +2718,11 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   are asked for when Stems is first shown, not at launch, since that starts
   Python, and again after each separation, which may have downloaded one. A
   missing project or uv shows its reason with *Check again* in place of the
-  models. The status line follows a separation in either workspace.
+  models. The status line follows a separation in either workspace. The
+  bar shows karaoke-mlx's `progress` stages, not its `status` lines, which
+  are its log, as RoFormer's app did. The channel's `done` may come after
+  the `separate` command has answered, and still shows the stems of the song
+  and model it was started with.
 - **Choosing the song.** `choose_song` (separate.rs) opens AppKit's panel
   for the formats karaoke-mlx's ffmpeg reads; the web's stub and the worker
   refuse it with the others. Tauri takes files dropped on the window, so the

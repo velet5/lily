@@ -163,8 +163,8 @@ describe('progress', () => {
     }
   })
 
-  test('a status message is shown as it is; done and error are not progress', () => {
-    assert.deepEqual(progressOf({ event: 'status', message: 'Loading becruily' }), { label: 'Loading becruily' })
+  test('status lines, done and error are not progress', () => {
+    assert.equal(progressOf({ event: 'status', message: 'separating with BS-RoFormer SW, 6 stems (jarredou)' }), undefined)
     assert.equal(progressOf({ event: 'done', outputs: [], folder: '/s', seconds: 3 }), undefined)
     assert.equal(progressOf({ event: 'error', message: 'Cancelled.', cancelled: true }), undefined)
   })

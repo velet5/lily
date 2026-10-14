@@ -117,12 +117,12 @@ export function elapsed(seconds: number): string {
 }
 
 /**
- * What the progress bar shows for a progress or status event: the stage, and
- * how far as 0 to 1, or undefined for a stage that does not say. Undefined
- * for the other events.
+ * What the progress bar shows for a progress event: the stage, and how far
+ * as 0 to 1, or undefined for a stage that does not say. Undefined for the
+ * other events; a status event is karaoke-mlx's log line, which RoFormer's
+ * app did not show either.
  */
 export function progressOf(event: SeparationEvent): { label: string; value?: number } | undefined {
-  if (event.event === 'status') return { label: event.message }
   if (event.event !== 'progress') return undefined
   const label = STAGES[event.stage] ?? event.stage
   return MEASURED.has(event.stage) ? { label, value: Math.min(1, Math.max(0, event.value)) } : { label }
@@ -185,6 +185,14 @@ export class SeparateView {
   private overlap = DEFAULT_OVERLAP
   private loading: Promise<void> | undefined
   private running = false
+  /**
+   * Until the separation started here has sent its `done` or `error`. The
+   * channel's events and the command's answer come by different ways, so
+   * `done` may arrive after `separate` has resolved.
+   */
+  private awaiting = false
+  /** The song and the kind of model of the separation started last. */
+  private started: { song: string; task: SeparationModel['task'] } = { song: '', task: 'karaoke' }
   private cancelled = false
   private mixing = false
   private separated: Separated | undefined
@@ -445,7 +453,9 @@ export class SeparateView {
     const model = this.current()
     if (!this.song || !model || this.running) return
     const song = this.song
+    this.started = { song, task: model.task }
     this.running = true
+    this.awaiting = true
     this.cancelled = false
     this.separated = undefined
     this.error.hidden = true
@@ -490,24 +500,28 @@ export class SeparateView {
   }
 
   private onEvent(event: SeparationEvent): void {
-    if (!this.running) return
+    if (!this.awaiting) return
     const progress = progressOf(event)
-    if (progress && !this.cancelled) {
+    if (progress) {
+      if (!this.running || this.cancelled) return
       this.showProgress(progress)
-      const line = statusLine(baseName(this.song ?? ''), progress)
+      const line = statusLine(baseName(this.started.song), progress)
       if (line !== this.lastStatus) this.options.onStatus((this.lastStatus = line))
     } else if (event.event === 'done') {
+      this.awaiting = false
       this.separated = {
-        song: this.song ?? '',
-        task: this.current()?.task,
+        song: this.started.song,
+        task: this.started.task,
         folder: event.folder,
         outputs: event.outputs,
         seconds: event.seconds,
       }
       this.showResults(this.separated)
+      this.refresh()
       this.options.onStatus(`Separated ${baseName(this.separated.song)} in ${elapsed(event.seconds)}`)
-    } else if (event.event === 'error' && !event.cancelled) {
-      this.showError(event.message)
+    } else if (event.event === 'error') {
+      this.awaiting = false
+      if (!event.cancelled) this.showError(event.message)
     }
   }
 
