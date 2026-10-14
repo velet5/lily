@@ -356,6 +356,9 @@ export class SeparateView {
     this.menu = element('div', 'preview-menu separate-menu')
     this.menu.setAttribute('role', 'menu')
     this.menu.hidden = true
+    // WebKit gives a clicked button no focus: the press would blur the menu,
+    // which hides it, and the release would land on what was under it.
+    this.menu.addEventListener('mousedown', (event) => event.preventDefault())
     this.menu.addEventListener('focusout', (event) => {
       if (!this.menu.contains(event.relatedTarget as Node | null)) this.menu.hidden = true
     })
