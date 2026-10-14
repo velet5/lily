@@ -2,9 +2,9 @@
 // D28, D42): `studio`, one command per call (src-tauri/src/commands.rs), and
 // one channel that brings everything the Rust side starts itself — menu
 // commands, compiles, changes on disk, the agents' chats and stem separations
-// (D112). Binary data
-// travels as base64 and is a Uint8Array here. `transport` carries them: the
-// app's Tauri IPC, or on the web the socket to the user's worker (D55).
+// (D112). Binary data travels as base64 and is a Uint8Array here. `transport`
+// carries them: the app's Tauri IPC, or on the web the socket to the user's
+// worker (D55).
 import type {
   AgentId,
   AgentStatus,
