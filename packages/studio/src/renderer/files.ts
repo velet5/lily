@@ -1,7 +1,8 @@
 // The file list in the left pane (DECISIONS D29): the LilyPond files of the
 // open folder as a tree, the one in the editor highlighted, unsaved ones
 // marked. `fileRows` is pure so the tests can run it without a DOM.
-import type { FolderListing, ScoreFile } from '../ipc'
+import type { FolderListing, ScoreFile, Transcription } from '../ipc'
+import { RelativeWriter, drums, keyCommand, keyWords, partial, pickupTempo, voice, type VoiceText } from './notation'
 
 export type Row =
   | { kind: 'directory'; name: string; depth: number }
@@ -140,10 +141,12 @@ export function button(label: string, onClick: () => void): HTMLButtonElement {
   return element
 }
 
-// ---- A score for a stem (DECISIONS D112) ----
-// The Separate view's *New score for bass…* writes one beside the stems, set
-// up for the instrument, with no notes yet: they are written by ear while the
-// stem plays under the preview. Its `% Stem:` line names the stem, so the
+// ---- A score for a stem (DECISIONS D112, D113) ----
+// The Separate view's *New score for bass* writes one beside the stems, set
+// up for the instrument. With lily-transcribe's transcription it holds the
+// stem's notes on the song's tempo, meter and key, from its start to its end;
+// without one it has four empty bars, to be written by ear. Either way the
+// stem plays under the preview, and its `% Stem:` line names the stem, so the
 // preview finds it again whenever the score is shown.
 
 /** How a stem's score is set up: its staff, clef and MIDI sound, and the words for them. */
@@ -151,15 +154,18 @@ interface StemInstrument {
   staff: 'voice' | 'drums' | 'piano' | 'single'
   /** The music's variable in the score. */
   variable: string
+  /** The clef; for vocals and the rest, the one an empty score starts with. */
   clef: string
-  /** Where `\relative` starts. */
+  /** Where an empty score's `\relative` starts. */
   relative: string
   /** LilyPond's General MIDI name. */
   midi: string
   /** The staff and clef, and the sound, in the menu's words. */
   clefWords: string
   soundWords: string
-  /** Guitar, piano and the rest are the hardest to write down by ear (#1199). */
+  /** What lily-transcribe makes of it (its packages/transcribe instruments.py). */
+  family: Transcription['family']
+  /** Chords, not a tune: their transcription is a rough draft. */
   hard: boolean
 }
 
@@ -171,26 +177,30 @@ const single = (variable: string, clef: string, relative: string, midi: string, 
   midi,
   clefWords,
   soundWords,
+  family: hard ? 'chords' : 'melody',
   hard,
 })
 
-/** karaoke-mlx's stems; any other is written on a treble staff for piano. */
+/** karaoke-mlx's stems; any other is written as piano chords. */
 const STEM_INSTRUMENTS: Record<string, StemInstrument> = {
   vocals: { ...single('melody', 'treble', "c'", 'voice oohs', 'Treble clef with words', 'voice', false), staff: 'voice' },
-  drums: { ...single('kit', '', '', '', 'Drum staff', 'drum kit', false), staff: 'drums' },
+  drums: { ...single('kit', '', '', '', 'Drum staff', 'drum kit', false), staff: 'drums', family: 'drums' },
   bass: single('bass', 'bass_8', 'c,', 'electric bass (finger)', 'Bass clef', 'electric bass', false),
   guitar: single('guitar', 'treble_8', 'c', 'electric guitar (clean)', 'Guitar clef', 'clean electric guitar', true),
   piano: { ...single('upper', 'treble', "c'", 'acoustic grand', 'Two piano staves', 'grand piano', true), staff: 'piano' },
   other: single('music', 'treble', "c'", 'string ensemble 1', 'Treble clef', 'strings', true),
-  instrumental: single('music', 'treble', "c'", 'acoustic grand', 'Treble clef', 'piano', true),
+  instrumental: { ...single('upper', 'treble', "c'", 'acoustic grand', 'Two piano staves', 'piano', true), staff: 'piano' },
 }
 
 function stemInstrument(stem: string): StemInstrument {
-  return STEM_INSTRUMENTS[stem] ?? single('music', 'treble', "c'", 'acoustic grand', 'Treble clef', 'piano', true)
+  return STEM_INSTRUMENTS[stem] ?? { ...single('upper', 'treble', "c'", 'acoustic grand', 'Two piano staves', 'piano', true), staff: 'piano' }
 }
 
-/** The bars of rest a stem's score starts with, to be written over. */
+/** The bars of rest an empty score starts with, to be written over. */
 const EMPTY_BARS = 'R1*4 |'
+
+/** A piano score's hands part at middle C. */
+const MIDDLE_C = 60
 
 export interface StemScoreRequest {
   /** The stem as karaoke-mlx names it: `bass`, `vocals`… */
@@ -201,6 +211,8 @@ export interface StemScoreRequest {
   file: string
   /** The song's name, for the title. */
   song: string
+  /** What lily-transcribe heard in the stem; without it the score is empty, to be written by ear. */
+  transcription?: Transcription
 }
 
 export interface StemScore {
@@ -223,39 +235,122 @@ function fileName(path: string): string {
 }
 
 /**
- * The score for `request`'s stem: an instrument's staff with four empty bars,
- * `\layout` and `\midi`, titled after the song, its `% Stem:` line naming the
- * stem's file. It engraves without warnings.
+ * A song's file name as a title, and the artist when the name has one
+ * (`artist - title`, or `artist_-_title` as downloads write it, where the
+ * artist's words are joined with hyphens): underscores become spaces, and a
+ * name all in lower case gets its capitals.
  */
-export function stemScore({ stem, title, file, song }: StemScoreRequest): StemScore {
+export function songTitle(song: string): { title: string; artist?: string } {
+  const words = (text: string) => text.replace(/_+/g, ' ').replace(/\s+/g, ' ').trim()
+  const lower = song === song.toLowerCase()
+  const capital = (text: string) => (lower ? text.charAt(0).toUpperCase() + text.slice(1) : text)
+  const parts = /^(.+?)\s*(_-_| - | – | — )\s*(.+)$/.exec(song)
+  if (!parts) return { title: capital(words(song)) || song }
+  const slug = parts[2] === '_-_'
+  const artist = words(slug ? parts[1]!.replace(/-/g, ' ') : parts[1]!)
+  return {
+    title: capital(words(parts[3]!)),
+    artist: lower ? artist.replace(/(^|\s)(\S)/g, (_, space: string, letter: string) => space + letter.toUpperCase()) : artist,
+  }
+}
+
+/** The middle of the pitches the notes sound, for a clef; undefined with none. */
+function medianPitch(notes: Transcription['notes']): number | undefined {
+  const pitches = notes.flatMap(([, , sounding]) => sounding).sort((a, b) => a - b)
+  return pitches.length ? pitches[Math.floor(pitches.length / 2)] : undefined
+}
+
+/** The clef for what was heard: a man's voice an octave down, low strings in the bass clef. */
+function transcribedClef(stem: string, instrument: StemInstrument, notes: Transcription['notes']): string {
+  const middle = medianPitch(notes)
+  if (middle === undefined) return instrument.clef
+  if (instrument.staff === 'voice') return middle < 57 ? 'treble_8' : 'treble'
+  if (stem === 'other' || !STEM_INSTRUMENTS[stem]) return middle < 55 ? 'bass' : 'treble'
+  return instrument.clef
+}
+
+/** The opening lines of a transcribed staff's music: clef, key, meter, tempo, the pickup, then its bars. */
+function transcribedMusic(t: Transcription, text: VoiceText, options: { clef: string; timing: boolean; drums: boolean }): string[] {
+  const lines: string[] = []
+  if (options.clef) lines.push(`  \\clef "${options.clef}"`)
+  if (!options.drums) lines.push(`  ${keyCommand(t.key)}`)
+  lines.push(`  \\time ${t.beatsPerBar}/4`, '  \\compressEmptyMeasures')
+  const bpm = Math.round(t.bpm)
+  if (options.timing) {
+    if (!t.steady) {
+      lines.push(`  % The song's tempo drifts: the MIDI keeps ♩ = ${bpm} and drifts from the stem.`)
+    } else if (bpm !== t.bpm) {
+      const beats = t.seconds / (60 / t.bpm)
+      const drift = Math.abs(beats * (60 / bpm - 60 / t.bpm))
+      lines.push(`  % The stem's tempo is ♩ = ${t.bpm}: the MIDI's ${bpm} is ${drift.toFixed(1)} s off it by the end.`)
+    }
+  }
+  if (text.pickup !== undefined) {
+    lines.push(`  ${partial(t.pickup)}`)
+    if (options.timing) lines.push('  % The MIDI keeps time with the stem: this bar lasts as long as the stem', '  % plays before bar 1.', `  ${pickupTempo(t.pickup, t.barOne)}`)
+    lines.push(`  ${text.pickup} |`)
+  }
+  if (options.timing) lines.push(`  \\tempo 4 = ${bpm}`)
+  lines.push(...text.bars.map((bar) => `  ${bar}`), '  \\bar "|."')
+  return lines
+}
+
+/**
+ * The score for `request`'s stem: the instrument's staff, `\layout` and
+ * `\midi`, titled after the song, its `% Stem:` line naming the stem's file.
+ * With a transcription it holds the stem's notes from its start to its end;
+ * without one, four empty bars. It engraves without warnings.
+ */
+export function stemScore({ stem, title, file, song, transcription }: StemScoreRequest): StemScore {
   const instrument = stemInstrument(stem)
   const name = stem.replace(/[^A-Za-z0-9 _-]+/g, '') || 'stem'
   const stemFile = fileName(file).replace(/[\r\n]+/g, ' ')
   const label = `"${lilyString(title)}"`
+  const heading = songTitle(song)
+  const t = transcription
   const lines = [
     '\\version "2.24.0"',
     '',
     `% Stem: ${stemFile}`,
-    '% Write the part by ear: the stem plays under the preview, alone or with the score.',
+    ...(t
+      ? [
+          `% Transcribed from the stem by Lily Studio: ♩ = ${Math.round(t.bpm)}, ${t.beatsPerBar}/4, ${keyWords(t.key)}, ${t.bars} bars.`,
+          instrument.hard
+            ? '% A rough draft of its chords: check them by ear, the stem plays under the preview.'
+            : '% Check it by ear: the stem plays under the preview, alone or with the score.',
+        ]
+      : ['% Write the part by ear: the stem plays under the preview, alone or with the score.']),
     '',
     '\\header {',
-    `  title = "${lilyString(song)} — ${lilyString(title)}"`,
+    `  title = "${lilyString(heading.title)}"`,
+    ...(heading.artist ? [`  subtitle = "${lilyString(heading.artist)}"`] : []),
+    `  instrument = ${label}`,
     '}',
     '',
   ]
-  const head = (variable: string, mode: string, clef: string) => [
-    `${variable} = ${mode} {`,
-    ...(clef ? [`  \\clef "${clef}"`, '  \\key c \\major'] : []),
-    '  \\time 4/4',
-    `  ${EMPTY_BARS}`,
-    '}',
-    '',
-  ]
-  const { staff, variable, clef, relative, midi } = instrument
-  let music: string[]
+  const layout = t && { pickup: t.pickup, bars: t.bars, beatsPerBar: t.beatsPerBar }
+  /** A staff's music variable: transcribed when there is a transcription, four empty bars when not. */
+  const music = (variable: string, mode: string, clef: string, notes?: Transcription['notes'], timing = true): string[] => {
+    if (!t || !layout) {
+      return [
+        `${variable} = ${mode} {`,
+        ...(clef ? [`  \\clef "${clef}"`, '  \\key c \\major'] : []),
+        '  \\time 4/4',
+        `  ${EMPTY_BARS}`,
+        '}',
+        '',
+      ]
+    }
+    const drumming = instrument.staff === 'drums'
+    const text = voice(notes ?? t.notes, layout, drumming ? drums : ((writer) => (pitches: readonly number[]) => writer.write(pitches))(new RelativeWriter(t.key)))
+    return [`${variable} = ${drumming ? '\\drummode' : '\\relative'} {`, ...transcribedMusic(t, text, { clef, timing, drums: drumming }), '}', '']
+  }
+  const { staff, variable, relative, midi } = instrument
+  const clef = t ? transcribedClef(stem, instrument, t.notes) : instrument.clef
+  let body: string[]
   if (staff === 'voice') {
-    music = [
-      ...head(variable, `\\relative ${relative}`, clef),
+    body = [
+      ...music(variable, `\\relative ${relative}`, clef),
       'words = \\lyricmode {',
       '}',
       '',
@@ -266,16 +361,18 @@ export function stemScore({ stem, title, file, song }: StemScoreRequest): StemSc
       `      midiInstrument = "${midi}"`,
       `    } \\new Voice = "${variable}" { \\${variable} }`,
       // Lyrics over a tune of rests alone warn once the preview maps playback.
-      '    % The words: take the % off the next line once the tune has notes.',
+      t ? '    % The words: write them in \\words, then take the % off the next line.' : '    % The words: take the % off the next line once the tune has notes.',
       `    % \\new Lyrics \\lyricsto "${variable}" { \\words }`,
       '  >>',
     ]
   } else if (staff === 'drums') {
-    music = [...head(variable, '\\drummode', ''), '\\score {', `  \\new DrumStaff \\with { instrumentName = ${label} } \\${variable}`]
+    body = [...music(variable, '\\drummode', ''), '\\score {', `  \\new DrumStaff \\with { instrumentName = ${label} } \\${variable}`]
   } else if (staff === 'piano') {
-    music = [
-      ...head('upper', "\\relative c'", 'treble'),
-      ...head('lower', '\\relative c', 'bass'),
+    const hand = (upper: boolean): Transcription['notes'] | undefined =>
+      t?.notes.map(([at, length, pitches]) => [at, length, pitches.filter((pitch) => pitch >= MIDDLE_C === upper)])
+    body = [
+      ...music('upper', "\\relative c'", 'treble', hand(true)),
+      ...music('lower', '\\relative c', 'bass', hand(false), false),
       '\\score {',
       `  \\new PianoStaff \\with {`,
       `    instrumentName = ${label}`,
@@ -286,8 +383,8 @@ export function stemScore({ stem, title, file, song }: StemScoreRequest): StemSc
       '  >>',
     ]
   } else {
-    music = [
-      ...head(variable, `\\relative ${relative}`, clef),
+    body = [
+      ...music(variable, `\\relative ${relative}`, clef),
       '\\score {',
       `  \\new Staff \\with {`,
       `    instrumentName = ${label}`,
@@ -295,8 +392,9 @@ export function stemScore({ stem, title, file, song }: StemScoreRequest): StemSc
       `  } \\${variable}`,
     ]
   }
-  const text = [...lines, ...music, '  \\layout { }', '  \\midi { }', '}', ''].join('\n')
-  const hint = `${instrument.clefWords}, “${title}”, ${instrument.soundWords} sound. Saved as ${name}.ly beside the stems; the stem plays under the preview.`
+  const text = [...lines, ...body, '  \\layout { }', '  \\midi { }', '}', ''].join('\n')
+  const what = instrument.family === 'drums' ? 'Kick, snare and hi-hat of the drums' : instrument.hard ? `A rough draft of the ${title.toLowerCase()}’s chords` : `The ${title.toLowerCase()}’s notes`
+  const hint = `${what}, transcribed from the stem with the song’s tempo, key and bars: ${instrument.clefWords.charAt(0).toLowerCase()}${instrument.clefWords.slice(1)}, ${instrument.soundWords} sound. Saved as ${name}.ly beside the stems; the stem plays under the preview.`
   return { name, text, hint, hard: instrument.hard }
 }
 
