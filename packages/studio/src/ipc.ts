@@ -328,6 +328,40 @@ export type SeparationEvent =
   | { event: 'error'; message: string; cancelled?: boolean }
 
 /**
+ * A stem as lily-transcribe heard it (D113): the song's tempo, meter, key
+ * and length, and the stem's notes on that grid.
+ */
+export interface Transcription {
+  stem: string
+  /** One note at a time (bass, vocals), a draft of chords (guitar, piano…), or drum hits. */
+  family: 'melody' | 'chords' | 'drums'
+  /** The stem's length. */
+  seconds: number
+  /** Quarter notes per minute, to the thousandth. */
+  bpm: number
+  /** One tempo fits the whole song, so the score's MIDI keeps time with the stem. */
+  steady: boolean
+  /** Quarter-note beats per bar. */
+  beatsPerBar: number
+  /** Seconds from the stem's start to bar 1. */
+  barOne: number
+  /** Sixteenths before bar 1: `barOne`, on the grid. */
+  pickup: number
+  /** Bars from bar 1 to the end of the stem. */
+  bars: number
+  /** The song's key; `tonic` is a pitch class, 0 for C. */
+  key: { tonic: number; mode: 'major' | 'minor'; fit: number }
+  /** `[at, length, pitches]`: sixteenths from bar 1 (negative in the pickup) and MIDI pitches, or General MIDI drums. */
+  notes: [number, number, number[]][]
+}
+
+/** What lily-transcribe prints while it works (D113); it ends with `done` or `error`. */
+export type TranscriptionEvent =
+  | { event: 'progress'; stage: 'decode' | 'beats' | 'key' | 'notes' }
+  | { event: 'done'; transcription: Transcription; seconds: number }
+  | { event: 'error'; message: string; cancelled?: boolean }
+
+/**
  * Files dragged over the app's window (D112): their paths on `enter`, and on
  * `drop`. The web has none.
  */

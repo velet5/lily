@@ -31,6 +31,8 @@ import type {
   SeparationModel,
   SeparationRequest,
   SeparationStatus,
+  Transcription,
+  TranscriptionEvent,
   SetupLink,
   SourceLocation,
   TemplateId,
@@ -51,6 +53,7 @@ type StudioEvent =
   | { type: 'recentChanged' }
   | { type: 'openRecent'; path: string }
   | { type: 'separation'; event: SeparationEvent }
+  | { type: 'transcription'; event: TranscriptionEvent }
 
 function bytes(base64: string): Uint8Array {
   const binary = atob(base64)
@@ -100,6 +103,7 @@ const listeners = {
   recentChanged: new Set<Listener<void>>(),
   openRecent: new Set<Listener<string>>(),
   separation: new Set<Listener<SeparationEvent>>(),
+  transcription: new Set<Listener<TranscriptionEvent>>(),
   fileDrop: new Set<Listener<FileDrop>>(),
 }
 
@@ -121,6 +125,8 @@ function dispatch(event: StudioEvent): void {
       return listeners.openRecent.forEach((listener) => listener(event.path))
     case 'separation':
       return listeners.separation.forEach((listener) => listener(event.event))
+    case 'transcription':
+      return listeners.transcription.forEach((listener) => listener(event.event))
   }
 }
 
@@ -306,6 +312,17 @@ export const studio = {
    * file beside it; it plays from stemUrl from now on. Rejects when there is none.
    */
   attachStem: (score: string, stem: string): Promise<string> => call('attach_stem', { score, stem }),
+  /**
+   * Transcribes `stem`, a stem of a separation finished in this run, as
+   * `instrument` (its stem name: `bass`, `vocals`…; D113), one at a time.
+   * Its progress, and its `done` or `error`, arrive on onTranscription.
+   */
+  transcribeStem: async (stem: string, instrument: string): Promise<Transcription> => {
+    await subscribed
+    return call('transcribe_stem', { stem, instrument })
+  },
+  /** Runs `listener` for each event of the running transcription: progress, then `done` or `error`. */
+  onTranscription: (listener: Listener<TranscriptionEvent>): (() => void) => subscribe(listeners.transcription, listener),
   /** Where `<audio>` plays a stem from: one of a separation finished in this run, or an attached one. */
   stemUrl: (path: string): string => transport.fileUrl?.(path) ?? '',
   /** Runs `listener` for files dragged over the app's window and dropped; never on the web. */

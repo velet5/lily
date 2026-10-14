@@ -165,6 +165,7 @@ pub fn run() {
             separate::reveal_in_finder,
             separate::new_score_for_stem,
             separate::attach_stem,
+            separate::transcribe_stem,
             smoke::smoke_folder,
             smoke::smoke_read,
             smoke::smoke_write,
@@ -184,10 +185,12 @@ pub fn run() {
     };
 
     app.run(|app, event| {
-        // Stop lilypond, the agents and a separation, and delete the pages in
-        // the temp directory before exiting; the smoke test's folder goes too.
+        // Stop lilypond, the agents, a separation and a transcription, and
+        // delete the pages in the temp directory before exiting; the smoke
+        // test's folder goes too.
         if let RunEvent::Exit = event {
             app.state::<Stems>().separator.cancel();
+            app.state::<Stems>().transcriber.cancel();
             let studio = app.state::<Arc<Studio>>().inner().clone();
             tauri::async_runtime::block_on(studio.dispose());
             if let Some(smoke) = &app.state::<Smoke>().0 {

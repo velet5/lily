@@ -4,15 +4,19 @@
 //! channel as a `separation` event. Before a `done` event is passed on, its
 //! folder is let into the asset protocol's scope, which starts empty, so the
 //! page can play the stems. Mixing and Show in Finder take only files in a
-//! folder separated in this run of the app. A stem leads to a score: one is
-//! written beside it, and a score's stem, the file its `% Stem:` line names
-//! beside it, may be played under the preview. The web server has none of
-//! this (D55).
+//! folder separated in this run of the app. A stem leads to a score:
+//! lily-transcribe transcribes it (D113), the page writes the score from
+//! that, and the score is written beside it. A score's stem, the file its
+//! `% Stem:` line names beside it, may be played under the preview. The web
+//! server has none of this (D55).
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use lily_engrave::files::unused_name;
-use lily_separate::{ProjectRoot, ROOT_VARIABLE, Request, Separator, Sidecar};
+use lily_separate::{
+    ProjectRoot, ROOT_VARIABLE, Request, Separator, Sidecar, TRANSCRIBE_ROOT, TRANSCRIBE_VARIABLE,
+    Transcriber,
+};
 use lily_session::{Opened, Studio, StudioEvent, lock};
 use serde::Serialize;
 use serde_json::Value;
@@ -25,10 +29,12 @@ use crate::smoke::Smoke;
 
 type Answer<T> = Result<T, String>;
 
-/// The one separation that may run, and the folders it wrote this run.
+/// The one separation and the one transcription that may run, and the
+/// folders separated this run.
 #[derive(Default)]
 pub struct Stems {
     pub separator: Separator,
+    pub transcriber: Transcriber,
     folders: Mutex<Vec<PathBuf>>,
 }
 
@@ -89,6 +95,22 @@ fn sidecar(studio: &Studio) -> Answer<Sidecar> {
     Ok(Sidecar {
         uv,
         root: root.path,
+        search_path,
+    })
+}
+
+/// How to run lily-transcribe now (D113): `packages/transcribe`, or the
+/// project `LILY_TRANSCRIBE_ROOT` names, with the same uv.
+fn transcriber(studio: &Studio) -> Answer<Sidecar> {
+    let root = lily_separate::transcribe_root(
+        std::env::var_os(TRANSCRIBE_VARIABLE),
+        Path::new(TRANSCRIBE_ROOT),
+    )?;
+    let search_path = studio.search_path.get();
+    let uv = lily_separate::find_uv(&search_path, home().as_deref())?;
+    Ok(Sidecar {
+        uv,
+        root,
         search_path,
     })
 }
@@ -242,6 +264,28 @@ pub async fn new_score_for_stem(
         .ok_or_else(|| format!("{} is not a stem.", stem.display()))?;
     let file = write_new_score(folder, &name, &text).await?;
     Ok(studio.open_file_at(&file).await)
+}
+
+/// Transcribes `stem`, a stem in a folder separated this run, as `instrument`
+/// (`bass`, `vocals`…; D113), and answers lily-transcribe's transcription,
+/// which the page writes a score from. Each of its events goes to the page as
+/// a `transcription` event.
+#[tauri::command]
+pub async fn transcribe_stem(
+    studio: State<'_, Arc<Studio>>,
+    stems: State<'_, Stems>,
+    stem: PathBuf,
+    instrument: String,
+) -> Answer<Value> {
+    let stem = stems.check(&stem)?;
+    let sidecar = transcriber(&studio)?;
+    let studio = studio.inner().clone();
+    stems
+        .transcriber
+        .transcribe(&sidecar, &stem, &instrument, |event| {
+            studio.send(StudioEvent::Transcription { event });
+        })
+        .await
 }
 
 /// The stem `stem`, as a score's `% Stem:` line names it (files.ts's

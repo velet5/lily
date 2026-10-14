@@ -43,6 +43,9 @@ pub enum StudioEvent {
     /// A stem separation's event, as karaoke-mlx prints it (D112). Only the
     /// app sends it: the web worker cannot separate.
     Separation { event: serde_json::Value },
+    /// A stem's transcription's event, as lily-transcribe prints it (D113).
+    /// Only the app sends it, as it does a separation's.
+    Transcription { event: serde_json::Value },
 }
 
 /// The last finished outcomes kept, so switching back to a score shows it at once (D39).

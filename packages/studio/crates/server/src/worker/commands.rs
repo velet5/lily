@@ -50,6 +50,7 @@ const DESKTOP_ONLY: &[&str] = &[
     "reveal_in_finder",
     "new_score_for_stem",
     "attach_stem",
+    "transcribe_stem",
 ];
 
 pub struct Worker {
