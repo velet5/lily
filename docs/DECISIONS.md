@@ -2923,8 +2923,8 @@ chords for the hard stems and kick, snare and hi-hat for drums, 2026-10-14)
   Basic Pitch hears a fifth or a twelfth above pYIN, and the spectrum does
   not say which is right. The drums give a steady groove: kick on 1, 3, 4 and
   the "and" of 4, snare on 2, the "a" of 2 and the "and" of 3, hi-hat on the
-  eighths. A first transcription of a song took about 25 s, and each further
-  stem about 10 s.
+  eighths. In the app, *New score for bass* took 15 to 19 s for a song not
+  yet transcribed, and a further stem of it about 10 s.
 - **Not done yet.** The vocals are a first draft: vibrato and glides still
   leave fragments and accidentals. No lyrics. The meter and bar 1 are not yet
   shown for the user to confirm (#1199 §4), and a drifting song's MIDI does
@@ -2947,4 +2947,4 @@ chords for the hard stems and kick, snare and hi-hat for drums, 2026-10-14)
   scores of the test song's six stems engrave without warnings on LilyPond
   2.24.4 and 2.26.0. With `LILY_SMOKE_SONG`, the smoke test transcribes the
   bass in the real app and checks bass.ly's tempo, notes and bars against
-  the stem.
+  the stem; on the test song: ♩ = 123, 4/4, C minor, 115 bars for 3:43.
