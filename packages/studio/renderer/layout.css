@@ -2,7 +2,8 @@
    editor in the middle, the preview on the right, a status line along the
    bottom. The panes cannot be moved or hidden; the sidebar's width and the
    split between its files and the agents' accordion follow their edges when
-   dragged (D40). */
+   dragged (D40). The Stems workspace (D112) covers the files, the editor and
+   the preview, which keep their size and state behind it. */
 
 :root {
   --sidebar-width: 240px;
@@ -83,8 +84,27 @@ body {
   border-right: 1px solid var(--border);
 }
 
-.files {
+/* The files and the separations share one place in the sidebar. */
+.sidebar-panes {
   flex: 1 1 0;
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  min-height: 0;
+}
+
+.sidebar-panes > .pane {
+  grid-area: 1 / 1;
+}
+
+/* Over the editor's and the preview's columns. */
+.stems {
+  grid-area: 1 / 2 / 2 / 4;
+  background: var(--bg);
+}
+
+/* The other workspace's panes (sidebar.ts), still laid out. */
+.studio [data-away] {
+  visibility: hidden;
 }
 
 .editor {
@@ -474,6 +494,38 @@ button:focus-visible,
 .preview-tabs button[aria-selected='true'] {
   background: var(--selected);
   color: var(--fg);
+}
+
+/* Scores | Stems at the top of the sidebar (D112), drawn as the preview's
+   SVG | PDF. */
+.workspace-switch {
+  flex: none;
+  display: flex;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.workspace-switch button {
+  flex: 1;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 0;
+  font-size: 12px;
+}
+
+.workspace-switch button:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.workspace-switch button:last-child {
+  border-left: 0;
+  border-radius: 0 4px 4px 0;
+}
+
+.workspace-switch button[aria-selected='true'] {
+  background: var(--selected);
+  color: var(--fg);
+  font-weight: 600;
 }
 
 .pdf-pages {
@@ -1225,7 +1277,8 @@ body[data-resizing='y'] {
 }
 
 body[data-resizing] .editor,
-body[data-resizing] .preview {
+body[data-resizing] .preview,
+body[data-resizing] .stems {
   pointer-events: none;
 }
 

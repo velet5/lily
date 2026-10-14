@@ -1,21 +1,21 @@
 // `npm run test:smoke` in packages/studio/ (DECISIONS D42): `lily-studio --smoke-test`
 // opens the real window on a scratch folder and loads this script into it,
-// which drives the page once — layout, Monaco, the file list, highlighting,
-// an edit, the unsaved marker, a save, the compile it starts, its pages in
-// the preview and a click on a note there, the PDF tab and Export PDF, an
-// error marked, an edit by another program reloaded and compiled, its MIDI
-// played with the notes marked, and unsaved edits in the preview with live
-// preview on — then hands a JSON report to the Rust side, which prints it and
-// exits 0 or 1. It starts on the welcome screen, sees LilyPond looked for,
-// and reads the error explained (D37). Opening a score engraves it without a
-// save, and the preview follows the editor from score to score (D39). The
-// sidebar's edge drags wider, and a stand-in for Claude Code answers a chat,
-// writes a score that the file list then shows, and continues its session on
-// the second message (D40). A selection's context menu explains it with the
-// agent, the lines attached (D41), and an image pasted into the message box
-// goes with the next message (D46). The Parts fold mutes the part, puts it on
-// another instrument and starts playback at a bar marked on the pages (D45);
-// Export MIDI writes smoke.mid (D54).
+// which drives the page once — layout, Scores | Stems (D112), Monaco, the file
+// list, highlighting, an edit, the unsaved marker, a save, the compile it
+// starts, its pages in the preview and a click on a note there, the PDF tab and
+// Export PDF, an error marked, an edit by another program reloaded and
+// compiled, its MIDI played with the notes marked, and unsaved edits in the
+// preview with live preview on — then hands a JSON report to the Rust side,
+// which prints it and exits 0 or 1. It starts on the welcome screen, sees
+// LilyPond looked for, and reads the error explained (D37). Opening a score
+// engraves it without a save, and the preview follows the editor from score to
+// score (D39). The sidebar's edge drags wider, and a stand-in for Claude Code
+// answers a chat, writes a score that the file list then shows, and continues
+// its session on the second message (D40). A selection's context menu explains
+// it with the agent, the lines attached (D41), and an image pasted into the
+// message box goes with the next message (D46). The Parts fold mutes the part,
+// puts it on another instrument and starts playback at a bar marked on the
+// pages (D45); Export MIDI writes smoke.mid (D54).
 //
 // The Rust side prepares the folder and the stand-in agent, and answers the
 // smoke_* commands: files on disk as another program sees them, and the menu.
@@ -123,6 +123,25 @@ async function main(): Promise<void> {
     if (pane.left <= right) problems.push(`pane ${pane.name} is not right of the one before`)
     right = pane.left
   })
+
+  // Scores | Stems (D112): Stems covers the files, the editor and the
+  // preview, which stay laid out behind it; Scores brings them back.
+  const away = (name: string) => $(`[data-pane="${name}"]`)?.hasAttribute('data-away')
+  const covers = ['files', 'editor', 'preview'] as const
+  click('.workspace-switch [data-workspace="stems"]')
+  const stems = $('[data-pane="stems"]')?.getBoundingClientRect()
+  const [, editorPane, previewPane] = layout.panes
+  const workspaces = {
+    stems: { away: covers.filter(away), shown: !away('stems') && !away('separations'), left: stems?.left, right: stems?.right },
+    scores: { away: [] as string[] },
+  }
+  if (workspaces.stems.away.length !== covers.length || !workspaces.stems.shown) problems.push(`Stems left ${covers.filter((name) => !away(name)).join(', ') || 'its panes'} showing`)
+  if (stems && editorPane && previewPane && (Math.abs(stems.left - editorPane.left) > 1 || Math.abs(stems.right - previewPane.left - previewPane.width) > 1)) {
+    problems.push(`the Separate view spans ${stems.left}–${stems.right}, not the editor and the preview`)
+  }
+  click('.workspace-switch [data-workspace="scores"]')
+  workspaces.scores.away = [...covers, 'stems', 'separations'].filter(away)
+  if (workspaces.scores.away.join() !== 'stems,separations') problems.push(`Scores leaves away ${workspaces.scores.away.join(', ')}`)
 
   // The welcome screen covers the editor until a score opens (D37), and says
   // whether LilyPond was found. A setup opened for a missing LilyPond is closed,
@@ -368,6 +387,9 @@ async function main(): Promise<void> {
   const sidebar: Record<string, unknown> = {}
   const width = () => $('[data-pane="sidebar"]')!.getBoundingClientRect().width
   const handle = $('.splitter-columns')!
+  // The width is remembered: each run's drag would widen it until it reached
+  // its limit. A double-click puts it back first.
+  handle.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
   const edge = handle.getBoundingClientRect()
   const pointer = (kind: string, x: number) =>
     handle.dispatchEvent(new PointerEvent(kind, { bubbles: true, clientX: x, clientY: edge.top + 50, button: 0, pointerId: 1 }))
@@ -475,7 +497,7 @@ async function main(): Promise<void> {
   }, 20_000)
 
   const ok = problems.length === 0
-  const report = { ok, problems, ...layout, welcome, listed, openedPages, switching, monaco: !!shown, colours, saved, compile, sidebar }
+  const report = { ok, problems, ...layout, workspaces, welcome, listed, openedPages, switching, monaco: !!shown, colours, saved, compile, sidebar }
   await invoke('smoke_done', { ok, report: JSON.stringify(report, null, 2) })
 }
 

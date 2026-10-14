@@ -2701,8 +2701,16 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   separations, in Application Support beside the others. Stems go next to
   the song in `<song> (stems)` or `<song> (karaoke)`, as RoFormer writes
   them. RoFormer MLX's own app stays buildable in its repository.
-- **Not done yet.** The switch, the Separate view, the stems-to-score path, the `separation.root` setting and
-  its setup card, `separations.json`, and moving the Python. Folders
+- **The switch** (`WorkspaceSwitch` in `src/renderer/sidebar.ts`) is a
+  tablist drawn where `separationAvailable()` says separation runs. Stems'
+  two panes lie over the files and over the editor's and the preview's
+  columns. The other workspace's panes are made invisible and inert, not
+  removed or hidden, so Monaco, the preview's zoom and scroll and the file
+  list stay as they were behind Stems. Each launch starts in Scores. Opening
+  a score or a folder, New Score and Help › Welcome go back to Scores.
+- **Not done yet.** The Separate view, the stems-to-score path, the
+  `separation.root` setting and its setup card, `separations.json`, and
+  moving the Python. Folders
   separated in an earlier run are not in the asset scope until a later step
   lets the recent separations in again.
 - **Verified.** `crates/separate`'s tests run stand-ins for uv: the root's
@@ -2714,4 +2722,7 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   `test/web.test.ts` checks that the stub rejects each command
   `src-tauri/src/lib.rs` registers, and only those, and that the worker
   refuses them too; crates/server's test asks a worker to separate.
-  Nothing was separated through the app yet.
+  `workspaceForKey` has unit tests, and the smoke test, in the real window,
+  switches to Stems, sees it cover the files and the editor's and the
+  preview's columns, and goes back to Scores. Nothing was separated through
+  the app yet.

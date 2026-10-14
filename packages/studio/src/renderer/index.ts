@@ -1,8 +1,9 @@
 // The renderer's entry point, bundled into dist/web/app.js: connects the
 // file list, the editor and the status line to `studio` (bridge.ts),
 // with the welcome screen and LilyPond's setup (D37), and the resizable
-// sidebar with the agents' accordion (D40). On the web (D55) the same page,
-// without the agents, and with upload and download.
+// sidebar with the agents' accordion (D40), and Scores | Stems at its top
+// (D112). On the web (D55) the same page, without the agents or Stems, and
+// with upload and download.
 import type { CompileEvent, FileChange, Opened } from '../ipc'
 import { AgentPanel, SELECTION_ACTIONS } from './agents'
 import { studio, type StudioApi } from './bridge'
@@ -13,7 +14,7 @@ import { addMidiBlock } from './midiBlock'
 import { PdfView } from './pdfView'
 import { ScorePlayer } from './player'
 import { ScorePreview } from './preview'
-import { Sidebar } from './sidebar'
+import { Sidebar, WorkspaceSwitch } from './sidebar'
 import { Welcome } from './welcome'
 
 declare global {
@@ -253,7 +254,22 @@ const agents = studio.hosted ? undefined : new AgentPanel({
   onTurnEnd: () => void studio.listFolder().then((listing) => listing && files.show(listing), report),
   onError: report,
 })
-const sidebar = new Sidebar({ studio: document.querySelector<HTMLElement>('.studio')!, sidebar: pane('sidebar'), agents: agentsPane })
+const studioGrid = document.querySelector<HTMLElement>('.studio')!
+const sidebar = new Sidebar({ studio: studioGrid, sidebar: pane('sidebar'), agents: agentsPane })
+// Scores | Stems (D112), where separation runs: Stems covers the files, the
+// editor and the preview, which go on as they were behind it.
+const workspace = studio.separationAvailable().available
+  ? new WorkspaceSwitch({
+      studio: studioGrid,
+      tabs: pane('sidebar').querySelector<HTMLElement>('.workspace-switch')!,
+      panes: { scores: [filesPane, editorPane, previewPane], stems: [pane('separations'), pane('stems')] },
+    })
+  : undefined
+
+/** Back to Scores, for what opens a score or shows the files or the welcome screen. */
+function showScores(): void {
+  workspace?.show('scores')
+}
 if (agents) {
   void agents.refreshSetup()
   // The selection's context menu: ask, explain or fix it with the agent (D41).
@@ -377,6 +393,7 @@ async function addMidi(): Promise<void> {
 async function open(file: string): Promise<void> {
   try {
     const text = editor.isOpen(file) ? undefined : await studio.readFile(file)
+    showScores()
     welcome.hide()
     monacoHost.hidden = false
     editor.show(file, text)
@@ -392,6 +409,7 @@ async function run(opening: Promise<Opened | undefined>): Promise<void> {
   try {
     const opened = await opening
     if (!opened) return
+    showScores()
     files.show(opened.listing)
     void agents?.folderChanged(opened.listing.folder)
     refreshMarkers()
@@ -441,6 +459,7 @@ filesPane.querySelector('.pane-actions')!.append(newButton, openButton)
 filesPane.append(templateMenu)
 
 function showTemplates(): void {
+  showScores()
   templateMenu.hidden = false
   templateMenu.querySelector('button')?.focus()
 }
@@ -507,6 +526,7 @@ studio.onCommand((command) => {
     case 'export-midi':
       return void player.exportMidi()
     case 'welcome':
+      showScores()
       monacoHost.hidden = true
       return welcome.show(!!editor.file)
     case 'setup-lilypond':

@@ -14,17 +14,31 @@
   <body>
     <!-- The layout of DECISIONS D28: sidebar | editor | preview, a status line
          below. The sidebar is as wide as its edge is dragged, and holds the
-         files above the agents' accordion (D40). src/renderer/index.ts fills
-         the panes. -->
+         files above the agents' accordion (D40). In the app, a switch at its
+         top picks the workspace (D112): Scores is these panes, Stems puts the
+         separations over the files and the Separate view over the editor and
+         the preview, which stay as they are behind them. Stems' panes are
+         hidden until the switch is drawn. src/renderer/index.ts fills the
+         panes. -->
     <main class="studio">
       <aside class="sidebar" data-pane="sidebar">
-        <nav class="pane files" data-pane="files" aria-label="Files">
-          <header class="pane-header">
-            <span class="pane-title">Files</span>
-            <span class="pane-actions"></span>
-          </header>
-          <div class="pane-body placeholder">No folder open</div>
-        </nav>
+        <div class="workspace-switch" role="tablist" aria-label="Workspace" hidden></div>
+        <div class="sidebar-panes">
+          <nav class="pane files" data-pane="files" aria-label="Files">
+            <header class="pane-header">
+              <span class="pane-title">Files</span>
+              <span class="pane-actions"></span>
+            </header>
+            <div class="pane-body placeholder">No folder open</div>
+          </nav>
+          <nav class="pane separations" data-pane="separations" aria-label="Separations" hidden>
+            <header class="pane-header">
+              <span class="pane-title">Separations</span>
+              <span class="pane-actions"></span>
+            </header>
+            <div class="pane-body placeholder">No separations yet</div>
+          </nav>
+        </div>
         <div class="splitter splitter-rows" role="separator" aria-orientation="horizontal" aria-label="Resize the agents" tabindex="0"></div>
         <section class="agents" data-pane="agents" aria-label="Agents">
           <section class="fold" data-fold="chats">
@@ -59,6 +73,13 @@
              Parts button opens above it (D45). -->
         <div class="playback-setup" role="region" aria-label="Parts" hidden></div>
         <div class="transport"></div>
+      </section>
+      <section class="pane stems" data-pane="stems" aria-label="Separate" hidden>
+        <header class="pane-header">
+          <span class="pane-title">Separate</span>
+          <span class="pane-actions"></span>
+        </header>
+        <div class="pane-body placeholder">No song chosen</div>
       </section>
       <footer class="status" data-pane="status" role="status"></footer>
     </main>
