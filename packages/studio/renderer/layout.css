@@ -107,6 +107,13 @@ body {
   visibility: hidden;
 }
 
+/* The Mac's WebKit draws a player's dark backing in a layer of its own, which
+   stays on screen when the pane is hidden; a player away is not drawn at all.
+   It goes on playing, and keeps its place. */
+.studio [data-away] audio[controls] {
+  display: none;
+}
+
 .editor {
   grid-area: editor;
   border-right: 1px solid var(--border);
