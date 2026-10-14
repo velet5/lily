@@ -28,3 +28,8 @@ packages/studio/server-data/
 # Lily Studio's Cargo workspace (packages/studio/), and what tauri-build generates
 target/
 packages/studio/src-tauri/gen/
+
+# Python: packages/transcribe (uv)
+.venv/
+__pycache__/
+.pytest_cache/
