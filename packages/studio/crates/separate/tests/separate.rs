@@ -6,8 +6,8 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use lily_separate::{
-    ROOT_VARIABLE, Request, RootSource, Separator, Sidecar, find_uv, mix, models, project_root,
-    uv_candidates,
+    ROOT_VARIABLE, Request, RootSource, Separator, Sidecar, TRANSCRIBE_VARIABLE, Transcriber,
+    find_uv, mix, models, project_root, transcribe_args, transcribe_root, uv_candidates,
 };
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -474,4 +474,132 @@ async fn mix_refuses_relative_paths_and_nothing_to_mix() {
             .await
             .is_err()
     );
+}
+
+// ---------------------------------------------------------------------------
+// Transcriber (D113)
+
+#[test]
+fn the_transcriber_is_the_variables_project_or_the_default() {
+    let (_dir, dir) = scratch();
+    let named = project(&dir.join("named"));
+    let default = project(&dir.join("packages/transcribe"));
+    assert_eq!(
+        transcribe_root(Some(named.clone().into()), &default),
+        Ok(named)
+    );
+    assert_eq!(
+        transcribe_root(Some("".into()), &default),
+        Ok(default.clone())
+    );
+    assert_eq!(transcribe_root(None, &default), Ok(default));
+    let error = transcribe_root(Some(dir.join("nothing").into()), &dir).expect_err("not a project");
+    assert!(error.starts_with(TRANSCRIBE_VARIABLE), "{error}");
+    let error = transcribe_root(None, &dir.join("missing")).expect_err("no default");
+    assert!(error.contains(TRANSCRIBE_VARIABLE), "{error}");
+}
+
+#[test]
+fn a_transcription_refuses_what_could_be_read_as_an_option_or_is_not_a_stem() {
+    let (_dir, dir) = scratch();
+    let stem = song(&dir);
+    assert_eq!(
+        transcribe_args(&stem, "bass").expect("args"),
+        [
+            std::ffi::OsString::from("transcribe"),
+            stem.clone().into(),
+            "--instrument".into(),
+            "bass".into()
+        ]
+    );
+    assert!(
+        transcribe_args(Path::new("song.mp3"), "bass").is_err(),
+        "relative"
+    );
+    assert!(
+        transcribe_args(&dir.join("missing.wav"), "bass").is_err(),
+        "missing"
+    );
+    assert!(transcribe_args(&dir, "bass").is_err(), "a folder");
+    assert!(transcribe_args(&stem, "--help").is_err(), "an option");
+    assert!(
+        transcribe_args(&stem, "bass guitar").is_err(),
+        "not a plain word"
+    );
+}
+
+#[tokio::test]
+async fn a_transcription_hands_on_each_event_and_answers_the_notes() {
+    let (_dir, dir) = scratch();
+    let sidecar = fake_uv(
+        &dir,
+        r#"echo '{"event": "progress", "stage": "beats"}'
+echo 'Predicting MIDI for /tmp/audio.wav...'
+echo '{"event": "done", "transcription": {"stem": "bass", "bpm": 123.015, "notes": [[0, 4, [36]]]}, "seconds": 9.5}'"#,
+    );
+    let stem = song(&dir);
+    let heard = Heard::default();
+    let transcriber = Transcriber::default();
+    let transcription = transcriber
+        .transcribe(&sidecar, &stem, "bass", heard.sink())
+        .await
+        .expect("transcribed");
+    assert_eq!(
+        transcription,
+        json!({"stem": "bass", "bpm": 123.015, "notes": [[0, 4, [36]]]})
+    );
+    let kinds: Vec<_> = heard
+        .events()
+        .iter()
+        .map(|event| event["event"].as_str().unwrap_or_default().to_owned())
+        .collect();
+    assert_eq!(kinds, ["progress", "done"]);
+    assert_eq!(
+        recorded_args(&dir),
+        [
+            "run",
+            "--quiet",
+            "--project",
+            &sidecar.root.to_string_lossy(),
+            "lily-transcribe",
+            "--json",
+            "transcribe",
+            &stem.to_string_lossy(),
+            "--instrument",
+            "bass"
+        ]
+    );
+    assert!(!transcriber.is_running());
+}
+
+#[tokio::test]
+async fn a_transcription_that_fails_says_why() {
+    let (_dir, dir) = scratch();
+    let sidecar = fake_uv(
+        &dir,
+        r#"echo '{"event": "error", "message": "Too few beats were found to tell the tempo."}'
+exit 1"#,
+    );
+    let error = Transcriber::default()
+        .transcribe(&sidecar, &song(&dir), "bass", |_| {})
+        .await
+        .expect_err("failed");
+    assert_eq!(error, "Too few beats were found to tell the tempo.");
+
+    let silent = fake_uv(&dir, "exit 3");
+    let error = Transcriber::default()
+        .transcribe(&silent, &song(&dir), "bass", |_| {})
+        .await
+        .expect_err("died");
+    assert!(
+        error.starts_with("lily-transcribe ended without a result"),
+        "{error}"
+    );
+
+    let empty = fake_uv(&dir, r#"echo '{"event": "done", "seconds": 1}'"#);
+    let error = Transcriber::default()
+        .transcribe(&empty, &song(&dir), "bass", |_| {})
+        .await
+        .expect_err("no notes");
+    assert_eq!(error, "The transcription finished without its notes.");
 }

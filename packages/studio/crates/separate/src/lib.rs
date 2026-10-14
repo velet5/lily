@@ -4,8 +4,10 @@
 //! the project's root and prints one JSON event per line on stdout. This crate
 //! finds the project (`project_root`) and uv (`find_uv`), and builds the
 //! command line (`Sidecar::command`). Its `Separator` runs one separation at a
-//! time; Cancel and quitting end it through its process group. Only
-//! src-tauri depends on it, and the web server never links it (D55).
+//! time; Cancel and quitting end it through its process group. Its
+//! `Transcriber` runs lily-transcribe (`packages/transcribe`, D113) the same
+//! way, to turn a stem into notes. Only src-tauri depends on it, and the web
+//! server never links it (D55).
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -129,13 +131,22 @@ impl Sidecar {
         I: IntoIterator<Item = S>,
         S: AsRef<OsStr>,
     {
+        self.program("karaoke-mlx", args)
+    }
+
+    /// `uv run --quiet --project <root> <program> --json <args>`, run in the root.
+    pub fn program<I, S>(&self, program: &str, args: I) -> Command
+    where
+        I: IntoIterator<Item = S>,
+        S: AsRef<OsStr>,
+    {
         let mut command = Command::new(&self.uv);
         command
             .arg("run")
             .arg("--quiet")
             .arg("--project")
             .arg(&self.root)
-            .arg("karaoke-mlx")
+            .arg(program)
             .arg("--json")
             .args(args)
             .current_dir(&self.root)
@@ -198,16 +209,36 @@ fn word<'a>(what: &str, value: &'a str) -> Result<&'a str, String> {
     Ok(value)
 }
 
-/// The running separation: its process group, and whether Cancel ended it.
+/// The running CLI: its process group, and whether Cancel ended it.
 struct Running {
     pid: Option<u32>,
     cancelled: bool,
 }
 
-/// One separation at a time, as in RoFormer's app.
+/// What a job's messages call it.
+struct Kind {
+    program: &'static str,
+    busy: &'static str,
+    failed: &'static str,
+}
+
+const SEPARATION: Kind = Kind {
+    program: "karaoke-mlx",
+    busy: "A separation is already running.",
+    failed: "The separation failed.",
+};
+
+const TRANSCRIPTION: Kind = Kind {
+    program: TRANSCRIBE_PROGRAM,
+    busy: "A transcription is already running.",
+    failed: "The transcription failed.",
+};
+
+/// One run of a CLI at a time, in its own process group, which Cancel and
+/// quitting end.
 #[derive(Default)]
-pub struct Separator {
-    job: Mutex<Option<Running>>,
+struct Job {
+    slot: Mutex<Option<Running>>,
 }
 
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
@@ -216,8 +247,8 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-/// Empties the job slot however `separate` ends. Dropped before its child
-/// was reaped, as when the caller stops waiting, it ends the child's group.
+/// Empties the job slot however a run ends. Dropped before its child was
+/// reaped, as when the caller stops waiting, it ends the child's group.
 struct Release<'a>(&'a Mutex<Option<Running>>);
 
 impl Drop for Release<'_> {
@@ -241,29 +272,27 @@ fn terminate(pid: u32) {
     }
 }
 
-impl Separator {
-    pub fn is_running(&self) -> bool {
-        lock(&self.job).is_some()
+impl Job {
+    fn is_running(&self) -> bool {
+        lock(&self.slot).is_some()
     }
 
-    /// Runs `request`, and hands each of the CLI's events to `on_event` as it
-    /// comes. It answers the folder the stems went to. A CLI that dies
-    /// without an `error` event, because it was cancelled or crashed, gets
-    /// one from here, so the page always hears how it ended.
-    pub async fn separate(
+    /// Runs `command`, and hands each JSON event it prints to `on_event` as
+    /// it comes. It answers the `done` event. A CLI that dies without an
+    /// `error` event, because it was cancelled or crashed, gets one from
+    /// here, so the page always hears how it ended.
+    async fn run(
         &self,
-        sidecar: &Sidecar,
-        request: &Request,
+        kind: &Kind,
+        mut command: Command,
         on_event: impl Fn(Value) + Send + Sync,
-    ) -> Result<PathBuf, String> {
-        let args = request.args()?;
+    ) -> Result<Value, String> {
         let mut child = {
-            let mut slot = lock(&self.job);
+            let mut slot = lock(&self.slot);
             if slot.is_some() {
-                return Err("A separation is already running.".into());
+                return Err(kind.busy.into());
             }
-            let child = sidecar
-                .command(&args)
+            let child = command
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped())
                 // Its own process group, so Cancel reaches uv and the Python it starts.
@@ -276,7 +305,7 @@ impl Separator {
             });
             child
         };
-        let _release = Release(&self.job);
+        let _release = Release(&self.slot);
         let stdout = child.stdout.take().expect("stdout is piped");
         let mut stderr = child.stderr.take().expect("stderr is piped");
         let stderr = tokio::spawn(async move {
@@ -298,7 +327,7 @@ impl Separator {
         }
         let status = child.wait().await;
         let cancelled = {
-            let mut slot = lock(&self.job);
+            let mut slot = lock(&self.slot);
             let running = slot.as_mut().expect("the slot is held until Release");
             // Reaped: its pid may be another process's from now on.
             running.pid = None;
@@ -307,19 +336,13 @@ impl Separator {
         let stderr = stderr.await.unwrap_or_default();
 
         match last {
-            Some(event) if event["event"] == "done" => event["folder"]
-                .as_str()
-                .map(PathBuf::from)
-                .ok_or_else(|| "The separation finished without its folder.".to_string()),
-            Some(event) => Err(event["message"]
-                .as_str()
-                .unwrap_or("The separation failed.")
-                .to_string()),
+            Some(event) if event["event"] == "done" => Ok(event),
+            Some(event) => Err(event["message"].as_str().unwrap_or(kind.failed).to_string()),
             None => {
                 let message = if cancelled {
                     "Cancelled.".to_string()
                 } else {
-                    failure(&stderr, status.ok())
+                    failure(kind.program, &stderr, status.ok())
                 };
                 on_event(json!({ "event": "error", "message": message, "cancelled": cancelled }));
                 Err(message)
@@ -327,10 +350,10 @@ impl Separator {
         }
     }
 
-    /// Ends the running separation and everything it started: SIGTERM to its
+    /// Ends the running CLI and everything it started: SIGTERM to its
     /// process group. False when none is running.
-    pub fn cancel(&self) -> bool {
-        let mut slot = lock(&self.job);
+    fn cancel(&self) -> bool {
+        let mut slot = lock(&self.slot);
         let Some(running) = slot.as_mut() else {
             return false;
         };
@@ -339,6 +362,137 @@ impl Separator {
             terminate(pid);
         }
         true
+    }
+}
+
+/// One separation at a time, as in RoFormer's app.
+#[derive(Default)]
+pub struct Separator {
+    job: Job,
+}
+
+impl Separator {
+    pub fn is_running(&self) -> bool {
+        self.job.is_running()
+    }
+
+    /// Runs `request`, and hands each of the CLI's events to `on_event` as it
+    /// comes. It answers the folder the stems went to.
+    pub async fn separate(
+        &self,
+        sidecar: &Sidecar,
+        request: &Request,
+        on_event: impl Fn(Value) + Send + Sync,
+    ) -> Result<PathBuf, String> {
+        let args = request.args()?;
+        let done = self
+            .job
+            .run(&SEPARATION, sidecar.command(&args), on_event)
+            .await?;
+        done["folder"]
+            .as_str()
+            .map(PathBuf::from)
+            .ok_or_else(|| "The separation finished without its folder.".to_string())
+    }
+
+    /// Ends the running separation and everything it started. False when
+    /// none is running.
+    pub fn cancel(&self) -> bool {
+        self.job.cancel()
+    }
+}
+
+// ---- Transcription (D113) ----
+// lily-transcribe, this repository's `packages/transcribe`, turns a stem into
+// notes on the song's beat grid. It runs as karaoke-mlx does: uv in its own
+// project, one JSON event per line, one run at a time.
+
+/// The CLI's name in `packages/transcribe`'s pyproject.toml.
+pub const TRANSCRIBE_PROGRAM: &str = "lily-transcribe";
+
+/// Names lily-transcribe's project, ahead of the default.
+pub const TRANSCRIBE_VARIABLE: &str = "LILY_TRANSCRIBE_ROOT";
+
+/// `packages/transcribe` beside the studio.
+pub const TRANSCRIBE_ROOT: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../transcribe");
+
+/// lily-transcribe's project: `LILY_TRANSCRIBE_ROOT`, which must be one, or `default`.
+pub fn transcribe_root(variable: Option<OsString>, default: &Path) -> Result<PathBuf, String> {
+    match variable.filter(|value| !value.is_empty()) {
+        Some(value) => {
+            let path = PathBuf::from(value);
+            if is_project(&path) {
+                Ok(path)
+            } else {
+                Err(format!(
+                    "{TRANSCRIBE_VARIABLE} names {}, which has no pyproject.toml.",
+                    path.display()
+                ))
+            }
+        }
+        None if is_project(default) => Ok(default
+            .canonicalize()
+            .unwrap_or_else(|_| default.to_path_buf())),
+        None => Err(format!(
+            "Lily Studio's transcriber was not found at {}. Set {TRANSCRIBE_VARIABLE} to packages/transcribe.",
+            default.display()
+        )),
+    }
+}
+
+/// `transcribe <stem> --instrument <name>`: the stem must be an absolute path
+/// to a file, and the instrument a plain word, so neither is read as an option.
+pub fn transcribe_args(stem: &Path, instrument: &str) -> Result<Vec<OsString>, String> {
+    if !stem.is_absolute() || !stem.is_file() {
+        return Err(format!("{} is not a stem.", stem.display()));
+    }
+    Ok(vec![
+        "transcribe".into(),
+        stem.into(),
+        "--instrument".into(),
+        word("instrument", instrument)?.into(),
+    ])
+}
+
+/// One transcription at a time.
+#[derive(Default)]
+pub struct Transcriber {
+    job: Job,
+}
+
+impl Transcriber {
+    pub fn is_running(&self) -> bool {
+        self.job.is_running()
+    }
+
+    /// Transcribes `stem` as `instrument` (`bass`, `vocals`…) with the
+    /// lily-transcribe project `sidecar` names, handing each event to
+    /// `on_event`. It answers the transcription.
+    pub async fn transcribe(
+        &self,
+        sidecar: &Sidecar,
+        stem: &Path,
+        instrument: &str,
+        on_event: impl Fn(Value) + Send + Sync,
+    ) -> Result<Value, String> {
+        let args = transcribe_args(stem, instrument)?;
+        let mut done = self
+            .job
+            .run(
+                &TRANSCRIPTION,
+                sidecar.program(TRANSCRIBE_PROGRAM, &args),
+                on_event,
+            )
+            .await?;
+        match done["transcription"].take() {
+            Value::Object(transcription) => Ok(Value::Object(transcription)),
+            _ => Err("The transcription finished without its notes.".into()),
+        }
+    }
+
+    /// Ends the running transcription. False when none is running.
+    pub fn cancel(&self) -> bool {
+        self.job.cancel()
     }
 }
 
@@ -352,6 +506,7 @@ pub async fn models(sidecar: &Sidecar) -> Result<Value, String> {
         .map_err(|error| format!("uv did not start: {error}"))?;
     if !output.status.success() {
         return Err(failure(
+            SEPARATION.program,
             &String::from_utf8_lossy(&output.stderr),
             Some(output.status),
         ));
@@ -395,6 +550,7 @@ pub async fn mix(sidecar: &Sidecar, stems: &[PathBuf], output: &Path) -> Result<
             .unwrap_or("The mix failed.")
             .to_string()),
         _ => Err(failure(
+            SEPARATION.program,
             &String::from_utf8_lossy(&result.stderr),
             Some(result.status),
         )),
@@ -402,7 +558,7 @@ pub async fn mix(sidecar: &Sidecar, stems: &[PathBuf], output: &Path) -> Result<
 }
 
 /// What a CLI that printed no `error` event died of: stderr's last lines, or its exit status.
-fn failure(stderr: &str, status: Option<std::process::ExitStatus>) -> String {
+fn failure(program: &str, stderr: &str, status: Option<std::process::ExitStatus>) -> String {
     let lines: Vec<&str> = stderr
         .lines()
         .filter(|line| !line.trim().is_empty())
@@ -410,7 +566,7 @@ fn failure(stderr: &str, status: Option<std::process::ExitStatus>) -> String {
     let tail = lines[lines.len().saturating_sub(STDERR_TAIL)..].join("\n");
     match status {
         _ if !tail.is_empty() => tail,
-        Some(status) => format!("karaoke-mlx ended without a result ({status})."),
-        None => "karaoke-mlx ended without a result.".into(),
+        Some(status) => format!("{program} ended without a result ({status})."),
+        None => format!("{program} ended without a result."),
     }
 }
