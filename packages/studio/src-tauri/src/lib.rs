@@ -165,6 +165,8 @@ pub fn run() {
             separate::separation_cancel,
             separate::mix_stems,
             separate::reveal_in_finder,
+            separate::new_score_for_stem,
+            separate::attach_stem,
             smoke::smoke_folder,
             smoke::smoke_read,
             smoke::smoke_write,

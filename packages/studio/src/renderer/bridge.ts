@@ -296,7 +296,17 @@ export const studio = {
   revealInFinder: (path: string): Promise<void> => call('reveal_in_finder', { path }),
   /** Asks for a song to separate; undefined when the panel was cancelled. */
   chooseSong: (): Promise<string | undefined> => call<string | null>('choose_song').then(orUndefined),
-  /** Where `<audio>` plays a stem from; only stems of a separation finished in this run play. */
+  /**
+   * Writes `text`, a score for `stem` (files.ts's stemScore), beside the stem
+   * as `<name>.ly`, or `<name> 2.ly` when that is taken, and opens it.
+   */
+  newScoreForStem: (stem: string, name: string, text: string): Promise<Opened> => call('new_score_for_stem', { stem, name, text }),
+  /**
+   * The stem `stem`, as the `% Stem:` line of `score`, an open score, names a
+   * file beside it; it plays from stemUrl from now on. Rejects when there is none.
+   */
+  attachStem: (score: string, stem: string): Promise<string> => call('attach_stem', { score, stem }),
+  /** Where `<audio>` plays a stem from: one of a separation finished in this run, or an attached one. */
   stemUrl: (path: string): string => transport.fileUrl?.(path) ?? '',
   /** Runs `listener` for files dragged over the app's window and dropped; never on the web. */
   onFileDrop: (listener: Listener<FileDrop>): (() => void) => subscribe(listeners.fileDrop, listener),

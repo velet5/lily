@@ -2651,8 +2651,8 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
 - **Commands** (`src-tauri/src/separate.rs`): `separation_status` (the
   project, uv, what is missing, whether one is running), `separation_models`,
   `separate` (answers the stems' folder), `separation_cancel`, `mix_stems`
-  (a save panel names the file) and `reveal_in_finder`. `new_score_for_stem`
-  comes with the stems-to-score step. Each event karaoke-mlx prints goes to
+  (a save panel names the file), `reveal_in_finder`, and for the
+  stems-to-score path `new_score_for_stem` and `attach_stem`. Each event karaoke-mlx prints goes to
   the page on the studio's one channel as `{type: "separation", event}`, not
   on RoFormer's `karaoke://event`. A CLI that dies without an `error` event,
   because it was cancelled or crashed, gets one with the end of its stderr
@@ -2731,9 +2731,38 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   Separate view and shows Stems. The stems play from the asset protocol's
   URLs (the transport's `fileUrl`, `studio.stemUrl`). A mix saved outside the
   stems' folder is not in the asset scope, so it is exported but not played.
-- **Not done yet.** The Separations list, the stems-to-score path, the
-  `separation.root` setting and its setup card, `separations.json`, and
-  moving the Python. Folders
+- **From a stem to a score.** #1199 says no transcription code exists, so
+  a stem leads to a score written by ear. Each stem's row has *Score…*, or
+  *Score… (hard)* for guitar, piano, other, the instrumental and any stem
+  karaoke-mlx adds later, which #1199 found the hardest to write down. Its
+  menu offers *New score for bass* (no ellipsis: no panel asks anything),
+  says what it writes, and has *Show … in Finder*. The page makes the score
+  (`stemScore` in `src/renderer/files.ts`): the instrument's staff, clef and
+  General MIDI sound (bass: `bass_8`, electric bass; guitar: `treble_8`;
+  drums: a DrumStaff; piano: a PianoStaff; vocals: a treble staff and
+  words), four bars of rest, `\layout` and `\midi`, titled "<song> —
+  <stem>". Its `% Stem: <song> - bass.wav` line names the stem. The vocals'
+  `\lyricsto` line starts commented out: lyrics over a tune of rests alone
+  warn once `runtime/timing.ly` maps playback. `new_score_for_stem` takes
+  the stem, a plain name and the text. The stem must be in a folder
+  separated this run. It writes `<name>.ly` beside the stem, or `<name>
+  2.ly` and so on, and never writes over a file. Then it opens it as Open
+  Score would, so the stems' folder becomes the open folder and Scores is
+  shown. When a score is shown, its `% Stem:` line (`stemOfScore`) is
+  passed to `attach_stem` with the score. That command takes only a name:
+  an audio file directly beside a score the page may open, with no link out
+  of the folder. It lets that one file into the asset scope, so the strip
+  also works after a restart. The strip (`StemStrip` in
+  `src/renderer/player.ts`) has ▶, a slider, the time, *With score* and ✕.
+  With score plays the score's MIDI with the stem, each from where it is:
+  the user puts the stem where the score's first bar (or start mark)
+  begins. Pause pauses both, and the slider moves the stem alone. ✕ hides
+  the strip until the score is shown again. The strip is not drawn on the
+  web. When transcription exists, a *Transcribe* button fits in the strip,
+  and it has what #1199 asked for: an audio file and an instrument name.
+- **Not done yet.** The Separations list, the `separation.root` setting and
+  its setup card, `separations.json`, and moving the Python. The file list
+  shows only scores, not the stems beside them. Folders
   separated in an earlier run are not in the asset scope until a later step
   lets the recent separations in again.
 - **Verified.** `crates/separate`'s tests run stand-ins for uv: the root's
@@ -2751,5 +2780,12 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   to Scores. `test/separate.test.ts` covers the view's pure parts: which
   files are songs, the model groups and names, the qualities and formats,
   progress and its stages, the stems' names and the mix button, and that the
-  panel's extensions are the view's. Nothing was separated through the app
-  yet.
+  panel's extensions are the view's, and the Score… labels.
+  `test/files.test.ts` checks each stem's score: its `% Stem:` line read
+  back, its instrument, the hard ones, quoting the song in the title, and
+  that a line naming another folder is ignored. It also engraves every
+  stem's score, and an unknown stem's, through `lily-outcome`, with no
+  error or warning and with MIDI. `separate.rs`'s tests cover writing beside
+  the stem without writing over a file, refusing names that are not plain,
+  and which names `attach_stem` takes. Nothing was separated through the
+  app yet.

@@ -3,13 +3,14 @@
 // the panel; a model is picked from Karaoke or All instruments, with a quality
 // and a format; Separate runs karaoke-mlx, with its progress and Cancel. Each
 // stem then gets a player, ticked stems export as a mix, and Show in Finder
-// opens the stems' folder. A separation goes on in Scores, and the status line
-// follows it. The models are asked for when Stems is first shown, not at
+// opens the stems' folder. A stem's Score… menu writes a score for it beside
+// the stems and opens it in Scores, where the stem plays under the preview.
+// A separation goes on in Scores, and the status line follows it. The models are asked for when Stems is first shown, not at
 // launch, since uv starts Python for them. The functions above the view are
 // pure so the tests can run them without a DOM.
-import type { FileDrop, SeparationEvent, SeparationModel, SeparationOutput, SeparationRequest } from '../ipc'
+import type { FileDrop, Opened, SeparationEvent, SeparationModel, SeparationOutput, SeparationRequest } from '../ipc'
 import type { StudioApi } from './bridge'
-import { button } from './files'
+import { button, stemScore } from './files'
 
 /** What karaoke-mlx's ffmpeg reads, as RoFormer's app offered; src-tauri's choose_song has the same. */
 export const SONG_EXTENSIONS = ['mp3', 'm4a', 'aac', 'flac', 'wav', 'ogg', 'opus', 'aiff', 'aif', 'wma', 'mp4', 'mkv', 'webm']
@@ -57,6 +58,13 @@ const STEMS: Record<string, [string, string]> = {
 /** The last name of `path`. */
 export function baseName(path: string): string {
   return path.replace(/\/+$/, '').split('/').pop() ?? path
+}
+
+/** The song's name, as a stem's score is titled: its file's name without the extension. */
+export function songName(path: string): string {
+  const name = baseName(path)
+  const dot = name.lastIndexOf('.')
+  return dot > 0 ? name.slice(0, dot) : name
 }
 
 /** Whether `path` is a file karaoke-mlx can separate, by its extension. */
@@ -134,6 +142,11 @@ export function statusLine(song: string, progress: { label: string; value?: numb
   return `Stems: ${progress.label.toLowerCase()} ${song}${percent}`
 }
 
+/** A stem's score button: the stems #1199 found hardest to write down by ear say so. */
+export function scoreLabel(hard: boolean): string {
+  return hard ? 'Score… (hard)' : 'Score…'
+}
+
 /** The export button's label for `ticked` stems. */
 export function mixLabel(ticked: number, mixing: boolean): string {
   if (mixing) return 'Mixing…'
@@ -167,6 +180,8 @@ export interface SeparateOptions {
   studio: StudioApi
   /** A message for the status line. */
   onStatus(message: string): void
+  /** A score written for a stem, to show in Scores once it is open. */
+  onScore(opening: Promise<Opened>): void
 }
 
 /** What a finished separation left: its stems and where they are. */
@@ -199,6 +214,8 @@ export class SeparateView {
   private timer: ReturnType<typeof setInterval> | undefined
   private lastStatus = ''
   private readonly players: HTMLAudioElement[] = []
+  /** A stem's Score… menu. */
+  private readonly menu: HTMLElement
 
   private readonly reveal: HTMLButtonElement
   private readonly drop: HTMLButtonElement
@@ -335,6 +352,17 @@ export class SeparateView {
     const body = host.querySelector('.pane-body')!
     body.className = 'pane-body'
     body.replaceChildren(view)
+
+    this.menu = element('div', 'preview-menu separate-menu')
+    this.menu.setAttribute('role', 'menu')
+    this.menu.hidden = true
+    this.menu.addEventListener('focusout', (event) => {
+      if (!this.menu.contains(event.relatedTarget as Node | null)) this.menu.hidden = true
+    })
+    this.menu.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') this.menu.hidden = true
+    })
+    document.body.append(this.menu)
 
     studio.onSeparation((event) => this.onEvent(event))
     this.refresh()
@@ -537,6 +565,7 @@ export class SeparateView {
   }
 
   private clearResults(): void {
+    this.menu.hidden = true
     for (const player of this.players) player.pause()
     this.players.length = 0
     this.stemList.replaceChildren()
@@ -588,7 +617,51 @@ export class SeparateView {
     player.addEventListener('play', () => this.players.forEach((other) => other !== player && other.pause()))
     this.players.push(player)
     row.append(name, player)
+    // A stem leads to a score; the mix does not.
+    const separated = this.separated
+    if (tick && separated) row.append(this.scoreButton({ stem, path, title, song: songName(separated.song) }))
     return row
+  }
+
+  /** The Score… button of a stem's row, which opens its menu. */
+  private scoreButton(request: { stem: string; path: string; title: string; song: string }): HTMLButtonElement {
+    const { hard } = stemScore({ ...request, file: request.path })
+    const open = button(scoreLabel(hard), () => this.openScoreMenu(open, request))
+    open.className = hard ? 'separate-score hard' : 'separate-score'
+    open.title = hard ? `${request.title} is hard to write down by ear` : `Write a score for the ${request.title.toLowerCase()} by ear`
+    open.setAttribute('aria-haspopup', 'menu')
+    return open
+  }
+
+  /** *New score for bass*, what it writes, and Show in Finder, under `anchor`. */
+  private openScoreMenu(anchor: HTMLElement, { stem, path, title, song }: { stem: string; path: string; title: string; song: string }): void {
+    const score = stemScore({ stem, title, file: path, song })
+    const item = (label: string, action: () => void) => {
+      const entry = button(label, () => {
+        this.menu.hidden = true
+        action()
+      })
+      entry.setAttribute('role', 'menuitem')
+      return entry
+    }
+    const rule = element('hr')
+    rule.setAttribute('role', 'separator')
+    const items = [
+      item(`New score for ${title.toLowerCase()}`, () => this.options.onScore(this.options.studio.newScoreForStem(path, score.name, score.text))),
+      element('small', undefined, score.hint),
+      rule,
+      item(`Show ${baseName(path)} in Finder`, () => {
+        this.options.studio.revealInFinder(path).catch((error: unknown) => this.showError(String(error)))
+      }),
+    ]
+    this.menu.replaceChildren(...items)
+    this.menu.hidden = false
+    const rect = anchor.getBoundingClientRect()
+    const { innerWidth, innerHeight } = window
+    const below = rect.bottom + 2 + this.menu.offsetHeight <= innerHeight
+    this.menu.style.left = `${Math.max(4, Math.min(rect.right - this.menu.offsetWidth, innerWidth - this.menu.offsetWidth - 4))}px`
+    this.menu.style.top = `${below ? rect.bottom + 2 : Math.max(4, rect.top - 2 - this.menu.offsetHeight)}px`
+    ;(items[0] as HTMLElement).focus()
   }
 
   private boxes(): HTMLInputElement[] {

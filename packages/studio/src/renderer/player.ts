@@ -5,7 +5,8 @@
 // main process reads the MIDI and its map together with the pages. The Parts
 // fold plays each part on an instrument of its own or mutes it, and ▶ starts
 // from a marked bar (D45). Export MIDI saves the music, without the muted
-// parts if the user likes (D54).
+// parts if the user likes (D54). A score written for a stem has the Stem strip
+// above the transport, which plays the stem alone or with the score (D112).
 import { formatTime, instrumentName, momentTime, parseMidi, Player, type Midi } from '@lily/common/web/midi.js'
 import { barAt, cursorAt, scrollToShow, soundingAt, timelineOf, type Box, type Timeline } from '@lily/common/web/preview.js'
 import type { CompileEvent, CompileOutcome, ExportedMidi, MutedPart, PlaybackSetup, PlaybackTiming } from '../ipc'
@@ -217,6 +218,19 @@ export class ScorePlayer {
     else void this.play()
   }
 
+  /** Whether there is music to play. */
+  get ready(): boolean {
+    return this.player.midi !== undefined
+  }
+
+  get playing(): boolean {
+    return this.player.state === 'playing'
+  }
+
+  pause(): void {
+    this.player.pause()
+  }
+
   /** Other pages are on screen: the playhead is found on them again. */
   rendered(): void {
     this.timeline = null
@@ -257,7 +271,8 @@ export class ScorePlayer {
     }
   }
 
-  private async play(): Promise<void> {
+  /** Plays from where it is, or from the start mark when stopped. */
+  async play(): Promise<void> {
     if (!this.player.midi) return
     // From the start means from the start mark.
     const start = this.player.state === 'stopped' ? this.startTime() : undefined
@@ -611,4 +626,158 @@ function paragraph(text: string): HTMLElement {
   p.className = 'part-hint'
   p.textContent = text
   return p
+}
+
+/** What the Stem strip plays the stem with: the score's player. */
+export interface StripScore {
+  readonly ready: boolean
+  readonly playing: boolean
+  play(): Promise<void>
+  pause(): void
+}
+
+export interface StemStripOptions {
+  /** The strip above the transport; shown while the score has a stem. */
+  host: HTMLElement
+  score: StripScore
+  onError(message: string): void
+}
+
+/**
+ * The Stem strip (D112): the stem a score was written from, played under the
+ * preview so the part can be written by ear. With score plays the score's MIDI
+ * with it, each from where it is: the stem from the slider, the score from
+ * where it was paused or its start mark. Pause pauses both, so they stay
+ * together; moving the slider moves the stem alone.
+ */
+export class StemStrip {
+  private readonly audio = document.createElement('audio')
+  private readonly name = document.createElement('span')
+  private readonly playButton = document.createElement('button')
+  private readonly seek = document.createElement('input')
+  private readonly time = document.createElement('span')
+  private readonly withScore = document.createElement('button')
+  private readonly close = document.createElement('button')
+  private linked = false
+  private seeking = false
+  private stem: string | undefined
+
+  constructor(private readonly options: StemStripOptions) {
+    const { host } = options
+    const label = document.createElement('span')
+    label.className = 'stem-strip-label'
+    label.textContent = 'Stem'
+    this.name.className = 'stem-strip-name'
+    for (const control of [this.playButton, this.withScore, this.close]) control.type = 'button'
+    this.playButton.className = 'stem-strip-play'
+    this.seek.type = 'range'
+    this.seek.min = '0'
+    this.seek.max = String(SEEK_STEPS)
+    this.seek.value = '0'
+    this.seek.setAttribute('aria-label', 'Stem position')
+    this.time.className = 'stem-strip-time'
+    this.withScore.className = 'stem-strip-with'
+    this.withScore.textContent = 'With score'
+    this.close.className = 'stem-strip-close'
+    this.close.textContent = '✕'
+    this.close.title = 'Hide the stem until the score is shown again'
+    this.close.setAttribute('aria-label', 'Hide the stem')
+    this.audio.preload = 'metadata'
+    host.setAttribute('role', 'toolbar')
+    host.setAttribute('aria-label', 'Stem')
+    host.hidden = true
+    host.replaceChildren(label, this.name, this.playButton, this.seek, this.time, this.withScore, this.close)
+
+    this.playButton.addEventListener('click', () => void this.toggle())
+    this.withScore.addEventListener('click', () => this.link(!this.linked))
+    this.close.addEventListener('click', () => this.show(undefined))
+    this.seek.addEventListener('input', () => {
+      this.seeking = true
+      this.time.textContent = this.times((Number(this.seek.value) / SEEK_STEPS) * this.duration())
+    })
+    this.seek.addEventListener('change', () => {
+      this.seeking = false
+      this.audio.currentTime = (Number(this.seek.value) / SEEK_STEPS) * this.duration()
+    })
+    for (const event of ['timeupdate', 'durationchange', 'play', 'pause', 'loadedmetadata']) {
+      this.audio.addEventListener(event, () => this.showState())
+    }
+    this.audio.addEventListener('ended', () => {
+      if (this.linked) this.options.score.pause()
+    })
+    this.audio.addEventListener('error', () => {
+      if (this.stem) this.options.onError(`The stem ${baseName(this.stem)} cannot be played`)
+    })
+    this.showState()
+  }
+
+  /** Shows the strip for a stem (its path and where it plays from), or hides it. */
+  show(stem: { path: string; url: string } | undefined): void {
+    this.audio.pause()
+    if (this.linked && this.options.score.playing) this.options.score.pause()
+    this.stem = stem?.path
+    this.options.host.hidden = !stem
+    if (stem) {
+      this.name.textContent = baseName(stem.path)
+      this.name.title = stem.path
+      this.audio.src = stem.url
+    } else {
+      this.audio.removeAttribute('src')
+      this.audio.load()
+    }
+    this.showState()
+  }
+
+  private async toggle(): Promise<void> {
+    const { score } = this.options
+    if (!this.audio.paused) {
+      this.audio.pause()
+      if (this.linked) score.pause()
+      return
+    }
+    if (this.linked && score.ready && !score.playing) await score.play()
+    try {
+      await this.audio.play()
+    } catch (error) {
+      this.options.onError(`The stem could not be played: ${error instanceof Error ? error.message : String(error)}`)
+    }
+  }
+
+  private link(on: boolean): void {
+    const { score } = this.options
+    this.linked = on
+    if (!this.audio.paused) {
+      if (on && score.ready && !score.playing) void score.play()
+      if (!on && score.playing) score.pause()
+    }
+    this.showState()
+  }
+
+  private duration(): number {
+    return Number.isFinite(this.audio.duration) ? this.audio.duration : 0
+  }
+
+  private times(position: number): string {
+    return `${formatTime(position)} / ${formatTime(this.duration())}`
+  }
+
+  private showState(): void {
+    const ready = !!this.stem && this.duration() > 0
+    const playing = !this.audio.paused
+    this.playButton.disabled = this.seek.disabled = !ready
+    this.playButton.textContent = playing ? '❚❚' : '▶︎'
+    this.playButton.title = playing ? 'Pause the stem' : this.linked ? 'Play the stem with the score' : 'Play the stem'
+    this.playButton.setAttribute('aria-label', playing ? 'Pause the stem' : 'Play the stem')
+    this.time.textContent = ready ? this.times(this.audio.currentTime) : ''
+    if (!this.seeking) this.seek.value = String(ready ? Math.round((this.audio.currentTime / this.duration()) * SEEK_STEPS) : 0)
+    this.withScore.setAttribute('aria-pressed', String(this.linked))
+    this.withScore.title = this.linked
+      ? 'The score’s MIDI plays with the stem, each from where it is. Click to play the stem alone.'
+      : 'Play the score’s MIDI with the stem, each from where it is: put the stem where the score’s first bar begins'
+    this.options.host.dataset.state = playing ? 'playing' : 'paused'
+  }
+}
+
+function baseName(path: string): string {
+  return path.split(/[\\/]/).pop() ?? path
 }

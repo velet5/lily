@@ -2,17 +2,18 @@
 // file list, the editor and the status line to `studio` (bridge.ts),
 // with the welcome screen and LilyPond's setup (D37), and the resizable
 // sidebar with the agents' accordion (D40), and Scores | Stems at its top
-// with the Separate view (D112). On the web (D55) the same page, without the agents or Stems, and
-// with upload and download.
+// with the Separate view (D112), whose stems lead to scores that play their
+// stem under the preview. On the web (D55) the same page, without the agents
+// or Stems, and with upload and download.
 import type { CompileEvent, FileChange, Opened } from '../ipc'
 import { AgentPanel, SELECTION_ACTIONS } from './agents'
 import { studio, type StudioApi } from './bridge'
 import { compileStatus, DiagnosticStore, problemSummary } from './diagnostics'
 import { ScoreEditor } from './editor'
-import { button, FileList } from './files'
+import { button, FileList, stemOfScore } from './files'
 import { addMidiBlock } from './midiBlock'
 import { PdfView } from './pdfView'
-import { ScorePlayer } from './player'
+import { ScorePlayer, StemStrip } from './player'
 import { ScorePreview } from './preview'
 import { SeparateView } from './separate'
 import { Sidebar, WorkspaceSwitch } from './sidebar'
@@ -261,7 +262,14 @@ const sidebar = new Sidebar({ studio: studioGrid, sidebar: pane('sidebar'), agen
 // editor and the preview, which go on as they were behind it. The Separate
 // view asks for its models when Stems is first shown, and a song dropped on
 // the window goes to it.
-const separateView = studio.separationAvailable().available ? new SeparateView({ host: pane('stems'), studio, onStatus: status }) : undefined
+const separation = studio.separationAvailable().available
+const separateView = separation
+  ? new SeparateView({ host: pane('stems'), studio, onStatus: status, onScore: (opening) => void run(opening) })
+  : undefined
+// The stem a score was written from plays above the transport (D112).
+const stemStrip = separation
+  ? new StemStrip({ host: previewPane.querySelector<HTMLElement>('.stem-strip')!, score: player, onError: status })
+  : undefined
 const workspace = separateView
   ? new WorkspaceSwitch({
       studio: studioGrid,
@@ -376,6 +384,22 @@ async function previewFor(file: string): Promise<void> {
   banner.hidden = true
   preview.showScore(rootFile)
   pdfView.showScore(rootFile)
+  void showStem(rootFile)
+}
+
+/** The Stem strip for the score shown, when its `% Stem:` line names a stem beside it (D112). */
+async function showStem(rootFile: string | undefined): Promise<void> {
+  if (!stemStrip) return
+  stemStrip.show(undefined)
+  const name = rootFile && stemOfScore(editor.textOf(rootFile) ?? '')
+  if (!rootFile || !name) return
+  try {
+    const stem = await studio.attachStem(rootFile, name)
+    if (previewRoot === rootFile) stemStrip.show({ path: stem, url: studio.stemUrl(stem) })
+  } catch (error) {
+    // Moved or deleted since: the score is shown without it.
+    console.warn('stem:', error)
+  }
 }
 
 /**

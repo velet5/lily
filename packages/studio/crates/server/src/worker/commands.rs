@@ -48,6 +48,8 @@ const DESKTOP_ONLY: &[&str] = &[
     "separation_cancel",
     "mix_stems",
     "reveal_in_finder",
+    "new_score_for_stem",
+    "attach_stem",
 ];
 
 pub struct Worker {

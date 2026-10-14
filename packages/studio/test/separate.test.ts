@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs'
 import * as path from 'node:path'
 import { describe, test } from 'node:test'
 import type { SeparationModel } from '../src/ipc'
+import { stemScore } from '../src/renderer/files'
 import {
   baseName,
   DEFAULT_OVERLAP,
@@ -18,7 +19,9 @@ import {
   progressOf,
   QUALITIES,
   runLabel,
+  scoreLabel,
   SONG_EXTENSIONS,
+  songName,
   statusLine,
   stemTitle,
 } from '../src/renderer/separate'
@@ -202,5 +205,18 @@ describe('the stems', () => {
     assert.equal(mixLabel(0, false), 'Export mix…')
     assert.equal(mixLabel(2, false), 'Export mix of 2…')
     assert.equal(mixLabel(2, true), 'Mixing…')
+  })
+  test('Score… says which stems are hard to write down, as #1199 found', () => {
+    const labels = MODELS[1]!.stems.map((stem) => {
+      const { title } = stemTitle(stem, 'stems')
+      return scoreLabel(stemScore({ stem, title, file: `/s/song - ${stem}.wav`, song: 'song' }).hard)
+    })
+    assert.deepEqual(labels, ['Score…', 'Score…', 'Score…', 'Score… (hard)', 'Score… (hard)', 'Score… (hard)'])
+  })
+
+  test('a stem’s score is titled after the song’s file, without its extension', () => {
+    assert.equal(songName('/Music/valeriy-meladze_-_tekila-lyubov.mp3'), 'valeriy-meladze_-_tekila-lyubov')
+    assert.equal(songName('/Music/a.b.flac'), 'a.b')
+    assert.equal(songName('/Music/.hidden'), '.hidden')
   })
 })

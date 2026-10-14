@@ -4,17 +4,21 @@
 //! channel as a `separation` event. Before a `done` event is passed on, its
 //! folder is let into the asset protocol's scope, which starts empty, so the
 //! page can play the stems. Mixing and Show in Finder take only files in a
-//! folder separated in this run of the app. The web server has none of this
-//! (D55).
+//! folder separated in this run of the app. A stem leads to a score: one is
+//! written beside it, and a score's stem, the file its `% Stem:` line names
+//! beside it, may be played under the preview. The web server has none of
+//! this (D55).
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
+use lily_engrave::files::unused_name;
 use lily_separate::{ProjectRoot, ROOT_VARIABLE, Request, Separator, Sidecar};
-use lily_session::{Studio, StudioEvent, lock};
+use lily_session::{Opened, Studio, StudioEvent, lock};
 use serde::Serialize;
 use serde_json::Value;
 use tauri::{AppHandle, Manager, State};
 use tauri_plugin_opener::OpenerExt;
+use tokio::io::AsyncWriteExt;
 
 use crate::dialogs::{self, Open, Save};
 use crate::smoke::Smoke;
@@ -219,6 +223,101 @@ pub fn reveal_in_finder(app: AppHandle, stems: State<'_, Stems>, path: PathBuf) 
         .map_err(|error| error.to_string())
 }
 
+/// Writes `text`, the score the page made for `stem` (files.ts's
+/// `stemScore`), beside the stem as `<name>.ly`, or `<name> 2.ly` and so on
+/// when that is taken, and opens it: the stems' folder becomes the open
+/// folder. No panel asks where; nothing is written over.
+#[tauri::command]
+pub async fn new_score_for_stem(
+    studio: State<'_, Arc<Studio>>,
+    stems: State<'_, Stems>,
+    stem: PathBuf,
+    name: String,
+    text: String,
+) -> Answer<Opened> {
+    let stem = stems.check(&stem)?;
+    let folder = stem
+        .parent()
+        .filter(|_| stem.is_file())
+        .ok_or_else(|| format!("{} is not a stem.", stem.display()))?;
+    let file = write_new_score(folder, &name, &text).await?;
+    Ok(studio.open_file_at(&file).await)
+}
+
+/// The stem `stem`, as a score's `% Stem:` line names it (files.ts's
+/// `stemOfScore`): an audio file beside `score`, which the page has open. It
+/// may be played from now on, alone: the asset scope lets in that file, not
+/// its folder.
+#[tauri::command]
+pub fn attach_stem(
+    app: AppHandle,
+    studio: State<'_, Arc<Studio>>,
+    score: Value,
+    stem: String,
+) -> Answer<PathBuf> {
+    let score = studio.check(&score)?;
+    let stem = stem_beside(&score, &stem)?;
+    app.asset_protocol_scope()
+        .allow_file(&stem)
+        .map_err(|error| error.to_string())?;
+    Ok(stem)
+}
+
+/// `<name>.ly` in `folder`, or the first of `<name> 2.ly`… that is free,
+/// created with `text`. `name` is a word of the stem's, as the page made it.
+async fn write_new_score(folder: &Path, name: &str, text: &str) -> Answer<PathBuf> {
+    let plain = !name.is_empty()
+        && !name.starts_with([' ', '-'])
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, ' ' | '_' | '-'));
+    if !plain {
+        return Err(format!("“{name}” cannot name a score."));
+    }
+    loop {
+        let file = unused_name(folder, name, ".ly").await;
+        // Another program may take the name between the look and the write.
+        let created = tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&file)
+            .await;
+        match created {
+            Ok(mut handle) => {
+                handle
+                    .write_all(text.as_bytes())
+                    .await
+                    .map_err(|error| format!("{}: {error}", file.display()))?;
+                return Ok(file);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(format!("{}: {error}", file.display())),
+        }
+    }
+}
+
+/// The real path of the audio file `name` beside `score`, by name only: no
+/// other folder, and no link out of this one.
+fn stem_beside(score: &Path, name: &str) -> Answer<PathBuf> {
+    let refused = || format!("{name} is not a stem beside {}.", score.display());
+    if name.is_empty() || name.contains(['/', '\\']) || name == "." || name == ".." {
+        return Err(refused());
+    }
+    let folder = score
+        .parent()
+        .and_then(|folder| folder.canonicalize().ok())
+        .ok_or_else(refused)?;
+    let stem = folder.join(name).canonicalize().map_err(|_| refused())?;
+    let audio = stem
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| SONG_EXTENSIONS.contains(&ext.to_ascii_lowercase().as_str()));
+    if !audio || !stem.is_file() || stem.parent() != Some(folder.as_path()) {
+        return Err(refused());
+    }
+    Ok(stem)
+}
+
 /// The folder of a `done` event, the one the stems were written to.
 fn done_folder(event: &Value) -> Option<PathBuf> {
     (event["event"] == "done")
@@ -285,6 +384,61 @@ mod tests {
         assert_eq!(inside(&folders, &nested), Some(nested.clone()));
         assert_eq!(inside(&folders, &nested.join("missing.wav")), None);
         assert_eq!(inside(&[], &stem), None);
+    }
+
+    #[tokio::test]
+    async fn a_stems_score_is_written_beside_it_and_never_over_a_file() {
+        let scratch = tempfile::tempdir().unwrap();
+        let folder = scratch.path();
+        std::fs::write(folder.join("bass.ly"), "mine").unwrap();
+
+        let file = write_new_score(folder, "bass", "\\version").await.unwrap();
+        assert_eq!(file, folder.join("bass 2.ly"));
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), "\\version");
+        assert_eq!(
+            std::fs::read_to_string(folder.join("bass.ly")).unwrap(),
+            "mine"
+        );
+
+        for name in ["", "../bass", "a/b", ".hidden", "-x", " bass", "bass\n"] {
+            assert!(write_new_score(folder, name, "").await.is_err(), "{name:?}");
+        }
+    }
+
+    #[test]
+    fn a_scores_stem_is_an_audio_file_beside_it() {
+        let scratch = tempfile::tempdir().unwrap();
+        let dir = scratch.path().canonicalize().unwrap();
+        let folder = dir.join("song (stems)");
+        std::fs::create_dir_all(folder.join("nested")).unwrap();
+        let score = folder.join("bass.ly");
+        std::fs::write(&score, "").unwrap();
+        let stem = folder.join("song - bass.wav");
+        std::fs::write(&stem, b"RIFF").unwrap();
+        std::fs::write(folder.join("notes.txt"), "").unwrap();
+        std::fs::write(dir.join("song.mp3"), b"ID3").unwrap();
+        std::fs::write(folder.join("nested").join("a.wav"), b"RIFF").unwrap();
+
+        assert_eq!(stem_beside(&score, "song - bass.wav"), Ok(stem));
+        for name in [
+            "",
+            "..",
+            "../song.mp3",
+            "nested/a.wav",
+            "nested",
+            "notes.txt",
+            "missing.wav",
+        ] {
+            assert!(stem_beside(&score, name).is_err(), "{name:?}");
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(dir.join("song.mp3"), folder.join("out.mp3")).unwrap();
+            assert!(
+                stem_beside(&score, "out.mp3").is_err(),
+                "a link out of the folder"
+            );
+        }
     }
 
     #[test]

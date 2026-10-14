@@ -826,7 +826,7 @@ button:focus-visible,
 
 .separate-stem {
   display: grid;
-  grid-template-columns: minmax(140px, 200px) minmax(0, 1fr);
+  grid-template-columns: minmax(140px, 200px) minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
   min-height: 46px;
@@ -861,6 +861,31 @@ button:focus-visible,
 .separate-stem audio {
   width: 100%;
   height: 32px;
+}
+
+/* A stem's Score… (D112): the hard ones say so, more quietly. */
+.separate-score {
+  white-space: nowrap;
+}
+
+.separate-score.hard {
+  color: var(--fg-muted);
+}
+
+.separate-menu {
+  max-width: 280px;
+}
+
+.separate-menu small {
+  padding: 2px 8px 4px;
+  color: var(--fg-muted);
+  font-size: 11.5px;
+}
+
+.separate-menu hr {
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
 }
 
 .separate-results-foot {
@@ -1058,6 +1083,84 @@ button:focus-visible,
   border-color: var(--warning);
   color: var(--warning);
   text-decoration: line-through;
+}
+
+/* The Stem strip (D112): a score's stem, above the transport. */
+.stem-strip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 8px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--selected) 55%, transparent);
+  color: var(--fg-muted);
+  user-select: none;
+}
+
+.stem-strip[hidden] {
+  display: none;
+}
+
+.stem-strip-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.stem-strip-name {
+  min-width: 0;
+  max-width: 30%;
+  overflow: hidden;
+  color: var(--fg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stem-strip button {
+  min-width: 28px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.stem-strip button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.stem-strip button:disabled,
+.stem-strip input:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.stem-strip[data-state='playing'] .stem-strip-play,
+.stem-strip .stem-strip-with[aria-pressed='true'] {
+  color: var(--lily-playing);
+}
+
+.stem-strip .stem-strip-with[aria-pressed='true'] {
+  border-color: var(--lily-playing);
+}
+
+.stem-strip input[type='range'] {
+  flex: 1 1 60px;
+  min-width: 40px;
+  margin: 0 4px;
+  accent-color: var(--accent);
+}
+
+.stem-strip-time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .playback-setup {

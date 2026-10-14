@@ -17,6 +17,8 @@ export const SEPARATION_COMMANDS: ReadonlySet<string> = new Set([
   'separation_cancel',
   'mix_stems',
   'reveal_in_finder',
+  'new_score_for_stem',
+  'attach_stem',
 ])
 
 /** Rejects a separation command as the app's Rust side rejects a failed one; undefined for any other command. */
