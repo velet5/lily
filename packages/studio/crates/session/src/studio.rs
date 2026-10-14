@@ -40,6 +40,9 @@ pub enum StudioEvent {
     RecentChanged,
     /// File › Open Recent was chosen (D49); the page opens `path` as the welcome screen would.
     OpenRecent { path: String },
+    /// A stem separation's event, as karaoke-mlx prints it (D112). Only the
+    /// app sends it: the web worker cannot separate.
+    Separation { event: serde_json::Value },
 }
 
 /// The last finished outcomes kept, so switching back to a score shows it at once (D39).

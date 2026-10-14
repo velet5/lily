@@ -2615,3 +2615,93 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   the worker's JS heap, and the Android floor device. The effort is
   estimated at 80,000–90,000 lines of Rust and 84–102 engineer-weeks, 67–83
   of them to ship on the web, at an assumed rate that MS1 measures.
+
+---
+
+## D112 — Lily Studio: a Stems workspace, with RoFormer MLX's separation as a uv sidecar
+
+**Status:** accepted (the operator chose option A of the design, 2026-10-14)
+· **Refines:** D28, D42, D55 · **Numbered:** after feat/engine's D57–D111, so the branches do not collide
+
+- **What.** Lily Studio takes in RoFormer MLX
+  (`/Volumes/T5/Workspace/roformer-karaoke-mlx`), which splits a song into
+  karaoke stems (lead vocals and instrumental, the `becruily` and
+  `aufr33-viperx` models) or six (vocals, drums, bass, guitar, piano and
+  other, `bs-roformer-sw`) on Apple Silicon. A *Scores | Stems* switch at the
+  top of the sidebar picks the workspace. *Scores* is the studio as it was.
+  *Stems* lists past separations where Files was. The Separate view spans the
+  editor and preview columns: drop a song, pick a model grouped *Karaoke* /
+  *All instruments*, a quality and a format, then Separate, with progress and
+  Cancel. There is one player per stem, and ticked stems export as a mix.
+  Show in Finder is kept. A separation goes on running in Scores, and the
+  status line shows it. A stem leads to a score: *New score for bass…* writes
+  `bass.ly` from an instrument template beside the stems, and a *Stem* strip
+  above the preview's transport plays the stem alone or with the score's
+  MIDI. The design, with its mockups and the two other options (a second
+  window; a song library as a new app), is the published page "Lily Studio
+  Stems".
+- **Where the code lives.** `packages/studio/crates/separate`
+  (`lily-separate`), with no Tauri in it, is a port of RoFormer's
+  `app/src-tauri/src/lib.rs`. It finds the project (`project_root`) and uv
+  (`find_uv`) and builds `uv run --quiet --project <root> karaoke-mlx --json
+  …` (`Sidecar::command`). It also runs one separation at a time in its own
+  process group (`Separator`), and lists `models` and `mix`es stems. Only
+  `src-tauri` depends on it. `crates/session` and the web server never run
+  it.
+- **Commands** (`src-tauri/src/separate.rs`): `separation_status` (the
+  project, uv, what is missing, whether one is running), `separation_models`,
+  `separate` (answers the stems' folder), `separation_cancel`, `mix_stems`
+  (a save panel names the file) and `reveal_in_finder`. `new_score_for_stem`
+  comes with the stems-to-score step. Each event karaoke-mlx prints goes to
+  the page on the studio's one channel as `{type: "separation", event}`, not
+  on RoFormer's `karaoke://event`. A CLI that dies without an `error` event,
+  because it was cancelled or crashed, gets one with the end of its stderr
+  and `cancelled`, so the page always hears how a separation ended.
+- **Security.** The capability stays `core:default` (D42). The page reaches
+  no plugin; Show in Finder and the mix's save panel run on the Rust side. The
+  stems play through the asset protocol (Tauri's `protocol-asset` feature,
+  `assetProtocol.enable`), whose static scope is empty. Before a `done` event
+  reaches the page, its folder is allowed with `allow_directory(folder,
+  false)`, not recursively. That is narrower than RoFormer's `$HOME/**` and
+  `/Volumes/**`. Mixing and Show in Finder take only that folder and the
+  files directly in it. The CSP gains `media-src 'self' asset:
+  http://asset.localhost`: it starts from `default-src 'none'`, which would
+  block every `<audio>`. A song must be an absolute path to a file, and the
+  model and format plain words, so nothing the page sends is read as an
+  option.
+- **The Python.** karaoke-mlx's Python moves into this repository as
+  `packages/separate`. Until it does, it stays in RoFormer's checkout, which
+  nothing commits to. The root is, in order: `KARAOKE_MLX_ROOT`; a
+  `separation.root` setting, which the setup card writes; `packages/separate`
+  beside the studio; then RoFormer's checkout. A root that the variable or
+  the setting names must hold a `pyproject.toml`, and is never passed over
+  for a default. uv is looked for on the studio's search path, then in
+  Homebrew's folders, `~/.local/bin` and `~/.cargo/bin`. The CLI runs with
+  Homebrew's folders ahead of the search path, where ffmpeg is. Quitting the
+  app ends a running separation's process group, which RoFormer's own app
+  did not do.
+- **Web (D55).** Separation needs the Mac. The page asks the bridge
+  `separationAvailable()`. The web transport's stub answers no and rejects
+  every separation call with *Separating stems needs the Mac app*. The
+  switch is not drawn on the web, as the agents are not. The server and the
+  worker do not change, and no `separation` event reaches the socket.
+- **Data and identity.** The name stays "Lily Studio", the identifier
+  `io.github.velet5.lily-studio`, and the icon the lily. So
+  `~/Library/Application Support/Lily Studio`, `~/Documents/Lily Studio`,
+  WebKit's local storage and the caches stay where they are, and nothing is
+  migrated. The only new file is `separations.json`, the recent
+  separations, in Application Support beside the others. Stems go next to
+  the song in `<song> (stems)` or `<song> (karaoke)`, as RoFormer writes
+  them. RoFormer MLX's own app stays buildable in its repository.
+- **Not done yet.** The renderer's calls and the web stub, the switch, the
+  Separate view, the stems-to-score path, the `separation.root` setting and
+  its setup card, `separations.json`, and moving the Python. Folders
+  separated in an earlier run are not in the asset scope until a later step
+  lets the recent separations in again.
+- **Verified.** `crates/separate`'s tests run stand-ins for uv: the root's
+  order and refusals, uv's places, the command line, a request's
+  arguments, events passed on in order, an `error` event, a silent death
+  reported from stderr, one job at a time, and Cancel ending the CLI's own
+  child too. They also cover `models` and `mix`. `separate.rs`'s tests cover
+  which paths count as inside a separated folder, and the mix's name.
+  Nothing was separated through the app yet.

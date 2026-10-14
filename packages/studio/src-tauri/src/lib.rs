@@ -1,10 +1,12 @@
 //! Lily Studio (DECISIONS D28, D42): one window with the fixed layout of
 //! renderer/index.html, the commands behind it (commands.rs), the menu
 //! (menu.rs) and the native dialogs (dialogs.rs). Compiling, watching and
-//! file access are crates/engrave's, the agents crates/agents's.
+//! file access are crates/engrave's, the agents crates/agents's, stem
+//! separation crates/separate's (separate.rs, D112).
 mod commands;
 mod dialogs;
 mod menu;
+mod separate;
 mod smoke;
 
 use std::path::PathBuf;
@@ -22,6 +24,7 @@ use tauri_plugin_opener::OpenerExt;
 use lily_engrave::setup::{AgentSettings, AgentsSettings};
 use lily_session::{Paths, Studio, StudioEvent, StudioOptions};
 
+use crate::separate::Stems;
 use crate::smoke::Smoke;
 
 const WINDOW: &str = "main";
@@ -80,6 +83,7 @@ pub fn run() {
             let studio = tauri::async_runtime::block_on(Studio::new(options));
             app.manage(studio.clone());
             app.manage(Smoke(smoke.clone()));
+            app.manage(Stems::default());
             app.set_menu(menu::build(&handle)?)?;
             // File › Open Recent and the welcome screen follow the recent list (D49).
             let entries = tauri::async_runtime::block_on(studio.recent.entries());
@@ -154,6 +158,12 @@ pub fn run() {
             commands::open_recent,
             commands::forget_recent,
             commands::clear_recent,
+            separate::separation_status,
+            separate::separation_models,
+            separate::separate,
+            separate::separation_cancel,
+            separate::mix_stems,
+            separate::reveal_in_finder,
             smoke::smoke_folder,
             smoke::smoke_read,
             smoke::smoke_write,
@@ -172,9 +182,10 @@ pub fn run() {
     };
 
     app.run(|app, event| {
-        // Stop lilypond and the agents and delete the pages in the temp
-        // directory before exiting; the smoke test's folder goes too.
+        // Stop lilypond, the agents and a separation, and delete the pages in
+        // the temp directory before exiting; the smoke test's folder goes too.
         if let RunEvent::Exit = event {
+            app.state::<Stems>().separator.cancel();
             let studio = app.state::<Arc<Studio>>().inner().clone();
             tauri::async_runtime::block_on(studio.dispose());
             if let Some(smoke) = &app.state::<Smoke>().0 {
