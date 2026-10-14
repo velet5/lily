@@ -6,6 +6,7 @@
 mod commands;
 mod dialogs;
 mod menu;
+mod profile;
 mod separate;
 mod smoke;
 
@@ -60,7 +61,7 @@ pub fn run() {
                 // The Electron studio's folder, so settings and chats carry over.
                 data: match &smoke {
                     Some(smoke) => smoke.profile.clone(),
-                    None => resolver.data_dir()?.join("Lily Studio"),
+                    None => profile::data_folder(&resolver.data_dir()?),
                 },
                 documents: resolver
                     .document_dir()

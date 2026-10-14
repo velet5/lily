@@ -42,6 +42,12 @@ Developer ID and notarized by Apple, so it opens without a warning. A
 `dist:local` build is not: on another Mac, open it the first time with
 right-click › Open.
 
+`npm start` and an installed Lily Studio are one app to macOS: the same name,
+bundle identifier and data folder. Only one runs at a time, so `npm start`
+while Lily Studio is open only brings the open one forward. Quit it first.
+Either one keeps its settings, recent files and chats in *Application Support ›
+Lily Studio*, and installing a new DMG leaves them there.
+
 `npm run dist` needs the Developer ID Application certificate in the login
 keychain and a notarization profile named `lily-notary`, stored once with
 `xcrun notarytool store-credentials lily-notary --apple-id <id> --team-id <team>`.

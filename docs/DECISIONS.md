@@ -2701,6 +2701,23 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   separations, in Application Support beside the others. Stems go next to
   the song in `<song> (stems)` or `<song> (karaoke)`, as RoFormer writes
   them. RoFormer MLX's own app stays buildable in its repository.
+- **Keeping the data in place.** `src-tauri/src/profile.rs` names the data
+  folder (`data_folder`: Application Support › `Lily Studio`, the Electron
+  studio's, by name and not by identifier). Its tests fail if the identifier,
+  the name, the main binary's name or `package.json`'s `productName` changes,
+  if an icon the bundle lists is missing, or if `tauri.local.json` overrides
+  more than the signing. Another test starts a studio on a profile an earlier
+  one left, with the Electron studio's `Local Storage` and a file the studio
+  does not know, and finds every file there, byte for byte, and nothing in
+  Documents. Moving the data would need its own decision and the user's
+  consent at launch; nothing here moves it.
+- **The install collision (#1200).** The single-instance plugin's socket is
+  `/tmp/io_github_velet5_lily_studio_si.sock`, from the identifier alone (no
+  `semver` feature). `npm start` and the installed app share it, so a
+  dev build started while Lily Studio is open hands its launch to the open
+  one and exits. That is kept: both write the same profile, and a second
+  identifier for development would still share Application Support ›
+  `Lily Studio`. The studio's README says to quit the app first.
 - **The switch** (`WorkspaceSwitch` in `src/renderer/sidebar.ts`) is a
   tablist drawn where `separationAvailable()` says separation runs. Stems'
   two panes lie over the files and over the editor's and the preview's
