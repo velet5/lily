@@ -84,7 +84,7 @@ mod tests {
             ),
             (
                 "recent.json",
-                r#"[{"path":"/Users/ada/Scores/ode.ly","kind":"file"}]"#,
+                r#"[{"path":"/Users/ada/Scores/ode.ly","kind":"file","opened":1760000000000}]"#,
             ),
             ("playback.json", "{}"),
             ("chats.json", "[]"),
