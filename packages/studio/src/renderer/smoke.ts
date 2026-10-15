@@ -17,7 +17,8 @@
 // message box goes with the next message (D46). The Parts fold mutes the part,
 // puts it on another instrument and starts playback at a bar marked on the
 // pages (D45); Export MIDI writes smoke.mid (D54); Piano shows the music
-// falling onto a keyboard over the editor (D116). Given a song, it separates
+// falling onto a keyboard over the editor (D116), and below the score, without
+// a track hidden in Tracks (D117). Given a song, it separates
 // it, plays the stems and a mix of two, and writes a score for the bass (D112).
 //
 // The Rust side prepares the folder and the stand-in agent, and answers the
@@ -296,6 +297,25 @@ async function main(): Promise<void> {
         ? `${canvas.clientWidth}×${canvas.clientHeight}`
         : ''
     })
+    // Below the score (D117): the source is back and the piano under the
+    // pages; Tracks hides the one part's notes and shows them again.
+    const place = $<HTMLSelectElement>('.piano-place')!
+    place.value = 'score'
+    place.dispatchEvent(new Event('change'))
+    playback.pianoBelow = await until('the piano view below the score', () => {
+      const canvas = $<HTMLCanvasElement>('.piano-dock .piano-canvas')
+      const shown = !$('.piano-dock')?.hidden && $('.editor')?.dataset.mode === 'source' && !!$('.monaco-host')?.offsetParent
+      return shown && canvas && canvas.width > 0 && $('.piano-empty')?.hidden ? `${canvas.clientWidth}×${canvas.clientHeight}` : ''
+    })
+    click('.piano-tracks-button')
+    const track = await until('the tracks to choose from', () => $<HTMLInputElement>('.piano-tracks:not([hidden]) input'))
+    track?.click()
+    playback.pianoTracks = await until('the hidden track\'s notes to go', () => ($('.piano-empty')?.hidden === false ? text('.piano-empty') : ''))
+    track?.click()
+    await until('the track\'s notes again', () => $('.piano-empty')?.hidden === true)
+    place.value = 'source'
+    place.dispatchEvent(new Event('change'))
+    await until('the piano view over the editor again', () => $('.editor')?.dataset.mode === 'piano' && !!$('.piano-dock')?.hidden)
     click('.editor-tabs [data-view="source"]')
     await until('the source again', () => $('.editor')?.dataset.mode === 'source' && !!$('.monaco-host')?.offsetParent)
     click('.transport button[aria-label="Stop"]')

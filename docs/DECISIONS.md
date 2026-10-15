@@ -3041,3 +3041,38 @@ chords for the hard stems and kick, snare and hi-hat for drums, 2026-10-14)
   paused, shows the view with notes over the editor, and *Source* brings
   Monaco back. The drawing was looked at in headless Chrome, with stand-in
   notes for two hands, at both ranges; not in the app while playing.
+
+## D117 — Lily Studio: the piano view below the score, its tracks, and a pause that pauses
+
+**Status:** proposed · **Refines:** D116, D35
+
+- **Below the score.** A selector in the piano view's header puts it *Over
+  the source*, as D116 has it, or *Below the score*: a strip of the preview
+  pane, 38% of its height, between the pages and the transport, with its
+  selectors on a bar along its top. There it stays under SVG and PDF alike
+  and the source stays in the editor; Piano in the transport shows and
+  hides it, and opening a file or the welcome screen leaves it. The editor's
+  *Piano* tab puts it over the source again. The choice is kept in the
+  window's storage.
+- **Tracks.** A *Tracks* button opens a box per part with keys, in its
+  colour and with the Parts fold's name for it; an unticked part's notes do
+  not fall, though it still sounds (muting is the Parts fold's). A part keeps
+  its colour when another is hidden, and *The score's notes* range follows
+  the parts shown. The button is marked while a part is hidden. The hidden
+  parts are kept per score in the window's storage, by track.
+- **Pause.** The transport was drawn again on each tick while playing (every
+  100 ms), and its ▶/❚❚ button's text replaced each time. WebKit drops a
+  click whose press and release land on either side of such a replacement,
+  so ❚❚ seldom paused, while ▶, drawn only on a change, always played. The
+  transport and the Stem strip now set a text only when it changes.
+- **How.** `index.ts` moves the view's body and its header actions between
+  the editor and the `.piano-dock`, and Space in the view toggles once
+  where both panes listen. `ScorePlayer` gives the view `rootFile` and
+  `parts`; `pianoTracks` in `piano.ts` lists the tracks with their colours.
+- **Not done.** The strip's height cannot be dragged. A part is not hidden
+  from the pages' marks or the playhead.
+- **Verified.** `piano.test.ts` covers the track list. In `npm run
+  test:smoke`, *Below the score* shows the strip with the source back in the
+  editor, unticking the one track empties the fall, and *Over the source*
+  brings the view back over the editor. The pause was not clicked by a
+  mouse in a test: the smoke test's `click()` has no press and release.

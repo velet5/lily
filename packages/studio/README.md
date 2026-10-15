@@ -19,7 +19,8 @@ LilyPond installed in the same way.
   next to the score. ▶ plays the music and marks the notes as they sound;
   *Parts* mutes a part or plays it on another instrument, and *File › Export
   MIDI…* saves the music, with or without the muted parts. *Piano* shows it
-  falling onto a keyboard where the source is, as piano videos do.
+  falling onto a keyboard where the source is, or below the score, as piano
+  videos do; *Tracks* picks the parts whose notes fall.
 - **Mistakes** are underlined, and a note above the score explains the first
   one in plain words, for example *“\stacato” is not a LilyPond command*.
   Click it to go there.

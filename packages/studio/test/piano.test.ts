@@ -1,7 +1,7 @@
 import * as assert from 'node:assert/strict'
 import { describe, test } from 'node:test'
 import type { Midi, Note } from '@lily/common/web/midi.js'
-import { firstFrom, HIGHEST, keyboard, keyRange, LOWEST, noteName, pianoNotes } from '../src/renderer/piano'
+import { firstFrom, HIGHEST, keyboard, keyRange, LOWEST, noteName, pianoNotes, pianoTracks } from '../src/renderer/piano'
 
 // Runs under `node --test` from out/test/ (npm run test:unit).
 
@@ -46,6 +46,17 @@ describe('the piano view (D116)', () => {
     assert.equal(aSharp.black, true)
     assert.ok(Math.abs(aSharp.x + aSharp.width / 2 - b.x) < 1e-9)
     assert.equal(a.x + a.width, b.x)
+  })
+
+  test('lists the tracks as they first sound, with their parts\' names and colours (D117)', () => {
+    const notes = [note(60, 0, { track: 2 }), note(48, 0, { track: 1 }), note(62, 1, { track: 2 }), note(40, 2, { track: 3 })]
+    const parts = [
+      { track: 1, number: 1, name: 'Piano · F clef', written: 'acoustic grand', drums: false },
+      { track: 2, number: 2, name: 'Piano · G clef', written: 'acoustic grand', drums: false },
+    ]
+    const tracks = pianoTracks(notes, parts)
+    assert.deepEqual(tracks.map(({ track, name }) => [track, name]), [[2, 'Piano · G clef'], [1, 'Piano · F clef'], [3, 'Track 3']])
+    assert.equal(new Set(tracks.map(({ color }) => color)).size, 3)
   })
 
   test('finds the first note at or after a time', () => {

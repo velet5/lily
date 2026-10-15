@@ -11,7 +11,7 @@
 import { formatTime, instrumentName, momentTime, parseMidi, Player, type Midi } from '@lily/common/web/midi.js'
 import { barAt, cursorAt, scrollToShow, soundingAt, timelineOf, type Box, type Timeline } from '@lily/common/web/preview.js'
 import type { CompileEvent, CompileOutcome, ExportedMidi, MutedPart, PlaybackSetup, PlaybackTiming } from '../ipc'
-import { barTime, INSTRUMENT_GROUPS, mixMidi, momentAt, mutedParts, partsOf, withPart, withStartBar } from './playbackSetup'
+import { barTime, INSTRUMENT_GROUPS, mixMidi, momentAt, mutedParts, partsOf, withPart, withStartBar, type Part } from './playbackSetup'
 
 /** The music the player has: the score, the MIDI bytes and their map. */
 export interface Loaded {
@@ -243,6 +243,16 @@ export class ScorePlayer {
     return this.player.midi
   }
 
+  /** The score the music is of. */
+  get rootFile(): string | undefined {
+    return this.loaded?.rootFile
+  }
+
+  /** The parts of the music, muted or not, named as the Parts fold names them. */
+  get parts(): Part[] {
+    return this.parsed ? partsOf(this.parsed, this.loaded?.timing?.staves) : []
+  }
+
   /** Where the music is as it is heard (D51). */
   get position(): number {
     return this.player.position
@@ -316,10 +326,10 @@ export class ScorePlayer {
     const playing = state === 'playing'
     const ready = this.player.midi !== undefined
     this.playButton.disabled = this.stopButton.disabled = this.seek.disabled = !ready
-    this.playButton.textContent = playing ? '❚❚' : '▶︎'
+    setText(this.playButton, playing ? '❚❚' : '▶︎')
     this.playButton.title = ready ? (playing ? 'Pause (Space)' : 'Play (Space)') : this.unplayable || NO_MIDI
     this.playButton.setAttribute('aria-label', ready && playing ? 'Pause' : 'Play')
-    this.time.textContent = ready ? this.times(position) : ''
+    setText(this.time, ready ? this.times(position) : '')
     if (!this.seeking) this.seek.value = String(duration > 0 ? Math.round((position / duration) * SEEK_STEPS) : 0)
     this.options.transport.dataset.state = ready ? state : 'empty'
     this.partsButton.disabled = !ready
@@ -792,10 +802,10 @@ export class StemStrip {
     const ready = !!this.stem && this.duration() > 0
     const playing = !this.audio.paused
     this.playButton.disabled = this.seek.disabled = !ready
-    this.playButton.textContent = playing ? '❚❚' : '▶︎'
+    setText(this.playButton, playing ? '❚❚' : '▶︎')
     this.playButton.title = playing ? 'Pause the stem' : this.linked ? 'Play the stem with the score' : 'Play the stem'
     this.playButton.setAttribute('aria-label', playing ? 'Pause the stem' : 'Play the stem')
-    this.time.textContent = ready ? this.times(this.audio.currentTime) : ''
+    setText(this.time, ready ? this.times(this.audio.currentTime) : '')
     if (!this.seeking) this.seek.value = String(ready ? Math.round((this.audio.currentTime / this.duration()) * SEEK_STEPS) : 0)
     this.withScore.setAttribute('aria-pressed', String(this.linked))
     this.withScore.title = this.linked
@@ -803,6 +813,15 @@ export class StemStrip {
       : 'Play the score’s MIDI with the stem, each from where it is: put the stem where the score’s first bar begins'
     this.options.host.dataset.state = playing ? 'playing' : 'paused'
   }
+}
+
+/**
+ * Sets an element's text only when it changes. The transport is shown again on
+ * every tick while it plays, and WebKit drops a click on a button whose text
+ * node was replaced between the press and the release: ❚❚ rarely paused.
+ */
+function setText(element: HTMLElement, text: string): void {
+  if (element.textContent !== text) element.textContent = text
 }
 
 function baseName(path: string): string {

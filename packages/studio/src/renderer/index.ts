@@ -142,11 +142,15 @@ const preview = new ScorePreview({
   onRender: () => player.rendered(),
   onLayout: () => player.refresh(),
 })
-// What plays, falling onto a keyboard where the source is (D116). It reads
-// the player only while shown, which it never is before the player exists.
+// What plays, falling onto a keyboard where the source is (D116), or below
+// the score (D117). It reads the player only while shown, which it never is
+// before the player exists.
+const pianoBody = editorPane.querySelector<HTMLElement>('.pane-body[data-view="piano"]')!
+const pianoActions = editorPane.querySelector<HTMLElement>('.pane-actions[data-view="piano"]')!
+const pianoDock = previewPane.querySelector<HTMLElement>('.piano-dock')!
 const piano = new PianoView({
-  host: editorPane.querySelector<HTMLElement>('.pane-body[data-view="piano"]')!,
-  actions: editorPane.querySelector<HTMLElement>('.pane-actions[data-view="piano"]')!,
+  host: pianoBody,
+  actions: pianoActions,
   source: {
     get midi() {
       return player.midi
@@ -157,7 +161,14 @@ const piano = new PianoView({
     get playing() {
       return player.playing
     },
+    get rootFile() {
+      return player.rootFile
+    },
+    get parts() {
+      return player.parts
+    },
   },
+  onPlace: () => showPiano(piano.visible),
 })
 // The score's MIDI, with the notes marked on the pages as they play (D35).
 const player = new ScorePlayer({
@@ -171,11 +182,11 @@ const player = new ScorePlayer({
   saveSetup: (rootFile, setup) => studio.setPlaybackSetup(rootFile, setup),
   exportMidi: (rootFile, midi, muted) => studio.exportMidi(rootFile, midi, muted),
   onExported: status,
-  onPiano: () => showEditorView(piano.visible ? 'source' : 'piano'),
+  onPiano: () => showPiano(!piano.visible),
   onPlayback: () => piano.update(),
 })
 const editorTabs = (['source', 'piano'] as const).map((name) => {
-  const tab = button(name === 'source' ? 'Source' : 'Piano', () => showEditorView(name))
+  const tab = button(name === 'source' ? 'Source' : 'Piano', () => (name === 'piano' ? showPianoOverSource() : showSource()))
   tab.setAttribute('role', 'tab')
   tab.dataset.view = name
   tab.title = name === 'source' ? 'The score’s source, to edit' : 'The music falling onto a piano keyboard as it plays'
@@ -183,28 +194,50 @@ const editorTabs = (['source', 'piano'] as const).map((name) => {
 })
 editorPane.querySelector('.editor-tabs')!.append(...editorTabs)
 
-/** The source or the piano view in the editor pane (D116); the editor keeps its state behind the piano. */
-function showEditorView(name: 'source' | 'piano'): void {
-  editorPane.dataset.mode = name
-  for (const tab of editorTabs) tab.setAttribute('aria-selected', String(tab.dataset.view === name))
-  for (const element of editorPane.querySelectorAll<HTMLElement>('[data-view]:not([role="tab"])')) {
-    element.hidden = element.dataset.view !== name
+/**
+ * Shows or hides the piano view where it is placed (D116, D117): over the
+ * editor, which keeps its state behind it, or below the score, with the
+ * source still there.
+ */
+function showPiano(shown: boolean): void {
+  const below = piano.place === 'score'
+  if (below && pianoDock.lastElementChild !== pianoBody) pianoDock.append(pianoActions, pianoBody)
+  if (!below && pianoBody.parentElement !== editorPane) {
+    editorPane.querySelector('.editor-tabs')!.before(pianoActions)
+    editorPane.append(pianoBody)
   }
-  piano.show(name === 'piano')
-  player.pianoShown(name === 'piano')
+  const mode = shown && !below ? 'piano' : 'source'
+  editorPane.dataset.mode = mode
+  for (const tab of editorTabs) tab.setAttribute('aria-selected', String(tab.dataset.view === mode))
+  for (const element of editorPane.querySelectorAll<HTMLElement>('[data-view]:not([role="tab"])')) {
+    element.hidden = element.dataset.view !== mode
+  }
+  pianoDock.hidden = !(shown && below)
+  if (below) pianoActions.hidden = pianoBody.hidden = false
+  piano.show(shown)
+  player.pianoShown(shown)
 }
-showEditorView('source')
+/** The editor's Piano tab: the view over the source, wherever it was. */
+function showPianoOverSource(): void {
+  piano.place = 'source'
+  showPiano(true)
+}
+/** The source in the editor pane: a piano view over it goes, one below the score stays. */
+function showSource(): void {
+  if (piano.place === 'source') showPiano(false)
+}
+showPiano(false)
 // Space plays or pauses when the preview has the focus; a click on the pages gives it.
 previewBody.tabIndex = -1
 const spacePlays = (event: KeyboardEvent) => {
   const target = event.target as HTMLElement
-  if (event.key !== ' ' || event.repeat || target.closest('button, input, select')) return
+  // Below the score the piano view is in the preview pane too: one toggle, not two.
+  if (event.key !== ' ' || event.repeat || event.defaultPrevented || target.closest('button, input, select')) return
   event.preventDefault()
   player.toggle()
 }
 previewPane.addEventListener('keydown', spacePlays)
 // And in the piano view, which a click focuses.
-const pianoBody = editorPane.querySelector<HTMLElement>('.pane-body[data-view="piano"]')!
 pianoBody.tabIndex = -1
 pianoBody.addEventListener('keydown', spacePlays)
 const pdfView = new PdfView({
@@ -264,7 +297,8 @@ function showView(name: 'svg' | 'pdf'): void {
   previewPane.dataset.mode = name
   for (const tab of tabs) tab.setAttribute('aria-selected', String(tab.dataset.view === name))
   for (const element of previewPane.querySelectorAll<HTMLElement>('[data-view]:not([role="tab"])')) {
-    element.hidden = element.dataset.view !== name
+    // The piano view below the score stays under either.
+    if (!element.closest('.piano-dock')) element.hidden = element.dataset.view !== name
   }
   pdfView.show(name === 'pdf')
   player.refresh()
@@ -474,7 +508,7 @@ async function open(file: string): Promise<void> {
   try {
     const text = editor.isOpen(file) ? undefined : await studio.readFile(file)
     showScores()
-    showEditorView('source')
+    showSource()
     welcome.hide()
     monacoHost.hidden = false
     editor.show(file, text)
@@ -608,7 +642,7 @@ studio.onCommand((command) => {
       return void player.exportMidi()
     case 'welcome':
       showScores()
-      showEditorView('source')
+      showSource()
       monacoHost.hidden = true
       return welcome.show(!!editor.file)
     case 'setup-lilypond':

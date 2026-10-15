@@ -52,7 +52,8 @@
         </section>
         <div class="splitter splitter-columns" role="separator" aria-orientation="vertical" aria-label="Resize the sidebar" tabindex="0"></div>
       </aside>
-      <!-- The source, or the piano view of what plays (D116), one shown at a time. -->
+      <!-- The source, or the piano view of what plays (D116), one shown at a
+           time; the piano view moves below the score when placed there (D117). -->
       <section class="pane editor" data-pane="editor" data-mode="source" aria-label="Editor">
         <header class="pane-header">
           <span class="pane-title">Editor</span>
@@ -75,6 +76,9 @@
         <div class="preview-view" data-view="pdf" hidden>
           <div class="pane-body"></div>
         </div>
+        <!-- The piano view below the score, when it is placed there (D117):
+             its selectors and its stage move here from the editor. -->
+        <div class="piano-dock" hidden></div>
         <!-- MIDI playback under both views (D35), and the Parts fold its
              Parts button opens above it (D45). A score written for a stem
              has the Stem strip above the transport (D112). -->

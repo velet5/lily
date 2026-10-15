@@ -1223,14 +1223,36 @@ button:focus-visible,
 
 /* The piano view (D116): a dark stage in both themes, as piano videos have,
    the canvas filling it. */
-.editor .pane-body.piano {
+.pane .pane-body.piano {
   position: relative;
   overflow: hidden;
   background: #0b0e14;
 }
 
-.editor .pane-body.piano:focus {
+.pane .pane-body.piano:focus {
   outline: none;
+}
+
+/* Below the score (D117): a strip over the transport, its selectors on a bar
+   of their own along its top. */
+.piano-dock {
+  flex: 0 0 38%;
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+
+.piano-dock > .pane-actions {
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.piano-dock button {
+  font-size: 12px;
 }
 
 .piano-canvas {
@@ -1250,7 +1272,8 @@ button:focus-visible,
   color: #9aa3b2;
 }
 
-.piano-range {
+.piano-range,
+.piano-place {
   height: 22px;
   font: inherit;
   font-size: 12px;
@@ -1261,6 +1284,65 @@ button:focus-visible,
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 4px;
+}
+
+/* Tracks (D117): its button marked while a track is hidden, and the boxes it opens. */
+.piano-tracks-button {
+  height: 22px;
+}
+
+.piano-tracks-button.filtered {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.piano-tracks {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  max-width: 236px;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+.piano-tracks label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.piano-tracks label:hover {
+  background: var(--hover);
+}
+
+.piano-tracks label span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.piano-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.piano-tracks-none {
+  margin: 0;
+  padding: 6px 8px;
+  color: var(--fg-muted);
 }
 
 /* The Stem strip (D112): a score's stem, above the transport. */
