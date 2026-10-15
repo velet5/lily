@@ -3006,3 +3006,38 @@ chords for the hard stems and kick, snare and hi-hat for drums, 2026-10-14)
   by running `npm start` again.
 - **Verified.** By hand: `npm start` shows the window and the score last
   open. Nothing in the tests runs `tauri dev`.
+
+## D116 — Lily Studio: the piano view, the music falling onto a keyboard
+
+**Status:** proposed · **Refines:** D35, D45
+
+- **What.** **Piano** in the transport, and *Source | Piano* in the editor's
+  header, put a piano view over the editor: a keyboard along the bottom and
+  the notes falling onto it, as piano videos on YouTube show a piece. A note
+  touches its key when it sounds and lights the key while it lasts; each
+  part has its colour, and a note long and wide enough carries its name (C,
+  C#, Eb, F#, Ab, Bb, as those videos spell them, whatever the key). The
+  white keys are lettered, with the octave on each C (middle C is C4). The
+  stage is dark in both themes. Piano again, or *Source*, brings the editor
+  back as it was; opening a file or the welcome screen does too.
+- **Keys.** A selector in the header shows *All 88 keys* (A0 to C8) or *The
+  score's notes*: whole octaves, from the C under the lowest note to the B
+  over the highest. The choice is kept in the window's storage.
+- **What falls.** The player's music, so a part the Parts fold mutes is not
+  there and a seek or the start mark moves the fall; the drums have no keys
+  and are left out. Three seconds of music are shown above the keys. The
+  view follows the heard position (D51), redrawn each frame while the music
+  plays and only then; Space plays and pauses in it, as in the preview.
+- **How.** `src/renderer/piano.ts` draws on a canvas at the screen's pixel
+  ratio and redraws when its pane is resized. `ScorePlayer` has the button
+  and tells the view of each change; the view reads `midi`, `position` and
+  `playing` from it. The editor keeps its model and state behind the view.
+- **Not done.** No falling notes in the extension's preview. Notes are not
+  spelt from the key signature, which the MIDI carries but midi.js does not
+  read. The time shown cannot be zoomed. A hand per staff is not inferred:
+  the colour is per MIDI track, which is per staff.
+- **Verified.** `piano.test.ts` covers the names, the notes kept, the
+  ranges and the keys' layout. In `npm run test:smoke`, Piano, pressed while
+  paused, shows the view with notes over the editor, and *Source* brings
+  Monaco back. The drawing was looked at in headless Chrome, with stand-in
+  notes for two hands, at both ranges; not in the app while playing.

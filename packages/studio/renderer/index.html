@@ -52,9 +52,15 @@
         </section>
         <div class="splitter splitter-columns" role="separator" aria-orientation="vertical" aria-label="Resize the sidebar" tabindex="0"></div>
       </aside>
-      <section class="pane editor" data-pane="editor" aria-label="Editor">
-        <header class="pane-header"><span class="pane-title">Editor</span></header>
-        <div class="pane-body placeholder">No score open</div>
+      <!-- The source, or the piano view of what plays (D116), one shown at a time. -->
+      <section class="pane editor" data-pane="editor" data-mode="source" aria-label="Editor">
+        <header class="pane-header">
+          <span class="pane-title">Editor</span>
+          <span class="pane-actions" data-view="piano" hidden></span>
+          <span class="editor-tabs" role="tablist" aria-label="Editor view"></span>
+        </header>
+        <div class="pane-body placeholder" data-view="source">No score open</div>
+        <div class="pane-body" data-view="piano" hidden></div>
       </section>
       <section class="pane preview" data-pane="preview" data-mode="svg" aria-label="Preview">
         <header class="pane-header">

@@ -7,6 +7,7 @@
 // from a marked bar (D45). Export MIDI saves the music, without the muted
 // parts if the user likes (D54). A score written for a stem has the Stem strip
 // above the transport, which plays the stem alone or with the score (D112).
+// Piano shows the music falling onto a keyboard, over the editor (D116).
 import { formatTime, instrumentName, momentTime, parseMidi, Player, type Midi } from '@lily/common/web/midi.js'
 import { barAt, cursorAt, scrollToShow, soundingAt, timelineOf, type Box, type Timeline } from '@lily/common/web/preview.js'
 import type { CompileEvent, CompileOutcome, ExportedMidi, MutedPart, PlaybackSetup, PlaybackTiming } from '../ipc'
@@ -69,6 +70,10 @@ export interface ScorePlayerOptions {
   exportMidi(rootFile: string, midi: Uint8Array, muted: MutedPart[]): Promise<ExportedMidi | undefined>
   /** Tells the status line what Export MIDI wrote. */
   onExported(message: string): void
+  /** Piano (D116): shows or hides the piano view. */
+  onPiano(): void
+  /** The music, its state or where it is changed; not called per frame. */
+  onPlayback(): void
 }
 
 export class ScorePlayer {
@@ -81,6 +86,7 @@ export class ScorePlayer {
   private readonly addButton = document.createElement('button')
   private readonly markChip = document.createElement('button')
   private readonly partsButton = document.createElement('button')
+  private readonly pianoButton = document.createElement('button')
   private readonly menu = document.createElement('div')
   private loaded: Loaded | undefined
   private unplayable = ''
@@ -128,7 +134,7 @@ export class ScorePlayer {
     this.bar.className = 'transport-bar'
     transport.setAttribute('role', 'toolbar')
     transport.setAttribute('aria-label', 'Playback')
-    this.markChip.type = this.partsButton.type = 'button'
+    this.markChip.type = this.partsButton.type = this.pianoButton.type = 'button'
     this.markChip.className = 'transport-mark'
     this.markChip.hidden = true
     this.partsButton.className = 'transport-parts'
@@ -136,6 +142,10 @@ export class ScorePlayer {
     this.partsButton.title = 'Instruments, mutes and where playback starts'
     this.partsButton.setAttribute('aria-expanded', 'false')
     this.partsButton.setAttribute('aria-controls', 'playback-setup')
+    this.pianoButton.className = 'transport-piano'
+    this.pianoButton.textContent = 'Piano'
+    this.pianoButton.title = 'Show the music falling onto a piano keyboard, where the source is'
+    this.pianoButton.setAttribute('aria-pressed', 'false')
     options.panel.id = 'playback-setup'
     options.panel.hidden = true
     this.startMark.className = 'start-mark'
@@ -143,13 +153,14 @@ export class ScorePlayer {
     this.menu.setAttribute('role', 'menu')
     this.menu.hidden = true
     document.body.append(this.menu)
-    transport.replaceChildren(this.playButton, this.stopButton, this.addButton, this.seek, this.bar, this.time, this.markChip, this.partsButton)
+    transport.replaceChildren(this.playButton, this.stopButton, this.addButton, this.seek, this.bar, this.time, this.markChip, this.pianoButton, this.partsButton)
 
     this.playButton.addEventListener('click', () => this.toggle())
     this.stopButton.addEventListener('click', () => this.player.stop())
     this.addButton.addEventListener('click', () => options.onAddMidi())
     this.markChip.addEventListener('click', () => this.setStartBar(undefined))
     this.partsButton.addEventListener('click', () => this.showPanel(options.panel.hidden === true))
+    this.pianoButton.addEventListener('click', () => options.onPiano())
     options.body.addEventListener('contextmenu', (event) => this.openMenu(event))
     this.menu.addEventListener('focusout', (event) => {
       if (!this.menu.contains(event.relatedTarget as Node | null)) this.menu.hidden = true
@@ -225,6 +236,21 @@ export class ScorePlayer {
 
   get playing(): boolean {
     return this.player.state === 'playing'
+  }
+
+  /** The music as it plays, without the muted parts. */
+  get midi(): Midi | undefined {
+    return this.player.midi
+  }
+
+  /** Where the music is as it is heard (D51). */
+  get position(): number {
+    return this.player.position
+  }
+
+  /** Marks Piano pressed while the piano view is shown. */
+  pianoShown(shown: boolean): void {
+    this.pianoButton.setAttribute('aria-pressed', String(shown))
   }
 
   pause(): void {
@@ -307,6 +333,7 @@ export class ScorePlayer {
       if (!this.frame) this.frame = requestAnimationFrame(() => this.animate())
     } else this.drawPlayhead()
     this.wasPlaying = playing
+    this.options.onPlayback()
   }
 
   private animate(): void {

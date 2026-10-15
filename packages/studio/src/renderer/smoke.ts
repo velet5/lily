@@ -16,7 +16,8 @@
 // it with the agent, the lines attached (D41), and an image pasted into the
 // message box goes with the next message (D46). The Parts fold mutes the part,
 // puts it on another instrument and starts playback at a bar marked on the
-// pages (D45); Export MIDI writes smoke.mid (D54). Given a song, it separates
+// pages (D45); Export MIDI writes smoke.mid (D54); Piano shows the music
+// falling onto a keyboard over the editor (D116). Given a song, it separates
 // it, plays the stems and a mix of two, and writes a score for the bass (D112).
 //
 // The Rust side prepares the folder and the stand-in agent, and answers the
@@ -285,6 +286,18 @@ async function main(): Promise<void> {
       const head = $('.preview-page > .playhead')
       return notes > 0 && head && head.offsetHeight > 0 ? { notes, bar: text('.transport-bar') } : null
     })
+    // Piano (D116): the music falls onto a keyboard where the source was,
+    // and Source brings the editor back.
+    click('.transport-piano')
+    playback.piano = await until('the piano view over the editor', () => {
+      const canvas = $<HTMLCanvasElement>('.piano-canvas')
+      const shown = $('.editor')?.dataset.mode === 'piano' && !$('.monaco-host')?.offsetParent
+      return shown && canvas && canvas.width > 0 && $('.piano-empty')?.hidden && $('.transport-piano')?.getAttribute('aria-pressed') === 'true'
+        ? `${canvas.clientWidth}×${canvas.clientHeight}`
+        : ''
+    })
+    click('.editor-tabs [data-view="source"]')
+    await until('the source again', () => $('.editor')?.dataset.mode === 'source' && !!$('.monaco-host')?.offsetParent)
     click('.transport button[aria-label="Stop"]')
     playback.stopped = await until('the marks to clear on stop', () => !$('.preview-page a.playing, .playhead') && $('.transport')?.dataset.state === 'stopped')
 

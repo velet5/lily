@@ -4,7 +4,8 @@
 // sidebar with the agents' accordion (D40), and Scores | Stems at its top
 // with the Separate view (D112), whose stems lead to scores that play their
 // stem under the preview. On the web (D55) the same page, without the agents
-// or Stems, and with upload and download.
+// or Stems, and with upload and download. The editor pane shows the source or
+// the piano view of what plays (D116).
 import type { CompileEvent, FileChange, Opened } from '../ipc'
 import { AgentPanel, SELECTION_ACTIONS } from './agents'
 import { studio, type StudioApi } from './bridge'
@@ -13,6 +14,7 @@ import { ScoreEditor } from './editor'
 import { button, FileList, stemOfScore } from './files'
 import { addMidiBlock } from './midiBlock'
 import { PdfView } from './pdfView'
+import { PianoView } from './piano'
 import { ScorePlayer, StemStrip } from './player'
 import { ScorePreview } from './preview'
 import { SeparateView } from './separate'
@@ -85,7 +87,7 @@ function report(error: unknown): void {
   console.error(error)
 }
 
-const editorBody = editorPane.querySelector<HTMLElement>('.pane-body')!
+const editorBody = editorPane.querySelector<HTMLElement>('.pane-body[data-view="source"]')!
 const editorTitle = editorPane.querySelector<HTMLElement>('.pane-title')!
 editorBody.classList.remove('placeholder')
 editorBody.replaceChildren()
@@ -140,6 +142,23 @@ const preview = new ScorePreview({
   onRender: () => player.rendered(),
   onLayout: () => player.refresh(),
 })
+// What plays, falling onto a keyboard where the source is (D116). It reads
+// the player only while shown, which it never is before the player exists.
+const piano = new PianoView({
+  host: editorPane.querySelector<HTMLElement>('.pane-body[data-view="piano"]')!,
+  actions: editorPane.querySelector<HTMLElement>('.pane-actions[data-view="piano"]')!,
+  source: {
+    get midi() {
+      return player.midi
+    },
+    get position() {
+      return player.position
+    },
+    get playing() {
+      return player.playing
+    },
+  },
+})
 // The score's MIDI, with the notes marked on the pages as they play (D35).
 const player = new ScorePlayer({
   transport: previewPane.querySelector<HTMLElement>('.transport')!,
@@ -152,15 +171,42 @@ const player = new ScorePlayer({
   saveSetup: (rootFile, setup) => studio.setPlaybackSetup(rootFile, setup),
   exportMidi: (rootFile, midi, muted) => studio.exportMidi(rootFile, midi, muted),
   onExported: status,
+  onPiano: () => showEditorView(piano.visible ? 'source' : 'piano'),
+  onPlayback: () => piano.update(),
 })
+const editorTabs = (['source', 'piano'] as const).map((name) => {
+  const tab = button(name === 'source' ? 'Source' : 'Piano', () => showEditorView(name))
+  tab.setAttribute('role', 'tab')
+  tab.dataset.view = name
+  tab.title = name === 'source' ? 'The score’s source, to edit' : 'The music falling onto a piano keyboard as it plays'
+  return tab
+})
+editorPane.querySelector('.editor-tabs')!.append(...editorTabs)
+
+/** The source or the piano view in the editor pane (D116); the editor keeps its state behind the piano. */
+function showEditorView(name: 'source' | 'piano'): void {
+  editorPane.dataset.mode = name
+  for (const tab of editorTabs) tab.setAttribute('aria-selected', String(tab.dataset.view === name))
+  for (const element of editorPane.querySelectorAll<HTMLElement>('[data-view]:not([role="tab"])')) {
+    element.hidden = element.dataset.view !== name
+  }
+  piano.show(name === 'piano')
+  player.pianoShown(name === 'piano')
+}
+showEditorView('source')
 // Space plays or pauses when the preview has the focus; a click on the pages gives it.
 previewBody.tabIndex = -1
-previewPane.addEventListener('keydown', (event) => {
+const spacePlays = (event: KeyboardEvent) => {
   const target = event.target as HTMLElement
   if (event.key !== ' ' || event.repeat || target.closest('button, input, select')) return
   event.preventDefault()
   player.toggle()
-})
+}
+previewPane.addEventListener('keydown', spacePlays)
+// And in the piano view, which a click focuses.
+const pianoBody = editorPane.querySelector<HTMLElement>('.pane-body[data-view="piano"]')!
+pianoBody.tabIndex = -1
+pianoBody.addEventListener('keydown', spacePlays)
 const pdfView = new PdfView({
   body: view('pdf').querySelector<HTMLElement>('.pane-body')!,
   actions: viewActions('pdf'),
@@ -428,6 +474,7 @@ async function open(file: string): Promise<void> {
   try {
     const text = editor.isOpen(file) ? undefined : await studio.readFile(file)
     showScores()
+    showEditorView('source')
     welcome.hide()
     monacoHost.hidden = false
     editor.show(file, text)
@@ -561,6 +608,7 @@ studio.onCommand((command) => {
       return void player.exportMidi()
     case 'welcome':
       showScores()
+      showEditorView('source')
       monacoHost.hidden = true
       return welcome.show(!!editor.file)
     case 'setup-lilypond':

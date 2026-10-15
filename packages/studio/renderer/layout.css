@@ -477,28 +477,38 @@ button:focus-visible,
   flex-direction: column;
 }
 
-.preview-tabs {
+/* SVG | PDF, and the editor's Source | Piano (D116), drawn alike. */
+.preview-tabs,
+.editor-tabs {
   display: flex;
   margin-right: 8px;
 }
 
-.preview-tabs button {
+.editor-tabs {
+  margin: 0 0 0 8px;
+}
+
+.preview-tabs button,
+.editor-tabs button {
   padding: 0 8px;
   border-radius: 0;
   font-weight: 400;
   letter-spacing: 0;
 }
 
-.preview-tabs button:first-child {
+.preview-tabs button:first-child,
+.editor-tabs button:first-child {
   border-radius: 4px 0 0 4px;
 }
 
-.preview-tabs button:last-child {
+.preview-tabs button:last-child,
+.editor-tabs button:last-child {
   border-left: 0;
   border-radius: 0 4px 4px 0;
 }
 
-.preview-tabs button[aria-selected='true'] {
+.preview-tabs button[aria-selected='true'],
+.editor-tabs button[aria-selected='true'] {
   background: var(--selected);
   color: var(--fg);
 }
@@ -1198,6 +1208,59 @@ button:focus-visible,
   border-color: var(--warning);
   color: var(--warning);
   text-decoration: line-through;
+}
+
+/* Piano (D116): pressed while the piano view is over the editor. */
+.transport .transport-piano {
+  white-space: nowrap;
+}
+
+.transport .transport-piano[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--selected);
+  color: var(--fg);
+}
+
+/* The piano view (D116): a dark stage in both themes, as piano videos have,
+   the canvas filling it. */
+.editor .pane-body.piano {
+  position: relative;
+  overflow: hidden;
+  background: #0b0e14;
+}
+
+.editor .pane-body.piano:focus {
+  outline: none;
+}
+
+.piano-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.piano-empty {
+  position: absolute;
+  inset: 0 0 auto;
+  margin: 0;
+  padding: 24px 16px;
+  text-align: center;
+  color: #9aa3b2;
+}
+
+.piano-range {
+  height: 22px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
 }
 
 /* The Stem strip (D112): a score's stem, above the transport. */
