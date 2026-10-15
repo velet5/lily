@@ -6,7 +6,8 @@
   MIDI playback, errors in the Problems panel, completion and hover, and
   `lily-check`, a headless checker for coding agents.
 - **[Lily Studio](packages/studio)**: a small Mac app for LilyPond scores, for
-  people who do not program.
+  people who do not program. Its Stems workspace splits a song into stems with
+  RoFormer MLX and starts a score for any of them.
 - **[packages/common](packages/common)**: what the two share: the grammar, the
   preview and MIDI player scripts, lilypond's runtime files, and the types and
   spans of diagnostics.

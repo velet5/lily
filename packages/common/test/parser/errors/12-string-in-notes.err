@@ -1,0 +1,4 @@
+12-string-in-notes.ly:2:11: error: string outside of text script or \lyricmode
+{ c4 "text
+          " d }
+fatal error: failed files: "12-string-in-notes.ly"

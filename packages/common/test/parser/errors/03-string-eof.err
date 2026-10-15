@@ -1,0 +1,7 @@
+03-string-eof.ly:2:20: error: EOF found inside string
+\header { title = "
+                   Unfinished }
+03-string-eof.ly:2:20: error: syntax error, unexpected end of input, expecting \header
+\header { title = "
+                   Unfinished }
+fatal error: failed files: "03-string-eof.ly"

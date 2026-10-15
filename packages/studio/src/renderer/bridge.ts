@@ -1,9 +1,10 @@
 // The only bridge between the renderer and Lily Studio's Rust side (DECISIONS
-// D28, D42): `studio`, one Tauri command per call (src-tauri/src/commands.rs),
-// and one channel that brings everything the Rust side starts itself —
-// menu commands, compiles, changes on disk and the agents' chats. Binary data
-// travels as base64 and is a Uint8Array here.
-import { Channel, invoke } from '@tauri-apps/api/core'
+// D28, D42): `studio`, one command per call (src-tauri/src/commands.rs), and
+// one channel that brings everything the Rust side starts itself — menu
+// commands, compiles, changes on disk, the agents' chats and stem separations
+// (D112). Binary data travels as base64 and is a Uint8Array here. `transport`
+// carries them: the app's Tauri IPC, or on the web the socket to the user's
+// worker (D55).
 import type {
   AgentId,
   AgentStatus,
@@ -16,6 +17,7 @@ import type {
   ExportedMidi,
   CompileOutcome,
   FileChange,
+  FileDrop,
   FolderListing,
   LilyPondStatus,
   MutedPart,
@@ -24,10 +26,20 @@ import type {
   PdfOutcome,
   PlaybackSetup,
   RecentList,
+  ListedSeparation,
+  PastSeparation,
+  SeparationAvailability,
+  SeparationEvent,
+  SeparationModel,
+  SeparationRequest,
+  SeparationStatus,
+  Transcription,
+  TranscriptionEvent,
   SetupLink,
   SourceLocation,
   TemplateId,
 } from '../ipc'
+import { transport } from './transport'
 
 /** How the Rust side sends a CompileOutcome: MIDI as base64. */
 type WireOutcome = Omit<CompileOutcome, 'midiData'> & { midiData?: string }
@@ -42,6 +54,8 @@ type StudioEvent =
   | { type: 'chat'; event: ChatEvent }
   | { type: 'recentChanged' }
   | { type: 'openRecent'; path: string }
+  | { type: 'separation'; event: SeparationEvent }
+  | { type: 'transcription'; event: TranscriptionEvent }
 
 function bytes(base64: string): Uint8Array {
   const binary = atob(base64)
@@ -71,7 +85,7 @@ function compileEvent(wire: WireCompileEvent): CompileEvent {
  */
 async function call<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   try {
-    return await invoke<T>(command, args)
+    return await transport.call<T>(command, args)
   } catch (error) {
     throw error instanceof Error ? error : new Error(String(error))
   }
@@ -79,7 +93,7 @@ async function call<T>(command: string, args?: Record<string, unknown>): Promise
 
 /** Fire and forget, like an IPC `send`: a failure is only logged. */
 function send(command: string, args?: Record<string, unknown>): void {
-  invoke(command, args).catch((error: unknown) => console.error(`${command}:`, error))
+  transport.send(command, args)
 }
 
 type Listener<T> = (value: T) => void
@@ -90,6 +104,9 @@ const listeners = {
   chat: new Set<Listener<ChatEvent>>(),
   recentChanged: new Set<Listener<void>>(),
   openRecent: new Set<Listener<string>>(),
+  separation: new Set<Listener<SeparationEvent>>(),
+  transcription: new Set<Listener<TranscriptionEvent>>(),
+  fileDrop: new Set<Listener<FileDrop>>(),
 }
 
 function dispatch(event: StudioEvent): void {
@@ -108,6 +125,10 @@ function dispatch(event: StudioEvent): void {
       return listeners.recentChanged.forEach((listener) => listener())
     case 'openRecent':
       return listeners.openRecent.forEach((listener) => listener(event.path))
+    case 'separation':
+      return listeners.separation.forEach((listener) => listener(event.event))
+    case 'transcription':
+      return listeners.transcription.forEach((listener) => listener(event.event))
   }
 }
 
@@ -116,12 +137,13 @@ function subscribe<T>(set: Set<Listener<T>>, listener: Listener<T>): () => void 
   return () => set.delete(listener)
 }
 
-const channel = new Channel<StudioEvent>()
-channel.onmessage = dispatch
 /** Resolves once the Rust side sends on the channel; commands that start compiles wait for it. */
-const subscribed = call<void>('subscribe', { channel })
+const subscribed = transport.subscribe((event) => dispatch(event as StudioEvent))
+transport.onFileDrop?.((drop) => listeners.fileDrop.forEach((listener) => listener(drop)))
 
 export const studio = {
+  /** On the web (D55): no agents, a LilyPond the server's, files uploaded and downloaded. */
+  hosted: transport.hosted,
   /** The templates of New Score, as the Rust side has them. */
   templates: (): Promise<{ id: TemplateId; label: string }[]> => call('templates'),
 
@@ -249,6 +271,74 @@ export const studio = {
   onCommand: (listener: Listener<Command>): (() => void) => subscribe(listeners.command, listener),
   /** Runs `listener` when a compile starts or ends; saving a file starts one (D31). */
   onCompile: (listener: Listener<CompileEvent>): (() => void) => subscribe(listeners.compile, listener),
+  /** Web only: asks for scores to upload into `folder`, the workspace when not given, and opens them. */
+  upload: (folder: string | undefined): Promise<Opened | undefined> => transport.upload?.(folder) ?? Promise.resolve(undefined),
+  /** Web only: saves `file` in the browser's downloads. */
+  download: (file: string): Promise<void> => transport.download?.(file) ?? Promise.resolve(),
+  /**
+   * Whether stems can be separated here (D112): in the app, not on the web,
+   * where every separation call rejects with `reason`.
+   */
+  separationAvailable: (): SeparationAvailability => transport.separation,
+  /** Where the separation's project and uv are, and what is missing. */
+  separationStatus: (): Promise<SeparationStatus> => call('separation_status'),
+  /** The models karaoke-mlx knows; rejects when the project or uv is missing. */
+  separationModels: (): Promise<SeparationModel[]> => call('separation_models'),
+  /**
+   * Separates `request`'s song next to it, one separation at a time; resolves
+   * with the stems' folder. Its progress, and its `done` or `error`, arrive on
+   * onSeparation; a cancelled one rejects with "Cancelled.".
+   */
+  separate: async (request: SeparationRequest): Promise<string> => {
+    await subscribed
+    return call('separate', { request })
+  },
+  /** Ends the running separation; false when none was running. */
+  cancelSeparation: (): Promise<boolean> => call('separation_cancel'),
+  /**
+   * Asks where to save a mix of `files`, stems of one separation, and writes
+   * it; undefined when the panel was cancelled.
+   */
+  mixStems: (files: string[]): Promise<string | undefined> => call<string | null>('mix_stems', { files }).then(orUndefined),
+  /** Shows a separated folder, or a stem in one, in the Finder. */
+  revealInFinder: (path: string): Promise<void> => call('reveal_in_finder', { path }),
+  /** The songs separated before, last opened first (D114). */
+  separations: (): Promise<ListedSeparation[]> => call('separations'),
+  /** Opens a song on that list: its stems play, mix and score from now on. Rejects when its folder is gone. */
+  openSeparation: (folder: string): Promise<PastSeparation> => call('open_separation', { folder }),
+  /** Asks for a folder of stems separated before and opens it; undefined when the panel was cancelled. */
+  chooseSeparation: (): Promise<PastSeparation | undefined> => call<PastSeparation | null>('choose_separation').then(orUndefined),
+  /** Takes a song off that list; its stems stay where they are. */
+  forgetSeparation: (folder: string): Promise<void> => call('forget_separation', { folder }),
+  /** Asks for a song to separate; undefined when the panel was cancelled. */
+  chooseSong: (): Promise<string | undefined> => call<string | null>('choose_song').then(orUndefined),
+  /**
+   * Writes `text`, a score for `stem` (files.ts's stemScore), beside the stem
+   * as `<name>.ly`, or `<name> 2.ly` when that is taken, and opens it.
+   */
+  newScoreForStem: (stem: string, name: string, text: string): Promise<Opened> => call('new_score_for_stem', { stem, name, text }),
+  /**
+   * The stem `stem`, as the `% Stem:` line of `score`, an open score, names a
+   * file beside it; it plays from stemUrl from now on. Rejects when there is none.
+   */
+  attachStem: (score: string, stem: string): Promise<string> => call('attach_stem', { score, stem }),
+  /**
+   * Transcribes `stem`, a stem of a separation finished in this run, as
+   * `instrument` (its stem name: `bass`, `vocals`…; D113), one at a time.
+   * Its progress, and its `done` or `error`, arrive on onTranscription.
+   */
+  transcribeStem: async (stem: string, instrument: string): Promise<Transcription> => {
+    await subscribed
+    return call('transcribe_stem', { stem, instrument })
+  },
+  /** Runs `listener` for each event of the running transcription: progress, then `done` or `error`. */
+  onTranscription: (listener: Listener<TranscriptionEvent>): (() => void) => subscribe(listeners.transcription, listener),
+  /** Where `<audio>` plays a stem from: one of a separation finished in this run, or an attached one. */
+  stemUrl: (path: string): string => transport.fileUrl?.(path) ?? '',
+  /** Runs `listener` for files dragged over the app's window and dropped; never on the web. */
+  onFileDrop: (listener: Listener<FileDrop>): (() => void) => subscribe(listeners.fileDrop, listener),
+  /** Runs `listener` for each event of the running separation: progress, then `done` or `error`. */
+  onSeparation: (listener: Listener<SeparationEvent>): (() => void) => subscribe(listeners.separation, listener),
   /** Runs `listener` when open files or the score's includes change on disk (D34). */
   onFilesChanged: (listener: Listener<FileChange[]>): (() => void) => subscribe(listeners.filesChanged, listener),
 }

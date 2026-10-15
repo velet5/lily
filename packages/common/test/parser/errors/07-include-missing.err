@@ -1,0 +1,5 @@
+07-include-missing.ly:2:10: error: cannot find file: `no-such-file.ily'
+(search path: `.:.:<datadir>/ly:<datadir>/ps:<datadir>/scm:<datadir>/fonts/otf/:<datadir>/fonts/svg/:')
+\include 
+         "no-such-file.ily"
+fatal error: failed files: "07-include-missing.ly"

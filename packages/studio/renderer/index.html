@@ -14,17 +14,31 @@
   <body>
     <!-- The layout of DECISIONS D28: sidebar | editor | preview, a status line
          below. The sidebar is as wide as its edge is dragged, and holds the
-         files above the agents' accordion (D40). src/renderer/index.ts fills
-         the panes. -->
+         files above the agents' accordion (D40). In the app, a switch at its
+         top picks the workspace (D112): Scores is these panes, Stems puts the
+         separations over the files and the Separate view over the editor and
+         the preview, which stay as they are behind them. Stems' panes are
+         hidden until the switch is drawn. src/renderer/index.ts fills the
+         panes. -->
     <main class="studio">
       <aside class="sidebar" data-pane="sidebar">
-        <nav class="pane files" data-pane="files" aria-label="Files">
-          <header class="pane-header">
-            <span class="pane-title">Files</span>
-            <span class="pane-actions"></span>
-          </header>
-          <div class="pane-body placeholder">No folder open</div>
-        </nav>
+        <div class="workspace-switch" role="tablist" aria-label="Workspace" hidden></div>
+        <div class="sidebar-panes">
+          <nav class="pane files" data-pane="files" aria-label="Files">
+            <header class="pane-header">
+              <span class="pane-title">Files</span>
+              <span class="pane-actions"></span>
+            </header>
+            <div class="pane-body placeholder">No folder open</div>
+          </nav>
+          <nav class="pane separations" data-pane="separations" aria-label="Separations" hidden>
+            <header class="pane-header">
+              <span class="pane-title">Separations</span>
+              <span class="pane-actions"></span>
+            </header>
+            <div class="pane-body placeholder">No separations yet</div>
+          </nav>
+        </div>
         <div class="splitter splitter-rows" role="separator" aria-orientation="horizontal" aria-label="Resize the agents" tabindex="0"></div>
         <section class="agents" data-pane="agents" aria-label="Agents">
           <section class="fold" data-fold="chats">
@@ -38,9 +52,16 @@
         </section>
         <div class="splitter splitter-columns" role="separator" aria-orientation="vertical" aria-label="Resize the sidebar" tabindex="0"></div>
       </aside>
-      <section class="pane editor" data-pane="editor" aria-label="Editor">
-        <header class="pane-header"><span class="pane-title">Editor</span></header>
-        <div class="pane-body placeholder">No score open</div>
+      <!-- The source, or the piano view of what plays (D116), one shown at a
+           time; the piano view moves below the score when placed there (D117). -->
+      <section class="pane editor" data-pane="editor" data-mode="source" aria-label="Editor">
+        <header class="pane-header">
+          <span class="pane-title">Editor</span>
+          <span class="pane-actions" data-view="piano" hidden></span>
+          <span class="editor-tabs" role="tablist" aria-label="Editor view"></span>
+        </header>
+        <div class="pane-body placeholder" data-view="source">No score open</div>
+        <div class="pane-body" data-view="piano" hidden></div>
       </section>
       <section class="pane preview" data-pane="preview" data-mode="svg" aria-label="Preview">
         <header class="pane-header">
@@ -55,10 +76,22 @@
         <div class="preview-view" data-view="pdf" hidden>
           <div class="pane-body"></div>
         </div>
+        <!-- The piano view below the score, when it is placed there (D117):
+             its selectors and its stage move here from the editor. -->
+        <div class="piano-dock" hidden></div>
         <!-- MIDI playback under both views (D35), and the Parts fold its
-             Parts button opens above it (D45). -->
+             Parts button opens above it (D45). A score written for a stem
+             has the Stem strip above the transport (D112). -->
         <div class="playback-setup" role="region" aria-label="Parts" hidden></div>
+        <div class="stem-strip" hidden></div>
         <div class="transport"></div>
+      </section>
+      <section class="pane stems" data-pane="stems" aria-label="Separate" hidden>
+        <header class="pane-header">
+          <span class="pane-title">Separate</span>
+          <span class="pane-actions"></span>
+        </header>
+        <div class="pane-body placeholder">No song chosen</div>
       </section>
       <footer class="status" data-pane="status" role="status"></footer>
     </main>

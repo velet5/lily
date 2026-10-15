@@ -3,8 +3,9 @@
 // Help › Welcome asks for it: the sample score, new and open, a few first
 // steps, whether LilyPond is ready, and the folders and scores opened last
 // (D49). The setup dialog walks through installing LilyPond; it opens by
-// itself on a launch that cannot find it. `recentLabel` is pure so the tests
-// can run it without a DOM.
+// itself on a launch that cannot find it. On the web (D55) LilyPond is the
+// server's, so the dialog only says how it is, and the workspace shows as
+// My Scores. `recentLabel` is pure so the tests can run it without a DOM.
 import type { LilyPondStatus, RecentEntry } from '../ipc'
 import type { StudioApi } from './bridge'
 import { button } from './files'
@@ -165,7 +166,12 @@ export class Welcome {
   }
 
   private recentRow(entry: RecentEntry, home: string | undefined): HTMLElement {
-    const { name, place } = recentLabel(entry.path, home)
+    const label = recentLabel(entry.path, home)
+    const hosted = this.options.studio.hosted
+    const name = label.name
+    // The server's paths mean nothing to a user of the web: the workspace is My Scores.
+    const place = hosted ? label.place.replace(/^~/, 'My Scores') : label.place
+    const where = hosted ? [place, name].filter(Boolean).join('/') : entry.path
     const row = element('li')
     row.dataset.kind = entry.kind
     if (!entry.exists) row.dataset.missing = ''
@@ -174,8 +180,8 @@ export class Welcome {
     open.type = 'button'
     const opened = new Date(entry.opened).toLocaleString()
     open.title = entry.exists
-      ? `${entry.path}\nOpened ${opened}`
-      : `${entry.path}\nNot found: moved, renamed or deleted, or its disk is not connected`
+      ? `${where}\nOpened ${opened}`
+      : `${where}\nNot found: moved, renamed or deleted, or its disk is not connected`
     const text = element('span', 'welcome-recent-text')
     text.append(element('span', 'welcome-recent-name', name))
     if (place) text.append(element('span', 'welcome-recent-place', place))
@@ -238,7 +244,10 @@ export class Welcome {
     this.status = status
     this.lilypond.dataset.state = status.state
     const text = element('span', undefined, status.message)
-    const setUp = button(status.state === 'ready' ? 'Change…' : 'Set Up LilyPond…', () => this.openSetup())
+    // On the web there is nothing to change, only something to tell when it is not ready.
+    if (this.options.studio.hosted && status.state === 'ready') return this.lilypond.replaceChildren(text)
+    const label = this.options.studio.hosted ? 'Details…' : status.state === 'ready' ? 'Change…' : 'Set Up LilyPond…'
+    const setUp = button(label, () => this.openSetup())
     setUp.dataset.action = 'setup'
     if (status.state !== 'ready') setUp.className = 'primary'
     this.lilypond.replaceChildren(text, setUp)
@@ -256,12 +265,14 @@ class SetupDialog {
   ) {
     this.dialog = element('dialog', 'setup')
     this.dialog.setAttribute('aria-labelledby', 'setup-title')
-    const title = element('h2', undefined, 'Set Up LilyPond')
+    const title = element('h2', undefined, studio.hosted ? 'LilyPond on This Server' : 'Set Up LilyPond')
     title.id = 'setup-title'
     const why = element(
       'p',
       undefined,
-      'LilyPond is the free program that turns your text into printed music. Lily Studio uses it behind the scenes. You install it once.',
+      studio.hosted
+        ? 'LilyPond is the free program that turns your text into printed music. On the web, it runs on the server: there is nothing for you to install.'
+        : 'LilyPond is the free program that turns your text into printed music. Lily Studio uses it behind the scenes. You install it once.',
     )
     this.message = element('p', 'setup-status')
 
@@ -293,7 +304,8 @@ class SetupDialog {
     close.className = 'primary'
     footer.append(again, close)
 
-    this.dialog.append(title, why, this.message, steps, homebrew, footer)
+    if (studio.hosted) this.dialog.append(title, why, this.message, footer)
+    else this.dialog.append(title, why, this.message, steps, homebrew, footer)
     document.body.append(this.dialog)
   }
 

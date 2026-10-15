@@ -119,7 +119,7 @@ mod tests {
     #[test]
     fn a_real_compile_keeps_its_bytes() {
         // lilypond's: a control track and three staves, at 14, 99, 288 and 448.
-        let bytes = include_bytes!("../../../vscode/test/fixtures/sample.midi");
+        let bytes = include_bytes!("../../../../vscode/test/fixtures/sample.midi");
         let out = without_tracks(bytes, &[2]).unwrap();
         assert_eq!(&out[10..12], &[0, 3]);
         assert_eq!(&out[12..288], &bytes[12..288]);

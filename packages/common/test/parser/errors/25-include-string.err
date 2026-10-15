@@ -1,0 +1,7 @@
+<included string>:1:6: error: unknown command: `\foo'
+{ c4 
+     \foo }
+<included string>:1:6: error: string outside of text script or \lyricmode
+{ c4 
+     \foo }
+fatal error: failed files: "25-include-string.ly"

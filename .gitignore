@@ -22,7 +22,14 @@ Thumbs.db
 
 # Lily Studio packages (npm run dist in packages/studio/)
 release/
+# Lily Studio on the web: the accounts and scores of `npm run serve`
+packages/studio/server-data/
 
 # Lily Studio's Cargo workspace (packages/studio/), and what tauri-build generates
 target/
 packages/studio/src-tauri/gen/
+
+# Python: packages/transcribe (uv)
+.venv/
+__pycache__/
+.pytest_cache/

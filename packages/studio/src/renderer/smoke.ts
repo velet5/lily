@@ -1,24 +1,29 @@
 // `npm run test:smoke` in packages/studio/ (DECISIONS D42): `lily-studio --smoke-test`
 // opens the real window on a scratch folder and loads this script into it,
-// which drives the page once — layout, Monaco, the file list, highlighting,
-// an edit, the unsaved marker, a save, the compile it starts, its pages in
-// the preview and a click on a note there, the PDF tab and Export PDF, an
-// error marked, an edit by another program reloaded and compiled, its MIDI
-// played with the notes marked, and unsaved edits in the preview with live
-// preview on — then hands a JSON report to the Rust side, which prints it and
-// exits 0 or 1. It starts on the welcome screen, sees LilyPond looked for,
-// and reads the error explained (D37). Opening a score engraves it without a
-// save, and the preview follows the editor from score to score (D39). The
-// sidebar's edge drags wider, and a stand-in for Claude Code answers a chat,
-// writes a score that the file list then shows, and continues its session on
-// the second message (D40). A selection's context menu explains it with the
-// agent, the lines attached (D41), and an image pasted into the message box
-// goes with the next message (D46). The Parts fold mutes the part, puts it on
-// another instrument and starts playback at a bar marked on the pages (D45);
-// Export MIDI writes smoke.mid (D54).
+// which drives the page once — layout, Scores | Stems (D112) and its Separate
+// view, Monaco, the file
+// list, highlighting, an edit, the unsaved marker, a save, the compile it
+// starts, its pages in the preview and a click on a note there, the PDF tab and
+// Export PDF, an error marked, an edit by another program reloaded and
+// compiled, its MIDI played with the notes marked, and unsaved edits in the
+// preview with live preview on — then hands a JSON report to the Rust side,
+// which prints it and exits 0 or 1. It starts on the welcome screen, sees
+// LilyPond looked for, and reads the error explained (D37). Opening a score
+// engraves it without a save, and the preview follows the editor from score to
+// score (D39). The sidebar's edge drags wider, and a stand-in for Claude Code
+// answers a chat, writes a score that the file list then shows, and continues
+// its session on the second message (D40). A selection's context menu explains
+// it with the agent, the lines attached (D41), and an image pasted into the
+// message box goes with the next message (D46). The Parts fold mutes the part,
+// puts it on another instrument and starts playback at a bar marked on the
+// pages (D45); Export MIDI writes smoke.mid (D54); Piano shows the music
+// falling onto a keyboard over the editor (D116), and below the score, without
+// a track hidden in Tracks (D117). Given a song, it separates
+// it, plays the stems and a mix of two, and writes a score for the bass (D112).
 //
 // The Rust side prepares the folder and the stand-in agent, and answers the
-// smoke_* commands: files on disk as another program sees them, and the menu.
+// smoke_* commands: files on disk as another program sees them, the menu, and
+// a drop from the Finder.
 // Typing goes through the editor's input element, as the keyboard's would.
 import { invoke } from '@tauri-apps/api/core'
 import type { Command } from '../ipc'
@@ -29,6 +34,8 @@ const PANES = ['files', 'editor', 'preview'] as const
 interface SmokeFolder {
   folder: string
   score: string
+  /** A copy of LILY_SMOKE_SONG's song to separate, in a folder of its own (D112). */
+  song: string | null
 }
 
 const $ = <T extends Element = HTMLElement>(selector: string): T | null => document.querySelector<T>(selector)
@@ -123,6 +130,29 @@ async function main(): Promise<void> {
     if (pane.left <= right) problems.push(`pane ${pane.name} is not right of the one before`)
     right = pane.left
   })
+
+  // Scores | Stems (D112): Stems covers the files, the editor and the
+  // preview, which stay laid out behind it; Scores brings them back.
+  const away = (name: string) => $(`[data-pane="${name}"]`)?.hasAttribute('data-away')
+  const covers = ['files', 'editor', 'preview'] as const
+  click('.workspace-switch [data-workspace="stems"]')
+  const stems = $('[data-pane="stems"]')?.getBoundingClientRect()
+  const [, editorPane, previewPane] = layout.panes
+  // The Separate view is drawn, and waits for a song.
+  const run = $<HTMLButtonElement>('.separate-run')
+  const view = { drop: !!$('.separate-drop'), qualities: $$('.separate-segments button').length, run: run?.textContent, runDisabled: run?.disabled }
+  const workspaces = {
+    stems: { away: covers.filter(away), shown: !away('stems') && !away('separations'), left: stems?.left, right: stems?.right, view },
+    scores: { away: [] as string[] },
+  }
+  if (!view.drop || view.qualities !== 3 || !view.runDisabled) problems.push(`the Separate view is not ready for a song: ${JSON.stringify(view)}`)
+  if (workspaces.stems.away.length !== covers.length || !workspaces.stems.shown) problems.push(`Stems left ${covers.filter((name) => !away(name)).join(', ') || 'its panes'} showing`)
+  if (stems && editorPane && previewPane && (Math.abs(stems.left - editorPane.left) > 1 || Math.abs(stems.right - previewPane.left - previewPane.width) > 1)) {
+    problems.push(`the Separate view spans ${stems.left}–${stems.right}, not the editor and the preview`)
+  }
+  click('.workspace-switch [data-workspace="scores"]')
+  workspaces.scores.away = [...covers, 'stems', 'separations'].filter(away)
+  if (workspaces.scores.away.join() !== 'stems,separations') problems.push(`Scores leaves away ${workspaces.scores.away.join(', ')}`)
 
   // The welcome screen covers the editor until a score opens (D37), and says
   // whether LilyPond was found. A setup opened for a missing LilyPond is closed,
@@ -257,6 +287,37 @@ async function main(): Promise<void> {
       const head = $('.preview-page > .playhead')
       return notes > 0 && head && head.offsetHeight > 0 ? { notes, bar: text('.transport-bar') } : null
     })
+    // Piano (D116): the music falls onto a keyboard where the source was,
+    // and Source brings the editor back.
+    click('.transport-piano')
+    playback.piano = await until('the piano view over the editor', () => {
+      const canvas = $<HTMLCanvasElement>('.piano-canvas')
+      const shown = $('.editor')?.dataset.mode === 'piano' && !$('.monaco-host')?.offsetParent
+      return shown && canvas && canvas.width > 0 && $('.piano-empty')?.hidden && $('.transport-piano')?.getAttribute('aria-pressed') === 'true'
+        ? `${canvas.clientWidth}×${canvas.clientHeight}`
+        : ''
+    })
+    // Below the score (D117): the source is back and the piano under the
+    // pages; Tracks hides the one part's notes and shows them again.
+    const place = $<HTMLSelectElement>('.piano-place')!
+    place.value = 'score'
+    place.dispatchEvent(new Event('change'))
+    playback.pianoBelow = await until('the piano view below the score', () => {
+      const canvas = $<HTMLCanvasElement>('.piano-dock .piano-canvas')
+      const shown = !$('.piano-dock')?.hidden && $('.editor')?.dataset.mode === 'source' && !!$('.monaco-host')?.offsetParent
+      return shown && canvas && canvas.width > 0 && $('.piano-empty')?.hidden ? `${canvas.clientWidth}×${canvas.clientHeight}` : ''
+    })
+    click('.piano-tracks-button')
+    const track = await until('the tracks to choose from', () => $<HTMLInputElement>('.piano-tracks:not([hidden]) input'))
+    track?.click()
+    playback.pianoTracks = await until('the hidden track\'s notes to go', () => ($('.piano-empty')?.hidden === false ? text('.piano-empty') : ''))
+    track?.click()
+    await until('the track\'s notes again', () => $('.piano-empty')?.hidden === true)
+    place.value = 'source'
+    place.dispatchEvent(new Event('change'))
+    await until('the piano view over the editor again', () => $('.editor')?.dataset.mode === 'piano' && !!$('.piano-dock')?.hidden)
+    click('.editor-tabs [data-view="source"]')
+    await until('the source again', () => $('.editor')?.dataset.mode === 'source' && !!$('.monaco-host')?.offsetParent)
     click('.transport button[aria-label="Stop"]')
     playback.stopped = await until('the marks to clear on stop', () => !$('.preview-page a.playing, .playhead') && $('.transport')?.dataset.state === 'stopped')
 
@@ -368,6 +429,9 @@ async function main(): Promise<void> {
   const sidebar: Record<string, unknown> = {}
   const width = () => $('[data-pane="sidebar"]')!.getBoundingClientRect().width
   const handle = $('.splitter-columns')!
+  // The width is remembered: each run's drag would widen it until it reached
+  // its limit. A double-click puts it back first.
+  handle.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }))
   const edge = handle.getBoundingClientRect()
   const pointer = (kind: string, x: number) =>
     handle.dispatchEvent(new PointerEvent(kind, { bubbles: true, clientX: x, clientY: edge.top + 50, button: 0, pointerId: 1 }))
@@ -474,9 +538,107 @@ async function main(): Promise<void> {
     return done && answers[4]?.startsWith('The command was allowed') && tools.includes('Allowed: Ran magick -density 300 score.pdf score.png') ? answers[4] : ''
   }, 20_000)
 
+  // A song, when the run is given one (LILY_SMOKE_SONG, D112): dropped on the
+  // window as from the Finder, it shows Stems. BS-RoFormer SW at Fast splits
+  // it into six stems, each of which plays from the asset protocol; the bass
+  // and the drums export as a mix that plays too, and New score for bass
+  // transcribes the bass (D113) and opens bass.ly in Scores, with the bass in
+  // the Stem strip: its notes, the song's tempo, key and meter, and as many
+  // bars as the stem lasts.
+  let separation: Record<string, unknown> | undefined
+  if (smoke.song) {
+    const song = smoke.song
+    const name = song.slice(song.lastIndexOf('/') + 1)
+    await invoke('smoke_drop', { paths: [song] })
+    await until('the dropped song in Stems', () => !away('stems') && text('.separate-drop strong') === name)
+    // uv starts Python for the models' list.
+    const model = await until('the models', () => $<HTMLInputElement>('input[name="separate-model"][value="bs-roformer-sw"]'), 120_000)
+    model?.click()
+    $$<HTMLButtonElement>('.separate-segments button').find((choice) => choice.textContent === 'Fast')?.click()
+    const runLabel = text('.separate-run')
+    if (runLabel !== 'Separate instruments') problems.push(`the run button says ${JSON.stringify(runLabel)}`)
+    const started = Date.now()
+    click('.separate-run')
+    // The first separation with a model downloads it.
+    const outcome = await until('the stems of the song', () => {
+      const error = $('.separate-error:not([hidden])')?.textContent
+      if (error) return { error }
+      const stems = $$('.separate-stem').map((row) => row.dataset.stem ?? '')
+      return stems.length > 0 && { stems }
+    }, 15 * 60_000)
+    const seconds = Math.round((Date.now() - started) / 1000)
+    if (outcome?.error) problems.push(`the song was not separated: ${outcome.error}`)
+    const stems = outcome?.stems ?? []
+    if (outcome?.stems && stems.join() !== 'vocals,drums,bass,guitar,piano,other') problems.push(`the stems are ${stems.join(', ')}`)
+    const folder = $('.separate-results-head strong')?.title ?? ''
+    const written = folder ? await disk.list(folder) : []
+
+    // Each loads from the asset protocol, which the CSP's media-src lets in, as long as the song.
+    const loaded = (selector: string) => {
+      const players = $$<HTMLAudioElement>(selector)
+      const failed = players.find((player) => player.error)
+      if (failed) return { error: `${failed.title}: media error ${failed.error?.code}` }
+      const durations = players.map((player) => player.duration)
+      return players.length > 0 && durations.every((duration) => Number.isFinite(duration) && duration > 0) && { durations }
+    }
+    const players = stems.length ? await until('the stems to load', () => loaded('.separate-stems:not(.separate-mix) audio'), 30_000) : undefined
+    const durations = players?.durations ?? []
+    if (players?.error) problems.push(`a stem does not play: ${players.error}`)
+    if (durations.some((duration) => Math.abs(duration - durations[0]!) > 1)) problems.push(`the stems last ${durations.join(', ')} s`)
+
+    // Bass and drums, mixed: the smoke test takes the save panel's suggestion, in the stems' folder.
+    for (const stem of ['bass', 'drums']) $<HTMLInputElement>(`.separate-stem[data-stem="${stem}"] input[type=checkbox]`)?.click()
+    const exportLabel = text('.separate-results-foot button')
+    $<HTMLButtonElement>('.separate-results-foot button')?.click()
+    const mixed = stems.length ? await until('the mix to play', () => loaded('.separate-mix:not([hidden]) audio'), 60_000) : undefined
+    if (exportLabel !== 'Export mix of 2…') problems.push(`the export button says ${JSON.stringify(exportLabel)}`)
+    if (mixed?.error) problems.push(`the mix does not play: ${mixed.error}`)
+
+    // New score for bass: transcribed, bass.ly beside the stems, open in Scores, and the bass above the transport.
+    $<HTMLButtonElement>('.separate-stem[data-stem="bass"] .separate-score')?.click()
+    $$<HTMLButtonElement>('.separate-menu [role="menuitem"]').find((item) => item.textContent === 'New score for bass')?.click()
+    const transcribing = Date.now()
+    // The first transcription installs lily-transcribe's Python and downloads Beat This.
+    const score = stems.length
+      ? await until('the transcribed bass score with its stem', () => {
+          const error = $('.separate-error:not([hidden])')?.textContent
+          if (error) return { error }
+          const strip = $('.stem-strip:not([hidden])')
+          const stem = strip?.querySelector('.stem-strip-name')?.textContent
+          const time = strip?.querySelector('.stem-strip-time')?.textContent ?? ''
+          return away('stems') && editorLines().includes('% Stem:') && stem && /\/ \d+:\d\d$/.test(time) && !time.endsWith('/ 0:00') && { stem, time }
+        }, 10 * 60_000)
+      : undefined
+    const transcribed = Math.round((Date.now() - transcribing) / 1000)
+    if (score && 'error' in score) problems.push(`the bass was not transcribed: ${score.error}`)
+    const scoreFile = folder ? await disk.read(`${folder}/bass.ly`) : null
+    if (score && !scoreFile?.includes('% Stem:')) problems.push(`New score for bass wrote ${JSON.stringify(scoreFile)}`)
+    const bass = scoreFile ? transcribedScore(scoreFile) : undefined
+    const stemSeconds = durations[stems.indexOf('bass')] ?? 0
+    if (scoreFile && bass) {
+      if (!bass.tempo || bass.tempo < 50 || bass.tempo > 220) problems.push(`bass.ly's tempo is ${bass.tempo}`)
+      if (bass.notes < 40) problems.push(`bass.ly has ${bass.notes} notes`)
+      // As many bars as the stem lasts, the last one partly.
+      const lasts = (bass.bars * bass.beatsPerBar * 60) / (bass.tempo || 1)
+      if (stemSeconds && (lasts < stemSeconds - 1 || lasts > stemSeconds + (bass.beatsPerBar * 60) / (bass.tempo || 1) + 1)) {
+        problems.push(`bass.ly's ${bass.bars} bars last ${Math.round(lasts)} s, the stem ${Math.round(stemSeconds)} s`)
+      }
+    } else if (scoreFile) problems.push('bass.ly was not transcribed: it has no "Transcribed from the stem" line')
+    separation = { song: name, run: runLabel, seconds, stems, written, durations, mix: { label: exportLabel, duration: mixed?.durations?.[0] }, score, transcribed, bass }
+  }
+
   const ok = problems.length === 0
-  const report = { ok, problems, ...layout, welcome, listed, openedPages, switching, monaco: !!shown, colours, saved, compile, sidebar }
+  const report = { ok, problems, ...layout, workspaces, welcome, listed, openedPages, switching, monaco: !!shown, colours, saved, compile, sidebar, separation }
   await invoke('smoke_done', { ok, report: JSON.stringify(report, null, 2) })
+}
+
+/** What a transcribed score's comment and music say (D113): its tempo, meter, bars, key and how many notes it has. */
+function transcribedScore(text: string): { tempo: number; beatsPerBar: number; bars: number; key: string; notes: number } | undefined {
+  const line = /^% Transcribed from the stem by Lily Studio: ♩ = (\d+), (\d+)\/4, (.+), (\d+) bars\.$/m.exec(text)
+  if (!line) return undefined
+  const music = text.slice(text.indexOf('\\relative'))
+  const notes = music.match(/(?<![\\a-z])[a-g](?:is|es|s)*[,']*(?:16|8|4|2|1)\.*~?(?![a-z])/g)?.length ?? 0
+  return { tempo: Number(line[1]), beatsPerBar: Number(line[2]), key: line[3]!, bars: Number(line[4]), notes }
 }
 
 main().catch((error: unknown) => {

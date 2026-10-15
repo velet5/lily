@@ -9,16 +9,20 @@ extension.
 
 An npm workspace of three packages (DECISIONS D53):
 
-- `packages/common` (`@lily/common`): what both apps use. `src/span.ts` and
-  `src/types.ts` import neither `vscode` nor Node (Lily Studio's renderer
-  bundles them); `src/textedit.ts` may use Node. `web/preview.js` and
+- `packages/common` (`@lily/common`): what both apps use. `src/span.ts`,
+  `src/types.ts` and `src/definition.ts` import neither `vscode` nor Node
+  (Lily Studio's renderer bundles them); `src/textedit.ts` may use Node. `web/preview.js` and
   `web/midi.js` are plain scripts with `.d.ts` files beside them. Also the
   TextMate grammar, the language configuration and lilypond's `runtime/`
   files. No build step: the apps bundle or copy what they import.
 - `packages/vscode` (`lily`): the VS Code extension and `lily-check`. Read
   `packages/vscode/docs/ARCHITECTURE.md` §3 for its layout.
 - `packages/studio` (`lily-studio`): Lily Studio, a Tauri app whose Rust side
-  is a Cargo workspace in that directory (D42).
+  is a Cargo workspace in that directory (D42), and `lily-studio-server`, the
+  same studio on the web (D55).
+- `packages/transcribe` (`lily-transcribe`): not an npm package but a uv
+  Python project, which Lily Studio runs to transcribe a stem into notes on
+  the song's beat grid (D113). `uv run pytest` there runs its tests.
 
 `docs/DECISIONS.md` records the decisions of all three; read it before changing
 a convention and record new ones there.

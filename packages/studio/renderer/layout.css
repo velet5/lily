@@ -2,7 +2,8 @@
    editor in the middle, the preview on the right, a status line along the
    bottom. The panes cannot be moved or hidden; the sidebar's width and the
    split between its files and the agents' accordion follow their edges when
-   dragged (D40). */
+   dragged (D40). The Stems workspace (D112) covers the files, the editor and
+   the preview, which keep their size and state behind it. */
 
 :root {
   --sidebar-width: 240px;
@@ -83,8 +84,34 @@ body {
   border-right: 1px solid var(--border);
 }
 
-.files {
+/* The files and the separations share one place in the sidebar. */
+.sidebar-panes {
   flex: 1 1 0;
+  display: grid;
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+  min-height: 0;
+}
+
+.sidebar-panes > .pane {
+  grid-area: 1 / 1;
+}
+
+/* Over the editor's and the preview's columns. */
+.stems {
+  grid-area: 1 / 2 / 2 / 4;
+  background: var(--bg);
+}
+
+/* The other workspace's panes (sidebar.ts), still laid out. */
+.studio [data-away] {
+  visibility: hidden;
+}
+
+/* The Mac's WebKit draws a player's dark backing in a layer of its own, which
+   stays on screen when the pane is hidden; a player away is not drawn at all.
+   It goes on playing, and keeps its place. */
+.studio [data-away] audio[controls] {
+  display: none;
 }
 
 .editor {
@@ -450,30 +477,564 @@ button:focus-visible,
   flex-direction: column;
 }
 
-.preview-tabs {
+/* SVG | PDF, and the editor's Source | Piano (D116), drawn alike. */
+.preview-tabs,
+.editor-tabs {
   display: flex;
   margin-right: 8px;
 }
 
-.preview-tabs button {
+.editor-tabs {
+  margin: 0 0 0 8px;
+}
+
+.preview-tabs button,
+.editor-tabs button {
   padding: 0 8px;
   border-radius: 0;
   font-weight: 400;
   letter-spacing: 0;
 }
 
-.preview-tabs button:first-child {
+.preview-tabs button:first-child,
+.editor-tabs button:first-child {
   border-radius: 4px 0 0 4px;
 }
 
-.preview-tabs button:last-child {
+.preview-tabs button:last-child,
+.editor-tabs button:last-child {
   border-left: 0;
   border-radius: 0 4px 4px 0;
 }
 
-.preview-tabs button[aria-selected='true'] {
+.preview-tabs button[aria-selected='true'],
+.editor-tabs button[aria-selected='true'] {
   background: var(--selected);
   color: var(--fg);
+}
+
+/* Scores | Stems at the top of the sidebar (D112), drawn as the preview's
+   SVG | PDF. */
+.workspace-switch {
+  flex: none;
+  display: flex;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.workspace-switch button {
+  flex: 1;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: 0;
+  font-size: 12px;
+}
+
+.workspace-switch button:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.workspace-switch button:last-child {
+  border-left: 0;
+  border-radius: 0 4px 4px 0;
+}
+
+.workspace-switch button[aria-selected='true'] {
+  background: var(--selected);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+/* The Separate view (separate.ts, D112): the song and its settings on the
+   left, the stems on the right, one player each. */
+.separate {
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  height: 100%;
+}
+
+.separate-setup {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border-right: 1px solid var(--border);
+  overflow: auto;
+}
+
+.separate-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 10px;
+  border: 1.5px dashed var(--border);
+  border-radius: 6px;
+  color: var(--fg-muted);
+  text-align: center;
+}
+
+.separate-drop[data-hover] {
+  border-color: var(--accent);
+  background: var(--selected);
+}
+
+.separate-drop svg {
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.separate-drop strong {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--fg);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.separate-problem,
+.separate-error {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-left: 4px solid #c72e2e;
+  border-radius: 6px;
+  user-select: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.separate-problem {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+
+.separate-field {
+  display: grid;
+  gap: 4px;
+}
+
+.separate-field-label {
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.separate-models {
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+
+.separate-model-group,
+.separate-models-empty {
+  padding: 4px 10px 2px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.separate-model {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.separate-model:hover {
+  background: var(--hover);
+}
+
+.separate-model:has(input:checked) {
+  background: var(--selected);
+}
+
+.separate-model input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.separate-model-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.separate-model small,
+.separate-note {
+  color: var(--fg-muted);
+}
+
+.separate-note {
+  margin: -6px 0 0;
+  font-size: 12px;
+}
+
+.separate-note:empty {
+  display: none;
+}
+
+/* Fast | Balanced | Best, drawn as the preview's SVG | PDF. */
+.separate-segments {
+  display: flex;
+}
+
+.separate-segments button {
+  flex: 1;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 0;
+}
+
+.separate-segments button + button {
+  border-left: 0;
+}
+
+.separate-segments button:first-child {
+  border-radius: 4px 0 0 4px;
+}
+
+.separate-segments button:last-child {
+  border-radius: 0 4px 4px 0;
+}
+
+.separate-segments button[aria-pressed='true'] {
+  background: var(--selected);
+  color: var(--fg);
+  font-weight: 600;
+}
+
+.separate-setup select {
+  height: 24px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: inherit;
+  font: inherit;
+}
+
+.separate-run {
+  height: 28px;
+}
+
+/* Recent (D114): the songs separated before, last opened first, as the
+   welcome screen's Recent; the one shown is marked, a gone one dimmed. */
+.separate-past {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.separate-past-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.separate-past-open {
+  border: none;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.separate-past-open:hover:not(:disabled) {
+  color: var(--fg);
+  background: none;
+}
+
+.separate-past-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.separate-past-list li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+
+.separate-past-list li:hover {
+  background: var(--hover);
+}
+
+.separate-past-list li[aria-current] {
+  background: var(--selected);
+}
+
+.separate-past-empty {
+  padding: 2px 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.separate-past-list li.separate-past-empty:hover {
+  background: none;
+}
+
+.separate-past-item {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+  padding: 5px 30px 5px 8px;
+  border: none;
+  text-align: left;
+}
+
+.separate-past-item:hover {
+  background: none;
+}
+
+.separate-past-item strong {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.separate-past-item small {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.separate-past-list li[data-missing] .separate-past-item {
+  opacity: 0.5;
+}
+
+.separate-past-remove {
+  position: absolute;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+  opacity: 0;
+}
+
+.separate-past-list li:hover .separate-past-remove,
+.separate-past-remove:focus-visible {
+  opacity: 1;
+}
+
+.separate-past-remove:hover {
+  color: var(--fg);
+}
+
+.separate-progress {
+  display: grid;
+  gap: 4px;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.separate-bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--border);
+}
+
+.separate-bar i {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.2s;
+}
+
+/* A stage that does not say how far it is. */
+.separate-bar i[data-moving] {
+  width: 30%;
+  transition: none;
+  animation: separate-moving 1.2s ease-in-out infinite alternate;
+}
+
+@keyframes separate-moving {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(333%); }
+}
+
+.separate-progress-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+.separate-results {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.separate-empty {
+  flex: 1;
+  padding: 16px;
+}
+
+.separate-results-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.separate-results-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px 6px;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.separate-results-head strong {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--fg);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.separate-results-meta {
+  flex: 1;
+  white-space: nowrap;
+}
+
+.separate-check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.separate-check input,
+.separate-stem input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.separate-stems {
+  flex: 0 1 auto;
+  min-height: 0;
+  padding: 0 8px;
+  overflow: auto;
+}
+
+.separate-mix {
+  flex: none;
+  margin: 6px 8px 0;
+  padding: 6px 0 0;
+  border-top: 1px solid var(--border);
+}
+
+.separate-stem {
+  display: grid;
+  grid-template-columns: minmax(140px, 200px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 46px;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.separate-stem:hover {
+  background: var(--hover);
+}
+
+.separate-stem-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.separate-stem-name span {
+  display: grid;
+  min-width: 0;
+}
+
+.separate-stem-name small {
+  overflow: hidden;
+  color: var(--fg-muted);
+  font-size: 11.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.separate-stem audio {
+  width: 100%;
+  height: 32px;
+}
+
+/* A stem's Score… (D112): the hard ones say so, more quietly. */
+.separate-score {
+  white-space: nowrap;
+}
+
+.separate-score.hard {
+  color: var(--fg-muted);
+}
+
+.separate-menu {
+  max-width: 280px;
+}
+
+.separate-menu small {
+  padding: 2px 8px 4px;
+  color: var(--fg-muted);
+  font-size: 11.5px;
+}
+
+.separate-menu hr {
+  margin: 4px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+.separate-results-foot {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: auto;
+  padding: 8px 14px;
+  border-top: 1px solid var(--border);
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.separate-selection {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.separate-results-foot button {
+  height: 26px;
 }
 
 .pdf-pages {
@@ -647,6 +1208,219 @@ button:focus-visible,
   border-color: var(--warning);
   color: var(--warning);
   text-decoration: line-through;
+}
+
+/* Piano (D116): pressed while the piano view is over the editor. */
+.transport .transport-piano {
+  white-space: nowrap;
+}
+
+.transport .transport-piano[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--selected);
+  color: var(--fg);
+}
+
+/* The piano view (D116): a dark stage in both themes, as piano videos have,
+   the canvas filling it. */
+.pane .pane-body.piano {
+  position: relative;
+  overflow: hidden;
+  background: #0b0e14;
+}
+
+.pane .pane-body.piano:focus {
+  outline: none;
+}
+
+/* Below the score (D117): a strip over the transport, its selectors on a bar
+   of their own along its top. */
+.piano-dock {
+  flex: 0 0 38%;
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+
+.piano-dock > .pane-actions {
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.piano-dock button {
+  font-size: 12px;
+}
+
+.piano-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.piano-empty {
+  position: absolute;
+  inset: 0 0 auto;
+  margin: 0;
+  padding: 24px 16px;
+  text-align: center;
+  color: #9aa3b2;
+}
+
+.piano-range,
+.piano-place {
+  height: 22px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: inherit;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+/* Tracks (D117): its button marked while a track is hidden, and the boxes it opens. */
+.piano-tracks-button {
+  height: 22px;
+}
+
+.piano-tracks-button.filtered {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.piano-tracks {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  max-width: 236px;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 4px;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+}
+
+.piano-tracks label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.piano-tracks label:hover {
+  background: var(--hover);
+}
+
+.piano-tracks label span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.piano-swatch {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+
+.piano-tracks-none {
+  margin: 0;
+  padding: 6px 8px;
+  color: var(--fg-muted);
+}
+
+/* The Stem strip (D112): a score's stem, above the transport. */
+.stem-strip {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 8px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--selected) 55%, transparent);
+  color: var(--fg-muted);
+  user-select: none;
+}
+
+.stem-strip[hidden] {
+  display: none;
+}
+
+.stem-strip-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.stem-strip-name {
+  min-width: 0;
+  max-width: 30%;
+  overflow: hidden;
+  color: var(--fg);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stem-strip button {
+  min-width: 28px;
+  height: 22px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: none;
+  color: inherit;
+  font: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.stem-strip button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.stem-strip button:disabled,
+.stem-strip input:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.stem-strip[data-state='playing'] .stem-strip-play,
+.stem-strip .stem-strip-with[aria-pressed='true'] {
+  color: var(--lily-playing);
+}
+
+.stem-strip .stem-strip-with[aria-pressed='true'] {
+  border-color: var(--lily-playing);
+}
+
+.stem-strip input[type='range'] {
+  flex: 1 1 60px;
+  min-width: 40px;
+  margin: 0 4px;
+  accent-color: var(--accent);
+}
+
+.stem-strip-time {
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .playback-setup {
@@ -1225,7 +1999,8 @@ body[data-resizing='y'] {
 }
 
 body[data-resizing] .editor,
-body[data-resizing] .preview {
+body[data-resizing] .preview,
+body[data-resizing] .stems {
   pointer-events: none;
 }
 

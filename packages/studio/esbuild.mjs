@@ -7,20 +7,31 @@
 // by `lily-studio --smoke-test` (D42). @lily/common's runtime/ is copied to
 // dist/runtime/, which the app bundles as a resource: timing.ly for the
 // playhead (D35), the warm compiler and glyph cache for live preview (D36).
+// `--site` bundles the same page for the web into dist/site/ instead, which
+// lily-studio-server serves (D55): src/web/transport.ts in place of the
+// Tauri one, with the web's menu bar, dialogs and web.css in app.css.
+// With `--site`, the engine's worker is bundled as engine.worker.js, and the
+// engine's files, when its build left them in dist/engine/, are copied to
+// dist/site/engine/ under names that carry a hash of their bytes (chapter 08
+// of docs/research/wasm-engine).
 //
 //   node esbuild.mjs                one-off development build
+//   node esbuild.mjs --site         the web's page, dist/site/ (with --production, minified)
 //   node esbuild.mjs --watch        rebuild on change
 //   node esbuild.mjs --production   minified, no source maps
 //   node esbuild.mjs --tests        test/*.test.ts → out/test/, for node --test
 //   node esbuild.mjs --e2e          test/e2e/*.test.ts → out/test/e2e/, the packaged app's test (D37)
 import * as esbuild from 'esbuild'
-import { cpSync, mkdirSync, readdirSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
+import { resolve } from 'node:path'
 
 const production = process.argv.includes('--production')
 const watch = process.argv.includes('--watch')
 const tests = process.argv.includes('--tests')
 const e2e = process.argv.includes('--e2e')
+const site = process.argv.includes('--site')
 
 /**
  * language-configuration.json has comments, which esbuild's JSON loader
@@ -35,6 +46,20 @@ const jsonWithComments = {
       contents: `export default (${await readFile(args.path, 'utf8')})`,
       loader: 'js',
     }))
+  },
+}
+
+/**
+ * The web's transport in place of the app's: bridge.ts imports `./transport`,
+ * which on the web is src/web/transport.ts (D55).
+ * @type {import('esbuild').Plugin}
+ */
+const webTransport = {
+  name: 'web-transport',
+  setup(build) {
+    build.onResolve({ filter: /^\.\/transport$/ }, (args) =>
+      /[\\/]src[\\/]renderer[\\/]bridge\.ts$/.test(args.importer) ? { path: resolve('src/web/transport.ts') } : undefined,
+    )
   },
 }
 
@@ -82,14 +107,58 @@ const nodeBuild = (dir, outdir) => ({
   logLevel: 'warning',
 })
 
+// The web's page: browsers of the last two years, as well as the Mac's WebKit.
+if (site) {
+  builds.splice(
+    0,
+    builds.length,
+    ...builds.map((options) => ({
+      ...options,
+      entryPoints: Object.fromEntries(Object.entries(options.entryPoints).filter(([name]) => name !== 'smoke')),
+      outdir: 'dist/site',
+      target: ['safari17', 'chrome120', 'firefox121'],
+      plugins: [...options.plugins, webTransport],
+    })),
+  )
+}
+/**
+ * The engine's files and their manifest (src/web/engine/protocol.ts), as the
+ * engine's build left them in `from`, copied to `to` with a hash of their
+ * bytes in each name, so that a name never changes its bytes and the cache
+ * never holds a stale file. Without an engine build the page compiles on the
+ * server, as before.
+ */
+function copyEngine(from, to) {
+  if (!existsSync(`${from}/manifest.json`)) return
+  const manifest = JSON.parse(readFileSync(`${from}/manifest.json`, 'utf8'))
+  rmSync(to, { recursive: true, force: true })
+  mkdirSync(to, { recursive: true })
+  const hashed = (file) => {
+    const bytes = readFileSync(`${from}/${file}`)
+    const name = file.replace(/(\.[^.]+)?$/, `.${createHash('sha256').update(bytes).digest('hex').slice(0, 12)}$1`)
+    writeFileSync(`${to}/${name}`, bytes)
+    return name
+  }
+  manifest.core.wasm = hashed(manifest.core.wasm)
+  manifest.core.image = hashed(manifest.core.image)
+  for (const module of Object.values(manifest.modules)) module.file = hashed(module.file)
+  writeFileSync(`${to}/manifest.json`, JSON.stringify(manifest))
+}
+
+// The engine runs in the web's page only (chapter 08 of docs/research/wasm-engine).
+if (process.argv.includes('--site')) {
+  builds.push({ ...shared, entryPoints: { 'engine.worker': 'src/web/engine/worker.ts' }, outdir: 'dist/site' })
+  copyEngine('dist/engine', 'dist/site/engine')
+}
 // Tests import only modules without the DOM or Tauri.
 if (tests) builds.splice(0, builds.length, nodeBuild('test', 'out/test'))
 // Run by `npm run test:e2e` after `npm run dist`; it drives the DMG, not the sources.
 if (e2e) builds.splice(0, builds.length, nodeBuild('test/e2e', 'out/test/e2e'))
 
 if (!tests && !e2e) {
-  mkdirSync('dist/web', { recursive: true })
-  for (const name of ['index.html', 'layout.css']) cpSync(`renderer/${name}`, `dist/web/${name}`)
+  const page = site ? 'dist/site' : 'dist/web'
+  mkdirSync(page, { recursive: true })
+  for (const name of ['index.html', 'layout.css']) cpSync(`renderer/${name}`, `${page}/${name}`)
   // timing.ly is passed to every compile as -dinclude-settings; the playback
   // map comes from it. worker.scm and glyph-cache.scm speed up compiles (D25).
   mkdirSync('dist/runtime', { recursive: true })

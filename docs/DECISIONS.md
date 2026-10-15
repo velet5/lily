@@ -1043,6 +1043,17 @@ playback part of *Out of scope*
 - **Hidden webviews.** A preview behind another tab is destroyed (D17), and its
   music with it. `PreviewPanel.play()` on a hidden panel reveals it and plays
   on the next `ready`. Playback does not survive a window reload either.
+- **Phones** (added with chapter 07 of `docs/research/wasm-engine`). The
+  first ▶ sets `navigator.audioSession.type` to `playback` where it exists
+  (Safari 16.4 and later). Without it, Safari treats the music as ambient
+  sound, which is silent while an iPhone's ring switch is on silent and stops
+  in the background. When the system stops the audio clock under a playing
+  `Player` (Safari's and Chrome 136's `interrupted` state during a call, or
+  `suspended`), the player pauses where the music was, so ▶, a gesture,
+  resumes it. **Verified** with fakes in `test/midi/midi.test.ts`, and in
+  Playwright's WebKit 26.4 and Chromium 147: the session became `playback`,
+  and `suspend()` under a playing T02 paused it at 1.44 s. Not tried on a
+  phone (step 10).
 - **Untrusted input.** A `.midi` file is parsed by hand in the webview, never
   `eval`ed; track names are set as `textContent`. The parser throws on anything
   that is not a metrical SMF 0/1, and the message is shown instead of a player.
@@ -1213,10 +1224,10 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   render; an element's box is cached per page node as fractions of the page,
   which survive zoom, so a reused page (D25) is not measured again. An href
   drawn as often as it is played (`\repeat unfold`, a variable used twice) is
-  paired up in order; drawn once, it is that place every time (a repeat
-  unfolded in the MIDI only); anything else takes the place on the system
-  playing then. A *moment* is the events that begin together: its x is the
-  leftmost centre of their elements, its extent their union. A *system* ends
+  paired up in reading order (D118); drawn once, it is that place every time
+  (a repeat unfolded in the MIDI only); anything else takes the place on the
+  system playing then. A *moment* is the events that begin together: its x is
+  the leftmost centre of their elements, its extent their union. A *system* ends
   where the next moment lies on another page or more than 1 % of the page
   width to the left; its band is the union of its moments plus a margin. The
   cursor interpolates between a moment and the next of the same system and
@@ -2417,3 +2428,714 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   `npm run test:smoke`, *File › Export MIDI…* with the only part muted writes
   `smoke.mid` with its two tracks. The panel and its checkbox were not seen
   in a run.
+
+---
+
+## D55 — Lily Studio on the web: a gateway, and a sandboxed worker per user
+
+**Status:** proposed · **Refines:** D42, D28, D29 · **Leaves out:** D40 on the web
+
+- **What.** `packages/studio/crates/server` builds `lily-studio-server`, which
+  serves the studio's page to browsers for many users. `serve` runs the
+  gateway: accounts, sign-in, the page and its files, and a WebSocket per
+  page. Each signed-in user gets a worker, `lily-studio-server worker`, which
+  does for one page what the app's main process does for its window. It
+  runs the same compiler, live preview, watcher, recent list and playback
+  setups. The page is the app's renderer: `node esbuild.mjs --site` bundles
+  it into `dist/site/`. The agents (D40, D41) are not on the web; MCP may
+  bring an agent there later.
+- **Shared with the app.** The Tauri-free part of `src-tauri` moved to
+  `crates/session` (`lily-session`): `Studio` (was `state.rs`),
+  `playback.rs`, `recent.rs`, `midi_export.rs`, and `ops.rs`, the commands'
+  bodies without their dialogs. `src-tauri/src/commands.rs` now opens a
+  panel and calls `ops`; the worker calls the same `ops` with what the
+  page's dialogs chose. `Studio` sends events to a sink, the app's channel
+  or the worker's stdout. It spawns on the runtime it was built on. The
+  smoke folder is the app's own managed state.
+- **Accounts.** `users.json` in the data directory: a name, a random id that
+  names the user's directory, and an Argon2 hash. `lily-studio-server user
+  add|password|remove|list` manages accounts, and the running server reads
+  the file again when it changes. `--signup` lets anyone create an account.
+  A session is a random token in an HttpOnly, SameSite=Lax cookie, Secure
+  with `--secure-cookies`. `sessions.json` keeps only its SHA-256, for 30
+  days. A new password or a removed account signs the user out. After five
+  wrong passwords a name waits a minute, and an unknown name costs a hash
+  too. Every POST and the socket must come from this host, checked by the
+  Origin header, else the Referer.
+- **A user's files.** `users/<id>/scores/` is all the page may touch. It is
+  shown as *My Scores*, and the sample is written there. `users/<id>/studio/`
+  is the app's userData: settings, playback setups, the recent list.
+  `Access::rooted` allows the whole workspace and nothing outside it,
+  whatever was opened, so a page that reconnects needs nothing granted again.
+- **The sandbox.** A score is a program: LilyPond runs its Scheme, which can
+  read and write any file the process can. So each worker, and the lilypond
+  it runs, starts under bubblewrap (`--sandbox bwrap`, the default `auto`).
+  The sandbox shows `/usr`, `/bin`, `/lib*`, `/etc`, `/opt`, the program, the
+  runtime and LilyPond's install read-only. It hides the data directory under
+  a tmpfs and shows the user's own directory read-write inside it. It
+  unshares every namespace, network included, drops all capabilities and
+  has its own `/tmp`. `--sandbox-bind` shows more directories. The server
+  will not start when bubblewrap is missing or fails a probe run.
+  `--sandbox none` is for development on a Mac, or for users who trust each
+  other, and the server warns at start. In Docker, bubblewrap needs
+  `seccomp`, `apparmor` and `systempaths` unconfined. The `Dockerfile` in
+  `packages/studio` says how.
+- **Workers.** One per user, started when a page connects and stopped after
+  `--idle-minutes` (15) without one. At most `--max-workers` (32) run, and
+  the longest idle one makes room. A worker serves one page at a time, as
+  the app has one window. A second tab takes it over, and the first is told
+  so and can take it back. The gateway passes lines both ways without
+  reading them: `{id, command, args}` in, `{id, ok|error}` and `{event}` out.
+  The gateway itself adds `hello` (the user and the worker's instance),
+  `replaced` and `closed`. The worker answers `edited`, `set_live` and
+  `set_dirty` before reading the next line, as Tauri runs the app's
+  synchronous commands in order.
+- **The page.** `src/renderer/bridge.ts` talks to a `Transport`
+  (`src/ipc.ts`): `src/renderer/transport.ts` for the app, and
+  `src/web/transport.ts`, which `--site` puts in its place. The web
+  transport answers the commands the app answers with a panel by asking
+  first with its own dialogs (`src/web/dialogs.ts`). There is a browser of
+  My Scores that opens a score or a folder, makes folders and names a new
+  score, and questions with buttons and a checkbox. It then passes the path
+  to the worker. A PDF or MIDI file it exports is downloaded too. A menu bar
+  (`src/web/menubar.ts`) takes the app menu's place, and adds *Upload
+  Scores…* (`.ly`, `.ily`, `.lyi`, 2 MB each, replacing a file only when
+  asked) and *Download Score*. ⌘S, ⌥⌘S, ⌘O and ⇧⌘O work. Closing the tab
+  with unsaved changes asks first. After a reconnect the page gives the
+  worker its open folder and the live preview switch again. The setup
+  dialog only says how the server's LilyPond is, and the agents' accordion
+  is hidden.
+- **Not done.** Files cannot be renamed or deleted on the web. A worker has
+  no memory or CPU limit beyond the machine's. Run the server under systemd
+  or in a container with limits. Sessions are not bound to an address. The
+  server speaks plain HTTP; put a proxy that terminates HTTPS in front, and
+  forward the Host header.
+- **Verified.** On a Mac with `--sandbox none`, `crates/server/tests/server.rs`
+  runs the binary end to end. It covers accounts made with `user add`,
+  sign-in refused from another origin and with a wrong password, and the
+  socket. It covers browse, folders, upload, download and new score without
+  replacing, and paths outside the workspace refused however they are
+  spelled. It covers a compile with lilypond, a second tab taking the worker
+  over, a second user unable to read the first's score, and sign-out.
+  Unit tests cover users, sessions, the sign-in page, the origin check and
+  bubblewrap's arguments, and `test/web.test.ts` covers the shortcuts and
+  the checkbox's words. In Chromium (Playwright), the page was driven end
+  to end: sign-up, the sample engraved, the dialogs, ⌘S, upload, download,
+  Export MIDI, and a second tab. In the Docker image on Linux, with
+  bubblewrap, a worker started under `bwrap` and engraved the sample with
+  LilyPond 2.24.1. That one user cannot reach another's files from a score's
+  Scheme was not tried under bubblewrap.
+
+---
+
+## D56 — An engine of our own: LilyPond in WebAssembly
+
+**Status:** proposed · **Refines:** D1, D24, D26, D42, D53, D55
+
+- **What.** We build our own engine: a small LilyPond in Rust, compiled to
+  WebAssembly, that runs in the browser. It parses the whole syntax, runs a
+  score's Scheme, lays the music out as LilyPond does, and writes SVG pages,
+  MIDI and the playback map (D26). PDF comes from a module fetched at the
+  first export. LilyPond 2.26.0 is the reference: the engine's output is
+  compared with LilyPond's layer by layer (diagnostics, events, MIDI, breaks,
+  positions, beam and slur shapes) on 30 test scores. The investigation is
+  `docs/research/wasm-engine/`, chapters 00–09. Its README is the roadmap:
+  budgets per module, milestones MS0–MS8, effort, risks and test coverage.
+- **Why.** LilyPond re-renders a two-page score in 0.32 s and an orchestral
+  page in 0.91 s on the desktop, before any network round trip. On a
+  mid-range Android phone that would be seconds per edit. LilyPond itself in
+  wasm (Guile by Emscripten) is 3.5 MB of brotli and a 15.9 MB data file,
+  ten times the core's 1.5 MB budget, and needs wasm exception handling,
+  which Safari 17 lacks. An engine that recomputes only what an edit changes
+  can fit 250 ms per edit there. A spike of the engine's shape
+  (`crates/engine-spike`), run through the studio's worker on an iPhone SE
+  and a Fire Max 11, was 38 KB of brotli wasm, ready 111–297 ms after
+  navigation, and re-rendered a page in one frame. And a score's Scheme run
+  in the user's browser gets no file system, which D55 needs bubblewrap for.
+- **The parts.** A hand-written parser that re-parses only the edited item
+  and block. A Scheme interpreter of our own, with Guile's spellings and
+  error texts, a precise collector, a heap image of LilyPond's Scheme after
+  init, versioned globals and an undo log. s7 is the fallback if the
+  interpreter's first milestone misses its budgets by more than twice. A
+  music model of frozen trees, contexts and translators, with checkpoints,
+  convergence and partitions. A layout that ports LilyPond's searches with
+  their parameters and approximates none, re-laying out cells, the visible
+  page first. Emmentaler in packs per optical size, each glyph defined once
+  per page, links as LilyPond writes them (D1). MIDI performers in the core,
+  run after the page. Oscillators stay the sound (D24); a sampled piano
+  would be the player's optional pack. PDF in its own wasm module with its
+  own CFF subsetter.
+- **The build.** `wasm32-unknown-unknown`, `opt-level = "z"`, fat LTO,
+  `-Cpanic=immediate-abort` and `-Zbuild-std` on a pinned nightly (stable is
+  14–26 % larger and still fits). No `core::fmt` on any core path. A
+  declared maximum of 256 MiB. Only the wasm features Safari 17 has: no
+  threads, wasm tail calls, exception handling or GC. One dedicated worker
+  per page steps the engine through a C ABI, so a newer edit stops an older
+  compile within 50 ms. Modules on demand are data (the image, Scheme parts,
+  font packs), code with its own memory (PDF), or code split from the linked
+  core by call graph with `wasm-split`. Files carry their hash and are kept
+  in Cache Storage, without a service worker. Diagnostics come in
+  LilyPond's stderr format and as `LyDiagnostic[]`, so the apps read them
+  unchanged (D42's parser included).
+- **Budgets.** Chapter 00's B1–B10 stand. The README shares them out per
+  module: the core's 1.5 MB of brotli, and the 250 ms per edit of a small
+  score on Android, by phase. Projections use the factors the phones gave:
+  0.25× the M1 for allocating code and 0.38× for an interpreter loop on
+  Android, 0.7× on iOS. Android is the binding platform. The page, not the
+  engine, failed the 50 ms main-thread budget in the spike, so the page
+  inserts one changed page per task.
+- **Where.** A fourth package, `packages/engine`, with its own Cargo
+  workspace and `rust-toolchain.toml`, so the nightly touches nothing else
+  (refines D53). MS0's first step creates it and moves the spike into it;
+  AGENTS.md changes then.
+- **Hosts.** Lily Studio on the web first (D55). The page compiles with the
+  engine while it is ready, and sends any compile the engine fails or cannot
+  do to the server's LilyPond, so the web never gets worse than D55. The
+  desktop app and the extension keep LilyPond. Whether they adopt the engine
+  is decided after MS7, on their own measurements. LilyPond stays the
+  reference, and the authority for exports until the engine's pass the
+  gates.
+- **Licence.** The engine ports LilyPond's C++ and carries LilyPond's Scheme
+  and `ly/` files in its image, so it is GPL-3.0-or-later. Its font packs
+  take Emmentaler under the GPL with the font exception. The apps stay MIT.
+  The page talks to the engine only through the worker's messages, and the
+  MIT worker script that calls its exports may be distributed with it under
+  the GPL. The source is this repository at the commit the engine's manifest
+  names. The PDF module ships the URW text fonts unmodified, with their AGPL
+  licence and source; their exception covers embedding them in PDFs. That is
+  checked again before the PDF module ships.
+- **Decision points.** Every milestone ends on the comparator's layers and
+  on the phones, through chapter 09's harness. Three can change the plan:
+  MS1 (the interpreter's size and speed, else s7), MS3 (layout at most 120
+  µs a grob on Android, where a straight port projects to 209) and MS6 (B6
+  phase by phase on four scores and three kinds of edit).
+- **Not done.** Nothing is built beyond the spike and chapter 08's host side
+  in `packages/studio/src/web/engine/`, which no page loads yet. Not
+  measured: Cache Storage on iOS after a reload, a throttled first visit,
+  the worker's JS heap, and the Android floor device. The effort is
+  estimated at 80,000–90,000 lines of Rust and 84–102 engineer-weeks, 67–83
+  of them to ship on the web, at an assumed rate that MS1 measures.
+
+---
+
+## D112 — Lily Studio: a Stems workspace, with RoFormer MLX's separation as a uv sidecar
+
+**Status:** accepted (the operator chose option A of the design, 2026-10-14)
+· **Refines:** D28, D42, D55 · **Numbered:** after feat/engine's D57–D111, so the branches do not collide
+
+- **What.** Lily Studio takes in RoFormer MLX
+  (`/Volumes/T5/Workspace/roformer-karaoke-mlx`), which splits a song into
+  karaoke stems (lead vocals and instrumental, the `becruily` and
+  `aufr33-viperx` models) or six (vocals, drums, bass, guitar, piano and
+  other, `bs-roformer-sw`) on Apple Silicon. A *Scores | Stems* switch at the
+  top of the sidebar picks the workspace. *Scores* is the studio as it was.
+  *Stems* lists past separations where Files was. The Separate view spans the
+  editor and preview columns: drop a song, pick a model grouped *Karaoke* /
+  *All instruments*, a quality and a format, then Separate, with progress and
+  Cancel. There is one player per stem, and ticked stems export as a mix.
+  Show in Finder is kept. A separation goes on running in Scores, and the
+  status line shows it. A stem leads to a score: *New score for bass…* writes
+  `bass.ly` from an instrument template beside the stems, and a *Stem* strip
+  above the preview's transport plays the stem alone or with the score's
+  MIDI. The design, with its mockups and the two other options (a second
+  window; a song library as a new app), is the published page "Lily Studio
+  Stems".
+- **Where the code lives.** `packages/studio/crates/separate`
+  (`lily-separate`), with no Tauri in it, is a port of RoFormer's
+  `app/src-tauri/src/lib.rs`. It finds the project (`project_root`) and uv
+  (`find_uv`) and builds `uv run --quiet --project <root> karaoke-mlx --json
+  …` (`Sidecar::command`). It also runs one separation at a time in its own
+  process group (`Separator`), and lists `models` and `mix`es stems. Only
+  `src-tauri` depends on it. `crates/session` and the web server never run
+  it.
+- **Commands** (`src-tauri/src/separate.rs`): `separation_status` (the
+  project, uv, what is missing, whether one is running), `separation_models`,
+  `separate` (answers the stems' folder), `separation_cancel`, `mix_stems`
+  (a save panel names the file), `reveal_in_finder`, and for the
+  stems-to-score path `new_score_for_stem` and `attach_stem`. Each event karaoke-mlx prints goes to
+  the page on the studio's one channel as `{type: "separation", event}`, not
+  on RoFormer's `karaoke://event`. A CLI that dies without an `error` event,
+  because it was cancelled or crashed, gets one with the end of its stderr
+  and `cancelled`, so the page always hears how a separation ended.
+- **Security.** The capability stays `core:default` (D42). The page reaches
+  no plugin; Show in Finder and the mix's save panel run on the Rust side. The
+  stems play through the asset protocol (Tauri's `protocol-asset` feature,
+  `assetProtocol.enable`), whose static scope is empty. Before a `done` event
+  reaches the page, its folder is allowed with `allow_directory(folder,
+  false)`, not recursively. That is narrower than RoFormer's `$HOME/**` and
+  `/Volumes/**`. Mixing and Show in Finder take only that folder and the
+  files directly in it. The CSP gains `media-src 'self' asset:
+  http://asset.localhost`: it starts from `default-src 'none'`, which would
+  block every `<audio>`. A song must be an absolute path to a file, and the
+  model and format plain words, so nothing the page sends is read as an
+  option.
+- **The Python.** karaoke-mlx's Python moves into this repository as
+  `packages/separate`. Until it does, it stays in RoFormer's checkout, which
+  nothing commits to. The root is, in order: `KARAOKE_MLX_ROOT`; a
+  `separation.root` setting, which the setup card writes; `packages/separate`
+  beside the studio; then RoFormer's checkout. A root that the variable or
+  the setting names must hold a `pyproject.toml`, and is never passed over
+  for a default. uv is looked for on the studio's search path, then in
+  Homebrew's folders, `~/.local/bin` and `~/.cargo/bin`. The CLI runs with
+  Homebrew's folders ahead of the search path, where ffmpeg is. Quitting the
+  app ends a running separation's process group, which RoFormer's own app
+  did not do.
+- **Web (D55).** Separation needs the Mac. The page asks the bridge
+  `separationAvailable()`, which is the transport's `separation`. The web
+  transport's stub (`src/web/separation.ts`) answers `{available: false,
+  reason}` and rejects every separation call with *Separating stems needs
+  the Mac app.*, without asking the worker. The switch is not drawn on the
+  web, as the agents are not. The worker refuses the separation commands
+  with the app's others it does not offer, should a page send one, and no
+  `separation` event reaches the socket.
+- **The renderer's calls** (`src/renderer/bridge.ts`, typed in
+  `src/ipc.ts`): `separationStatus`, `separationModels`, `separate`
+  (waits for the channel, so no event is missed), `cancelSeparation`,
+  `mixStems`, `revealInFinder`, and `onSeparation` for karaoke-mlx's
+  `status`, `progress`, `done` and `error` events.
+- **Data and identity.** The name stays "Lily Studio", the identifier
+  `io.github.velet5.lily-studio`, and the icon the lily. So
+  `~/Library/Application Support/Lily Studio`, `~/Documents/Lily Studio`,
+  WebKit's local storage and the caches stay where they are, and nothing is
+  migrated. The only new file is `separations.json`, the recent
+  separations, in Application Support beside the others. Stems go next to
+  the song in `<song> (stems)` or `<song> (karaoke)`, as RoFormer writes
+  them. RoFormer MLX's own app stays buildable in its repository.
+- **Keeping the data in place.** `src-tauri/src/profile.rs` names the data
+  folder (`data_folder`: Application Support › `Lily Studio`, the Electron
+  studio's, by name and not by identifier). Its tests fail if the identifier,
+  the name, the main binary's name or `package.json`'s `productName` changes,
+  if an icon the bundle lists is missing, or if `tauri.local.json` overrides
+  more than the signing. Another test starts a studio on a profile an earlier
+  one left, with the Electron studio's `Local Storage` and a file the studio
+  does not know, and finds every file there, byte for byte, and nothing in
+  Documents. Moving the data would need its own decision and the user's
+  consent at launch; nothing here moves it.
+- **The install collision (#1200).** The single-instance plugin's socket is
+  `/tmp/io_github_velet5_lily_studio_si.sock`, from the identifier alone (no
+  `semver` feature). `npm start` and the installed app share it, so a
+  dev build started while Lily Studio is open hands its launch to the open
+  one and exits. That is kept: both write the same profile, and a second
+  identifier for development would still share Application Support ›
+  `Lily Studio`. The studio's README says to quit the app first.
+- **The switch** (`WorkspaceSwitch` in `src/renderer/sidebar.ts`) is a
+  tablist drawn where `separationAvailable()` says separation runs. Stems'
+  two panes lie over the files and over the editor's and the preview's
+  columns. The other workspace's panes are made invisible and inert, not
+  removed or hidden, so Monaco, the preview's zoom and scroll and the file
+  list stay as they were behind Stems. Each launch starts in Scores. Opening
+  a score or a folder, New Score and Help › Welcome go back to Scores.
+- **The Separate view** (`SeparateView` in `src/renderer/separate.ts`) is
+  RoFormer's page in Lily's panes: the song, the model in *Karaoke* / *All
+  instruments*, Fast, Balanced or Best (2, 4 or 8 overlapping chunks, Balanced
+  first, as RoFormer had them) and WAV, FLAC or MP3 on the left; on the right
+  one `<audio>` per stem, one playing at a time, and the ticked stems' *Export
+  mix…*. Show in Finder is in the pane's header. The run button says *Make
+  karaoke* or *Separate instruments*, and *Cancel* while one runs. Its models
+  are asked for when Stems is first shown, not at launch, since that starts
+  Python, and again after each separation, which may have downloaded one. A
+  missing project or uv shows its reason with *Check again* in place of the
+  models. The status line follows a separation in either workspace. The
+  bar shows karaoke-mlx's `progress` stages, not its `status` lines, which
+  are its log, as RoFormer's app did. The channel's `done` may come after
+  the `separate` command has answered, and still shows the stems of the song
+  and model it was started with.
+- **Choosing the song.** `choose_song` (separate.rs) opens AppKit's panel
+  for the formats karaoke-mlx's ffmpeg reads; the web's stub and the worker
+  refuse it with the others. Tauri takes files dropped on the window, so the
+  page gets no HTML drop: the app's transport passes on Tauri's drag and drop
+  events as `FileDrop`, and a song dropped anywhere in the window goes to the
+  Separate view and shows Stems. The stems play from the asset protocol's
+  URLs (the transport's `fileUrl`, `studio.stemUrl`). A mix saved outside the
+  stems' folder is not in the asset scope, so it is exported but not played.
+- **From a stem to a score.** #1199 says no transcription code exists, so
+  a stem leads to a score written by ear. Each stem's row has *Score…*, or
+  *Score… (hard)* for guitar, piano, other, the instrumental and any stem
+  karaoke-mlx adds later, which #1199 found the hardest to write down. Its
+  menu offers *New score for bass* (no ellipsis: no panel asks anything),
+  says what it writes, and has *Show … in Finder*. The page makes the score
+  (`stemScore` in `src/renderer/files.ts`): the instrument's staff, clef and
+  General MIDI sound (bass: `bass_8`, electric bass; guitar: `treble_8`;
+  drums: a DrumStaff; piano: a PianoStaff; vocals: a treble staff and
+  words), four bars of rest, `\layout` and `\midi`, titled "<song> —
+  <stem>". Its `% Stem: <song> - bass.wav` line names the stem. The vocals'
+  `\lyricsto` line starts commented out: lyrics over a tune of rests alone
+  warn once `runtime/timing.ly` maps playback. `new_score_for_stem` takes
+  the stem, a plain name and the text. The stem must be in a folder
+  separated this run. It writes `<name>.ly` beside the stem, or `<name>
+  2.ly` and so on, and never writes over a file. Then it opens it as Open
+  Score would, so the stems' folder becomes the open folder and Scores is
+  shown. When a score is shown, its `% Stem:` line (`stemOfScore`) is
+  passed to `attach_stem` with the score. That command takes only a name:
+  an audio file directly beside a score the page may open, with no link out
+  of the folder. It lets that one file into the asset scope, so the strip
+  also works after a restart. The strip (`StemStrip` in
+  `src/renderer/player.ts`) has ▶, a slider, the time, *With score* and ✕.
+  With score plays the score's MIDI with the stem, each from where it is:
+  the user puts the stem where the score's first bar (or start mark)
+  begins. Pause pauses both, and the slider moves the stem alone. ✕ hides
+  the strip until the score is shown again. The strip is not drawn on the
+  web. When transcription exists, a *Transcribe* button fits in the strip,
+  and it has what #1199 asked for: an audio file and an instrument name.
+- **Not done yet.** The Separations list, the `separation.root` setting and
+  its setup card, `separations.json`, and moving the Python. The file list
+  shows only scores, not the stems beside them. Folders
+  separated in an earlier run are not in the asset scope until a later step
+  lets the recent separations in again.
+- **Verified.** `crates/separate`'s tests run stand-ins for uv: the root's
+  order and refusals, uv's places, the command line, a request's
+  arguments, events passed on in order, an `error` event, a silent death
+  reported from stderr, one job at a time, and Cancel ending the CLI's own
+  child too. They also cover `models` and `mix`. `separate.rs`'s tests cover
+  which paths count as inside a separated folder, and the mix's name.
+  `test/web.test.ts` checks that the stub rejects each command
+  `src-tauri/src/lib.rs` registers, and only those, and that the worker
+  refuses them too; crates/server's test asks a worker to separate.
+  `workspaceForKey` has unit tests, and the smoke test, in the real window,
+  switches to Stems, sees it cover the files and the editor's and the
+  preview's columns, sees the Separate view wait for a song, and goes back
+  to Scores. `test/separate.test.ts` covers the view's pure parts: which
+  files are songs, the model groups and names, the qualities and formats,
+  progress and its stages, the stems' names and the mix button, and that the
+  panel's extensions are the view's, and the Score… labels.
+  `test/files.test.ts` checks each stem's score: its `% Stem:` line read
+  back, its instrument, the hard ones, quoting the song in the title, and
+  that a line naming another folder is ignored. It also engraves every
+  stem's score, and an unknown stem's, through `lily-outcome`, with no
+  error or warning and with MIDI. `separate.rs`'s tests cover writing beside
+  the stem without writing over a file, refusing names that are not plain,
+  and which names `attach_stem` takes.
+- **Separated in the app.** Given a song as `LILY_SMOKE_SONG`, the smoke
+  test separates a copy of it, in a scratch folder of its own that it
+  deletes. `smoke_drop` sends the page the event Tauri sends for a drop from
+  the Finder, so the song arrives as a dropped one does. BS-RoFormer SW
+  at Fast splits it into six stems. Each must load from the asset protocol
+  and last as long as the others, bass and drums must export as a mix that
+  plays, and *New score for bass* must open `bass.ly` in Scores with the
+  bass in the Stem strip. The run may then take a quarter of an hour longer,
+  since a first separation downloads its model. `npm run test:e2e` does the
+  same in the installed app when `LILY_E2E_SONG` names a song, with the
+  Finder's bare PATH, so RoFormer MLX and uv are found as a user's copy
+  finds them. The operator's desktop was in use, so this replaces driving
+  the window with UI automation. The test song (3:43) took 55 s.
+
+## D113 — Lily Studio: a stem's score is transcribed from it (lily-transcribe)
+
+**Status:** accepted (the operator approved the design, with a rough draft of
+chords for the hard stems and kick, snare and hi-hat for drums, 2026-10-14)
+· **Refines:** D112 · **Research:** `docs/research/audio-transcription/`
+(#1199)
+
+- **Why.** D112's *New score for bass* wrote four empty bars, titled with the
+  song's raw file name. On a real song (3:43) the operator found that no
+  help. A score from a stem now holds the stem's notes on the song's own
+  tempo, meter and key, from its start to its end.
+- **Where the code lives.** `packages/transcribe` (`lily-transcribe`) is a
+  uv Python project, not an npm package. It is run as karaoke-mlx is (D112):
+  `uv run --quiet --project <root> lily-transcribe --json transcribe <stem>
+  --instrument <stem name>`, one JSON event per line (`progress` with a
+  stage, then `done` with the transcription, or `error`). crates/separate's
+  `Transcriber` runs it, one at a time, in its own process group; separation
+  and transcription share that crate's `Job`. The root is
+  `LILY_TRANSCRIBE_ROOT`, which must be a project, or `packages/transcribe`
+  beside the studio. The command is `transcribe_stem` (separate.rs). It takes
+  only a stem in a folder separated this run, and the instrument must be a
+  plain word. Its events reach the page as `{type: "transcription", event}`.
+  The web stub and the worker refuse it with the other separation commands.
+  Quitting ends a running transcription.
+- **Dependencies.** Python 3.11, which Basic Pitch 0.4 needs; uv fetches it.
+  Basic Pitch 0.4.0 (Spotify, Apache-2.0, a 230 KB model in its wheel, CoreML
+  on a Mac) hears the notes. Beat This! 1.1.0 (CPJKU, MIT for code and
+  weights) finds beats and downbeats; it brings torch (BSD), and its 77 MB
+  checkpoint downloads on the first transcription. madmom's DBN is not used:
+  it is for non-commercial use only. `setuptools<81` is pinned because Basic
+  Pitch pins resampy below 0.4.3, which still imports `pkg_resources`.
+  MuScriptor's weights (CC BY-NC) and YourMT3+ (GPL) were not taken (#1199).
+- **The song's grid.** Beat This runs on all the song's stems mixed back
+  together, not on the stem: a bass or vocal stem has no drums to keep time
+  with. A straight grid is fitted through the beats. It ignores the fills
+  that Beat This counts in eighths, and is snapped to a whole number of beats
+  per minute when it is within 0.1 of one and fits as well (123.015 measured
+  is 123 played to a click). When 80 % of the beats sit on such a grid, the
+  song is *steady*; otherwise the beats are kept as found, with extra ones
+  dropped and missed ones put back, and the score says its MIDI drifts. The
+  downbeats vote for the meter (2, 3 or 4 beats) and for bar 1, which is the
+  first bar line at the start or after it. The time before it is the pickup.
+- **The song's key and tuning.** Basic Pitch hears every stem but the drums,
+  mixed. The key is Temperley's (Kostka–Payne) profile correlated with how
+  long each pitch class sounds. Krumhansl and Kessler's profiles left C major
+  and C minor nearly equal on the test song, and a spectrum's chroma read it
+  as major (every root's fifth harmonic is its major third). The tuning is the
+  median of the notes' pitch bends. Each note is re-centred on it, so a
+  singer's sharp E-flat is not written as E. The grid, key and tuning are
+  kept per song in `~/.cache/lily-transcribe` (`LILY_TRANSCRIBE_HOME`), so
+  the song's other stems take seconds.
+- **The notes, by family** (`instruments.py`). *Melody* (bass, vocals): one
+  note at a time on sixteenths. A note outside the instrument's range is
+  dropped, as is one shorter than most of a sixteenth, or an overtone of a
+  lower note sounding as it starts (+12, +19, +24, +28, +31 semitones, not
+  louder). Of two notes starting together, the stronger stays. A note lasts
+  until the next one starts, and a short silence after it (a sixteenth; an
+  eighth for a voice) is its release. A voice also joins same-pitch fragments
+  and drops notes more than an octave from its middle pitch. *Chords*
+  (guitar, piano, other, the instrumental and any later stem): a rough draft
+  on eighths. The notes starting together are a chord of up to the
+  instrument's voices, lasting until the next. *Drums*: kick (30–150 Hz),
+  snare (600 Hz–2.5 kHz, above the kick's overtones) and hi-hat (5–11 kHz),
+  each a rise of the band's energy above 1 % of its own loud level. Each peak
+  goes to its nearest sixteenth, and is a hit when it is at least 35 % of the
+  band's strongest. Toms and cymbals are not told apart.
+- **The score** (`stemScore` in files.ts, `src/renderer/notation.ts`). It is
+  written as a person would type it: pitches spelled in the key (#1, ♭3, #4,
+  ♭6 and ♭7 in major; ♭2, the raised third, sixth and seventh in minor) in
+  `\relative` without a start pitch. A note is split at the beat where its
+  place asks and tied, also across bar lines; quarters and dotted quarters
+  may start on an eighth, as pop's syncopations do. Rests start on multiples
+  of their length, and empty bars are whole-bar rests (`R1*8`, with
+  `\compressEmptyMeasures`). Bass is in `bass_8`, guitar in `treble_8`, a
+  voice in `treble_8` when its middle note is below A3, piano on two staves
+  parted at middle C, drums in `\drummode`. A bar number comment marks every
+  fourth bar. The title is the song's, from its file name (`artist_-_title`
+  as downloads write it gives "Valeriy Meladze" and "Tekila-lyubov"); the
+  stem is `instrument`. The `% Stem:` line, the Stem strip, writing beside
+  the stems and never over a file are D112's.
+- **With score keeps time.** The stem strip plays the score's MIDI and the
+  stem each from where it is (D112). The pickup bar's MIDI lasts exactly as
+  long as the stem plays before bar 1: a hidden `\once \omit
+  Score.MetronomeMark \tempo 64 = N` sets it, and `\tempo 4 = 123` follows at
+  bar 1. Started together from their starts, they stay together to the end
+  of a steady song. `Score.tempoWholesPerMinute` is not set by hand: 2.24
+  takes a moment and 2.26 a rational, and `\tempo` takes only whole numbers
+  in 2.24. A tempo that is steady but not whole says how far the MIDI drifts
+  by the end.
+- **The menu.** *New score for bass* transcribes, then writes and opens the
+  score. While it runs, the Score… button says *Transcribing…* and the status
+  line names the stage (reading the song, finding the beats, finding the
+  key, hearing the notes). *Empty score for bass* writes D112's four empty
+  bars. A failure says why and points to it. The hard stems' button says
+  *Score… (draft)*.
+- **Measured on the test song** (Tekila-lyubov, 3:43, BS-RoFormer SW at
+  Fast, M1 Max). Grid: ♩ = 123, 4/4, all 109 downbeats on one bar phase,
+  94 % of the beats within 40 ms of the straight grid; bar 1 at 0.21 s. Key
+  C minor (0.80). Against pYIN on the bass stem, sixteenth by sixteenth: the
+  same pitch in 89 % of the slots where both hear a note (82 % before the
+  overtone rule), an octave off in 0.7 %. Most of the rest are slots where
+  Basic Pitch hears a fifth or a twelfth above pYIN, and the spectrum does
+  not say which is right. The drums give a steady groove: kick on 1, 3, 4 and
+  the "and" of 4, snare on 2, the "a" of 2 and the "and" of 3, hi-hat on the
+  eighths. In the app, *New score for bass* took 15 to 19 s for a song not
+  yet transcribed, and a further stem of it about 10 s.
+- **Not done yet.** The vocals are a first draft: vibrato and glides still
+  leave fragments and accidentals. No lyrics. The meter and bar 1 are not yet
+  shown for the user to confirm (#1199 §4), and a drifting song's MIDI does
+  not follow its tempo. Piano has no piano model or hand split beyond middle
+  C, guitar no tablature. Like `packages/separate`, an installed app finds
+  `packages/transcribe` by the path it was built from, or through
+  `LILY_TRANSCRIBE_ROOT`.
+- **Verified.** `uv run pytest` in packages/transcribe: the grid (a click
+  track with a fill, a tempo between whole numbers, three beats a bar, bar 1
+  at the start, a drifting song, cleaned beats), the quantizing (range,
+  blips, the stronger of two, overtones, releases, a voice's fragments and
+  spread, chords and voices), the key (minor, major, transposed), drums on a
+  synthesized rock beat, and the CLI's events with the models replaced,
+  including the cache. crates/separate's tests run lily-transcribe's stand-in
+  for its arguments, events, answer and failures, and its root. notation's
+  tests cover spelling, `\relative`, the pieces of notes and rests, a voice
+  with a pickup, ties across bars and whole-bar rests, and drums.
+  files.test.ts engraves every stem's transcribed score through lily-outcome
+  without warnings, and finds bar 1 of its MIDI at the stem's 0.2 s. The
+  scores of the test song's six stems engrave without warnings on LilyPond
+  2.24.4 and 2.26.0. With `LILY_SMOKE_SONG`, the smoke test transcribes the
+  bass in the real app and checks bass.ly's tempo, notes and bars against
+  the stem; on the test song: ♩ = 123, 4/4, C minor, 115 bars for 3:43.
+
+## D114 — Lily Studio: the songs separated before open again
+
+**Status:** proposed · **Refines:** D112, D49
+
+- **Why.** The operator separated the same song on every launch: the stems
+  were on disk, but the Stems view only showed those of a separation made in
+  this run of the app.
+- **What.** Under the settings of the Separate view, *Recent* lists the songs
+  separated before, last opened first: the song's name (its folder's,
+  without ` (karaoke)` or ` (stems)`), then the kind, how many stems and
+  when. A click shows the stems as a separation would: players, the mix,
+  Score… and Show in Finder. ✕, on hover, takes one off the list and leaves
+  its stems. *Open…* takes a folder of stems made earlier, by this app or
+  RoFormer's, and lists it. The song shown is marked; the list is disabled
+  while a separation runs.
+- **Kept.** `separations.json` beside recent.json (crates/separate's
+  `history`): twenty entries, each folder once, with its stems' files, how
+  long the separation took and when it was opened. A separation goes on it
+  when it is done, after its `done` event; opening one puts it in front. A
+  broken file loads what it can. A gone folder stays, dimmed and marked Not
+  found, as D49's do; opening it says it is gone.
+- **The folder is let in** as a separation's is: the asset scope and the
+  folders that mixing, Show in Finder and transcribing take
+  (`Stems::allow`). `open_separation` opens only folders on the list, and
+  `choose_separation` only the one its panel chose. A folder's stems are
+  the files the list kept that are still there, or else its
+  `<song> - <stem>.wav|flac|mp3` files, a mix (`- mix`) left out, in the
+  view's order (`history::scan`).
+- **The web** has none of it: the four commands join D112's in the stub and
+  the worker's desktop-only list.
+- **Verified.** `history` tests (from a `done` event, order and limit, a
+  folder's stems, saving, loading, gone folders); `test/separate.test.ts`:
+  `folderSong`, `folderTask`, `pastMeta`; the web tests check the command
+  lists. `npm test` in packages/studio passes, the smoke test included.
+- **Not done.** No smoke step for the list, and not yet checked by hand in
+  the app. The model a song was separated with is not kept, so a karaoke
+  folder renamed without its suffix is told by its instrumental stem.
+
+## D115 — Lily Studio: `npm start` without Tauri's dev server
+
+**Status:** accepted · **Refines:** D42
+
+- **Why.** `npm start` opened no window: Lily Studio sat in the Dock, its
+  window hidden. With no `devUrl`, `tauri dev` (CLI 2.12) serves
+  `frontendDist` from a server of its own on `127.0.0.1:1430` and points the
+  webview there. The window's `on_navigation` lets in only `tauri://` and
+  `tauri.localhost`, so the first navigation was refused, the page never
+  loaded, and the window, shown when the page has loaded, never was. The
+  smoke test runs through `cargo run`, which loads the embedded pages, so it
+  passed.
+- **What.** `npm start` runs `tauri dev --no-dev-server`: the dev build loads
+  `dist/web` from the `tauri://` protocol, as the smoke test and the
+  release do. The page still never navigates. There is no live reload of the
+  page; esbuild did not watch it anyway, so a change to the renderer is seen
+  by running `npm start` again.
+- **Verified.** By hand: `npm start` shows the window and the score last
+  open. Nothing in the tests runs `tauri dev`.
+
+## D116 — Lily Studio: the piano view, the music falling onto a keyboard
+
+**Status:** proposed · **Refines:** D35, D45
+
+- **What.** **Piano** in the transport, and *Source | Piano* in the editor's
+  header, put a piano view over the editor: a keyboard along the bottom and
+  the notes falling onto it, as piano videos on YouTube show a piece. A note
+  touches its key when it sounds and lights the key while it lasts; each
+  part has its colour, and a note long and wide enough carries its name (C,
+  C#, Eb, F#, Ab, Bb, as those videos spell them, whatever the key). The
+  white keys are lettered, with the octave on each C (middle C is C4). The
+  stage is dark in both themes. Piano again, or *Source*, brings the editor
+  back as it was; opening a file or the welcome screen does too.
+- **Keys.** A selector in the header shows *All 88 keys* (A0 to C8) or *The
+  score's notes*: whole octaves, from the C under the lowest note to the B
+  over the highest. The choice is kept in the window's storage.
+- **What falls.** The player's music, so a part the Parts fold mutes is not
+  there and a seek or the start mark moves the fall; the drums have no keys
+  and are left out. Three seconds of music are shown above the keys. The
+  view follows the heard position (D51), redrawn each frame while the music
+  plays and only then; Space plays and pauses in it, as in the preview.
+- **How.** `src/renderer/piano.ts` draws on a canvas at the screen's pixel
+  ratio and redraws when its pane is resized. `ScorePlayer` has the button
+  and tells the view of each change; the view reads `midi`, `position` and
+  `playing` from it. The editor keeps its model and state behind the view.
+- **Not done.** No falling notes in the extension's preview. Notes are not
+  spelt from the key signature, which the MIDI carries but midi.js does not
+  read. The time shown cannot be zoomed. A hand per staff is not inferred:
+  the colour is per MIDI track, which is per staff.
+- **Verified.** `piano.test.ts` covers the names, the notes kept, the
+  ranges and the keys' layout. In `npm run test:smoke`, Piano, pressed while
+  paused, shows the view with notes over the editor, and *Source* brings
+  Monaco back. The drawing was looked at in headless Chrome, with stand-in
+  notes for two hands, at both ranges; not in the app while playing.
+
+## D117 — Lily Studio: the piano view below the score, its tracks, and a pause that pauses
+
+**Status:** proposed · **Refines:** D116, D35
+
+- **Below the score.** A selector in the piano view's header puts it *Over
+  the source*, as D116 has it, or *Below the score*: a strip of the preview
+  pane, 38% of its height, between the pages and the transport, with its
+  selectors on a bar along its top. There it stays under SVG and PDF alike
+  and the source stays in the editor; Piano in the transport shows and
+  hides it, and opening a file or the welcome screen leaves it. The editor's
+  *Piano* tab puts it over the source again. The choice is kept in the
+  window's storage.
+- **Tracks.** A *Tracks* button opens a box per part with keys, in its
+  colour and with the Parts fold's name for it; an unticked part's notes do
+  not fall, though it still sounds (muting is the Parts fold's). A part keeps
+  its colour when another is hidden, and *The score's notes* range follows
+  the parts shown. The button is marked while a part is hidden. The hidden
+  parts are kept per score in the window's storage, by track.
+- **Pause.** The transport was drawn again on each tick while playing (every
+  100 ms), and its ▶/❚❚ button's text replaced each time. WebKit drops a
+  click whose press and release land on either side of such a replacement,
+  so ❚❚ seldom paused, while ▶, drawn only on a change, always played. The
+  transport and the Stem strip now set a text only when it changes.
+- **How.** `index.ts` moves the view's body and its header actions between
+  the editor and the `.piano-dock`, and Space in the view toggles once
+  where both panes listen. `ScorePlayer` gives the view `rootFile` and
+  `parts`; `pianoTracks` in `piano.ts` lists the tracks with their colours.
+- **Not done.** The strip's height cannot be dragged. A part is not hidden
+  from the pages' marks or the playhead.
+- **Verified.** `piano.test.ts` covers the track list. In `npm run
+  test:smoke`, *Below the score* shows the strip with the source back in the
+  editor, unticking the one track empties the fall, and *Over the source*
+  brings the view back over the editor. The pause was not clicked by a
+  mouse in a test: the smoke test's `click()` has no press and release.
+
+---
+
+## D118 — Playback position: a variable's places in reading order
+
+**Status:** accepted · **Refines:** D26
+
+- **The fault.** D26 pairs an href drawn as often as it is played with its
+  places in order, taking the order of `sourceLinks`, which is the order the
+  SVG lists its elements. Between systems that is the reading order; within
+  one it is not: in *Join Me in Death* the SVG lists the first note of
+  `\pE` in bar 5 before the one in bar 1 of the same system. Bar 1's time
+  went to bar 5's place and bar 5's time to bar 1's, so the playhead ran back
+  to the start of the line at bar 5 and then jumped on, and each jump back
+  also split the system in two (the score had 24 systems for its 19).
+- **Decision.** `timelineOf` pairs such an href with its places in reading
+  order (`readingOrder` in `web/preview.js`): by page, then by row, then from
+  left to right. Sorted by vertical centre, a place begins a new row when it
+  lies more than three heights (its own or the one above's, the larger)
+  below the one above: a notehead is about a staff space high, the same
+  staff on the next system at least eight further down, and noteheads of one
+  chord or a transposed use stay within the row. If a place has no box the
+  SVG's order is kept.
+- **Verified.** `player.test.ts` pairs a variable played four times whose
+  places the SVG lists out of order; it fails without the change. Run over
+  *Join Me in Death*'s pages and map (boxes from the SVG's translations),
+  the cursor no longer moves left within a system and the score has its 19
+  systems.
+
+---
+
+## D119 — Go to definition, and the definition on hover
+
+**Status:** proposed · **Refines:** D21, D29
+
+- **What.** ⌘-click or F12 on a `\name` the score defines (`pCis = { … }`)
+  goes to its definition, in both apps; ⌘ held over it underlines it and
+  previews the definition. Hovering over it shows the definition as code, up
+  to the line where its braces, `<< >>` or Scheme parentheses close (twelve
+  lines at most), with the file and line when that is another file. A
+  score's own definition is shown before the built-in documentation of the
+  same name (D21), since it is the one lilypond uses.
+- **Which definition.** The one in effect where the name is used: the
+  nearest before it, going into each `\include`d file on the way (relative to
+  the including file, eight levels deep at most, which also stops a file that
+  includes itself). When none comes before, the first one after it in the
+  same file. A definition is `name = …` or `"name" = …` at the start of a
+  line, or Scheme's `(define name …)` / `(define (name …) …)`, outside
+  comments and strings; `\set name = …` is not one.
+- **How.** `@lily/common/definition` finds it, given a way to read and
+  resolve included files: the extension reads an open editor's text, else
+  the disk; Lily Studio an open model's text, else `read_file`. In Studio a
+  definition in another file gets a Monaco model when it is found, so that
+  ⌘ held previews it, and going there opens the file as the file list does
+  (`registerEditorOpener`).
+- **Not done.** A file the score includes does not see the score's
+  definitions: in `piano.ily` a name defined in the `main.ly` that includes
+  it is not found. lilypond's include path (`-I`) is not searched. Find All
+  References and Rename are not offered.
+- **Verified.** `test/intellisense/definition.test.ts` in the extension
+  covers the name under the cursor, definitions, previews, includes and the
+  choice among several; Studio's `files.test.ts` the included file's path.
+  Neither app's providers were exercised in a running editor by a test.

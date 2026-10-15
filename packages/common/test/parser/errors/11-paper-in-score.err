@@ -1,0 +1,4 @@
+11-paper-in-score.ly:2:17: error: \paper cannot be used in \score, use \layout instead
+\score { { c4 } 
+                \paper { } }
+fatal error: failed files: "11-paper-in-score.ly"

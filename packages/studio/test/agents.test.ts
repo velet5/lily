@@ -2,7 +2,7 @@ import * as assert from 'node:assert/strict'
 import * as path from 'node:path'
 import { describe, test } from 'node:test'
 import { CHAT_FONT_DEFAULT, CHAT_FONT_SIZES, chatFontSize, contextLabel, imageRefusal, MAX_IMAGE_BYTES, MAX_IMAGES, modelChoices, PERMISSIONS, SELECTION_ACTIONS, stepChatFont, textRuns } from '../src/renderer/agents'
-import { clampHeight, clampWidth, FILES_MIN, SIDEBAR_WIDTH } from '../src/renderer/sidebar'
+import { clampHeight, clampWidth, FILES_MIN, SIDEBAR_WIDTH, WORKSPACES, workspaceForKey } from '../src/renderer/sidebar'
 
 // Runs under `node --test` from out/test/ (npm run test:unit in packages/studio/): the
 // sidebar and the agent panel. Running the agents is the Rust side's
@@ -20,6 +20,25 @@ describe('sidebar sizes', () => {
   test('clampHeight leaves the files their share', () => {
     assert.equal(clampHeight(50, 600), 140)
     assert.equal(clampHeight(900, 600), 600 - FILES_MIN)
+  })
+})
+
+describe('the workspace switch', () => {
+  test('Scores, then Stems', () => {
+    assert.deepEqual(WORKSPACES.map((tab) => tab.label), ['Scores', 'Stems'])
+  })
+
+  test('the arrow keys move along it and stop at its ends; Home and End go to them', () => {
+    assert.equal(workspaceForKey('scores', 'ArrowRight'), 'stems')
+    assert.equal(workspaceForKey('stems', 'ArrowRight'), 'stems')
+    assert.equal(workspaceForKey('stems', 'ArrowLeft'), 'scores')
+    assert.equal(workspaceForKey('scores', 'ArrowLeft'), 'scores')
+    assert.equal(workspaceForKey('scores', 'End'), 'stems')
+    assert.equal(workspaceForKey('stems', 'Home'), 'scores')
+  })
+
+  test('other keys leave it alone', () => {
+    for (const key of ['ArrowUp', 'ArrowDown', 'Enter', ' ', 'Tab', 's']) assert.equal(workspaceForKey('scores', key), undefined)
   })
 })
 

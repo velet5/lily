@@ -1,0 +1,7 @@
+01-unknown-command.ly:2:6: error: unknown command: `\foo'
+{ c4 
+     \foo d }
+01-unknown-command.ly:2:6: error: string outside of text script or \lyricmode
+{ c4 
+     \foo d }
+fatal error: failed files: "01-unknown-command.ly"

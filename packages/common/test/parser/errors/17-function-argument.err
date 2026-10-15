@@ -1,0 +1,10 @@
+17-function-argument.ly:2:18: error: wrong type for argument 2.  Expecting pitch, found "d"
+{ \transpose c "d
+                 " { c4 } }
+17-function-argument.ly:2:1: warning: skipping zero-duration score
+
+{ \transpose c "d" { c4 } }
+17-function-argument.ly:2:1: warning: to suppress this, consider adding a spacer rest
+
+{ \transpose c "d" { c4 } }
+fatal error: failed files: "17-function-argument.ly"

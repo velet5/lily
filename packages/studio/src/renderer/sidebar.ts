@@ -3,7 +3,10 @@
 // share its height. Both edges also move with the arrow keys and go back to
 // where they started on a double-click. The accordion opens one fold at a time,
 // or none. Sizes and the open fold are remembered in this window's storage.
-// `clampWidth` and `clampHeight` are pure so the tests can run them without a DOM.
+// In the app, the switch at its top picks the workspace (D112): Scores, the
+// studio as it was, or Stems. Each launch starts in Scores. `clampWidth`,
+// `clampHeight` and `workspaceForKey` are pure so the tests can run them
+// without a DOM.
 
 export const SIDEBAR_WIDTH = { min: 180, max: 640, initial: 240 }
 /** The editor and the preview keep at least this much of the window between them. */
@@ -190,5 +193,95 @@ export class Sidebar {
       const step = event.shiftKey ? BIG_STEP : STEP
       move(event.key === more ? step : -step)
     })
+  }
+}
+
+export type Workspace = 'scores' | 'stems'
+
+/** The switch's tabs, in their order from the left. */
+export const WORKSPACES: readonly { workspace: Workspace; label: string; title: string }[] = [
+  { workspace: 'scores', label: 'Scores', title: 'Write and engrave scores' },
+  { workspace: 'stems', label: 'Stems', title: 'Split a song into its voices and instruments' },
+]
+
+/** Where the arrow keys, Home and End move the switch from `current`; undefined for any other key. */
+export function workspaceForKey(current: Workspace, key: string): Workspace | undefined {
+  const last = WORKSPACES.length - 1
+  const index = WORKSPACES.findIndex((tab) => tab.workspace === current)
+  const to = { ArrowLeft: Math.max(0, index - 1), ArrowRight: Math.min(last, index + 1), Home: 0, End: last }[key]
+  return to === undefined ? undefined : WORKSPACES[to]!.workspace
+}
+
+export interface WorkspaceOptions {
+  /** The grid; gets `data-workspace`, which lays out the workspace's panes. */
+  studio: HTMLElement
+  /** The switch, a tablist; shown once its tabs are in. */
+  tabs: HTMLElement
+  /**
+   * The panes each workspace shows. The other workspace's stay laid out,
+   * invisible and inert, so they keep their size, scroll and focus state.
+   */
+  panes: Record<Workspace, HTMLElement[]>
+  /** Runs when the workspace changes. */
+  onChange?(workspace: Workspace): void
+}
+
+export class WorkspaceSwitch {
+  private current: Workspace = 'scores'
+  private readonly buttons: HTMLButtonElement[]
+
+  constructor(private readonly options: WorkspaceOptions) {
+    this.buttons = WORKSPACES.map(({ workspace, label, title }) => {
+      const tab = document.createElement('button')
+      tab.type = 'button'
+      tab.textContent = label
+      tab.title = title
+      tab.setAttribute('role', 'tab')
+      tab.dataset.workspace = workspace
+      tab.addEventListener('click', () => this.show(workspace))
+      return tab
+    })
+    options.tabs.replaceChildren(...this.buttons)
+    options.tabs.addEventListener('keydown', (event) => {
+      const to = workspaceForKey(this.current, event.key)
+      if (!to) return
+      event.preventDefault()
+      this.show(to)
+      this.buttons.find((tab) => tab.dataset.workspace === to)?.focus()
+    })
+    options.tabs.hidden = false
+    this.apply()
+  }
+
+  get workspace(): Workspace {
+    return this.current
+  }
+
+  show(workspace: Workspace): void {
+    if (workspace === this.current) return
+    this.current = workspace
+    this.apply()
+    this.options.onChange?.(workspace)
+  }
+
+  private apply(): void {
+    const { studio, panes } = this.options
+    studio.dataset.workspace = this.current
+    for (const tab of this.buttons) {
+      const selected = tab.dataset.workspace === this.current
+      tab.setAttribute('aria-selected', String(selected))
+      // One tab stop for the switch; the arrow keys move along it.
+      tab.tabIndex = selected ? 0 : -1
+    }
+    for (const [workspace, shown] of Object.entries(panes)) {
+      const away = workspace !== this.current
+      for (const pane of shown) {
+        pane.hidden = false
+        pane.inert = away
+        pane.toggleAttribute('data-away', away)
+        // WebKit keeps the focus of a button clicked, or Monaco's, in a pane made inert.
+        if (away && pane.contains(document.activeElement)) (document.activeElement as HTMLElement).blur()
+      }
+    }
   }
 }

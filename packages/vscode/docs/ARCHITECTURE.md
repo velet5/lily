@@ -388,6 +388,7 @@ Where each piece of upcoming work should look first:
 | CLI / MCP for agents (done) | §3.1 `CompileResult`, D11, D22, `AGENTS.md` |
 | Packaging, CI, README, release pass (done) | D23; what is left before publishing is listed there |
 | MIDI playback in the preview and for exported files (done) | D24; `packages/common/web/midi.js` is the whole audio path |
+| An engine of our own in WebAssembly (research) | [`docs/research/wasm-engine/`](../../../docs/research/wasm-engine/00-budgets.md): the phone budgets, the 30-score test set and how output is scored against lilypond's |
 
 Appendix A is reproducible: each row is a one-line `lilypond` invocation on a
 two- or three-line input, and should be re-run when the minimum supported
@@ -424,4 +425,6 @@ Probes run with `GNU LilyPond 2.26.0 (running Guile 3.0)`:
 | `#(ly:parser-include-string "{ c4 \\nope }")`; `ly:parse-string-expression` | located as `<included string>:1:6:` and `<string>:1:1:`, with the usual two context lines |
 | Root compiled through a symlinked directory, or `/tmp` vs `/private/tmp` | paths are printed as given, never `realpath`ed; includes are `<cwd as given>/<name>` |
 | Trivial score wall time | ≈ 0.43 s |
+| Warm parent (D25) on an M1 Max | `READY` after 0.13 s; each forked request ≈ 0.2 s more than the score's own work (trivial score 0.22 s, `orchestra.ly` of the documentation 0.91 s); details in `docs/research/wasm-engine/00-budgets.md` §3 |
+| Same scores cold, without and with `glyph-cache.scm` | `bach-bwv610.ly` 6.27 s and 0.86 s, `orchestra.ly` 9.63 s and 1.04 s: uncached, the SVG backend scans the SVG font for every glyph drawn |
 | Scheme introspection from a `.ly` file | 167 grobs, 43 contexts, 199 music functions with docstrings and signatures (recipe in DECISIONS D8) |

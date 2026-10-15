@@ -8,7 +8,15 @@ export interface Note {
   track: number
   channel: number
   key: number
+  /** The note-on's velocity over 127: what dynamics and accents give it. */
+  velocity: number
   program: number
+  /** Volume × expression of its channel when it began, 0–1. */
+  gain: number
+  /** -1 (left) to 1. */
+  pan: number
+  /** Pitch bend, in cents. */
+  detune: number
 }
 export interface Track {
   name: string

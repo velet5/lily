@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Engine spike</title>
+<style>
+  body { margin: 0 16px; font: 14px/1.4 system-ui, sans-serif; background: #fff; color: #111; }
+  pre { white-space: pre-wrap; font-size: 12px; }
+  button { font: inherit; padding: 6px 10px; margin: 8px 8px 0 0; }
+  #pages svg { display: block; width: 100%; height: auto; margin: 8px 0; color: #000; background: #fff; box-shadow: 0 0 0 1px #ccc; }
+</style>
+</head>
+<body>
+<button id="again">Run again (cached)</button><button id="cold">First visit (clear cache)</button>
+<pre id="out"></pre>
+<div id="pages"></div>
+<script src="harness.js"></script>
+</body>
+</html>

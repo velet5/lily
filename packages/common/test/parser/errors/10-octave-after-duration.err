@@ -1,0 +1,4 @@
+10-octave-after-duration.ly:2:5: error: octave marks must precede duration
+{ c4
+    ' d }
+fatal error: failed files: "10-octave-after-duration.ly"

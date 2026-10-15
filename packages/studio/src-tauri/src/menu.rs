@@ -10,7 +10,7 @@ use tauri::menu::{
 };
 use tauri::{AppHandle, Runtime};
 
-use crate::recent::{RecentEntry, tilde};
+use lily_session::recent::{RecentEntry, tilde};
 
 /// Menu ids that are renderer commands, as `Command` in src/ipc.ts spells them.
 pub const COMMANDS: &[&str] = &[
@@ -140,7 +140,7 @@ pub fn recent_labels(entries: &[RecentEntry], home: Option<&Path>) -> Vec<String
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::recent::RecentKind;
+    use lily_session::recent::RecentKind;
 
     #[test]
     fn a_shared_name_shows_its_directory() {

@@ -1,0 +1,12 @@
+30-unattached.ly:2:3: warning: Unattached ArticulationEvent
+{ 
+  -. c4 }
+30-unattached.ly:3:24: warning: Unattached ArticulationEvent
+x = { c4 } \notemode { 
+                       -> }
+30-unattached.ly:3:22: warning: skipping zero-duration score
+x = { c4 } \notemode 
+                     { -> }
+30-unattached.ly:3:22: warning: to suppress this, consider adding a spacer rest
+x = { c4 } \notemode 
+                     { -> }

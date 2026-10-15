@@ -53,11 +53,12 @@
     },
 
     "assignment": {
-      "comment": "`name =` at the start of a line. `c=''` is an octave check, not an assignment.",
-      "match": "^\\s*([A-Za-z]+(?:[-_][A-Za-z]+)*)\\s*(=)(?![',])",
+      "comment": "`name =` at the start of a line or after `{`, possibly with a path (`name.key =`). `c=''` is an octave check, not an assignment.",
+      "match": "(?:^|(?<=\\{))\\s*([A-Za-z\\x{80}-\\x{10FFFF}]+(?:[-_][A-Za-z\\x{80}-\\x{10FFFF}]+)*)((?:[.,][A-Za-z\\x{80}-\\x{10FFFF}]+(?:[-_][A-Za-z\\x{80}-\\x{10FFFF}]+)*)*)\\s*(=)(?![',])",
       "captures": {
         "1": { "name": "entity.name.function.definition.lilypond" },
-        "2": { "name": "keyword.operator.assignment.lilypond" }
+        "2": { "patterns": [{ "include": "#property-path" }] },
+        "3": { "name": "keyword.operator.assignment.lilypond" }
       }
     },
 
@@ -105,8 +106,9 @@
         { "name": "punctuation.separator.voice.lilypond", "match": "\\\\\\\\" },
         { "name": "constant.numeric.string-number.lilypond", "match": "\\\\\\d+" },
         {
+          "comment": "Letters are lilypond's: ASCII and any non-ASCII character (\\mélodie). \\\"any name\" and the \\= shorthand are commands too.",
           "name": "support.function.command.lilypond",
-          "match": "\\\\[A-Za-z]+(?:[-_][A-Za-z]+)*"
+          "match": "\\\\[A-Za-z\\x{80}-\\x{10FFFF}]+(?:[-_][A-Za-z\\x{80}-\\x{10FFFF}]+)*|\\\\\"(?:[^\"\\\\]|\\\\.)*\"|\\\\="
         }
       ]
     },
@@ -239,12 +241,15 @@
     },
 
     "markup": {
-      "comment": "\\markup takes one argument: a { } block, a string or a single word, possibly after markup commands and their Scheme arguments. A string followed by { on the same line is such an argument (\\with-color \"red\" { }). Words inside are text, never pitches.",
+      "comment": "\\markup takes one argument: a { } block, a string or a single word, possibly after markup commands and their Scheme arguments. A string followed by { on the same line is such an argument (\\with-color \"red\" { }). \\etc ends a partial markup (\\markup \\bold \\etc), and #} the #{ … #} around it. Words inside are text, never pitches.",
       "name": "meta.markup.lilypond",
       "begin": "\\\\markup(?:list)?(?![A-Za-z]|[-_][A-Za-z])",
-      "end": "(?<=\\})|(\"(?:[^\"\\\\]|\\\\.)*\")(?!\\s*\\{)|[^\\s\\\\#\"{}%]+",
+      "end": "(?<=\\})|(\"(?:[^\"\\\\]|\\\\.)*\")(?!\\s*\\{)|[^\\s\\\\#\"{}%]+|(?=#\\})|(\\\\etc)(?![A-Za-z]|[-_][A-Za-z])",
       "beginCaptures": { "0": { "name": "keyword.other.markup.lilypond" } },
-      "endCaptures": { "1": { "name": "string.quoted.double.lilypond" } },
+      "endCaptures": {
+        "1": { "name": "string.quoted.double.lilypond" },
+        "2": { "name": "support.function.command.lilypond" }
+      },
       "patterns": [
         { "include": "#comments" },
         { "include": "#string" },
@@ -268,7 +273,7 @@
     },
     "markup-command": {
       "name": "support.function.markup.lilypond",
-      "match": "\\\\[A-Za-z]+(?:[-_][A-Za-z]+)*"
+      "match": "\\\\[A-Za-z\\x{80}-\\x{10FFFF}]+(?:[-_][A-Za-z\\x{80}-\\x{10FFFF}]+)*"
     },
 
     "scheme": {

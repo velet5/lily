@@ -1,8 +1,10 @@
 import * as assert from 'node:assert/strict'
+import { execFile } from 'node:child_process'
 import * as fs from 'node:fs/promises'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import { after, before, test } from 'node:test'
+import { promisify } from 'node:util'
 import { CompileService } from '../../src/compile/compiler'
 import { locateLilyPond } from '../../src/compile/locate'
 import { parseStderr } from '../../src/diagnostics/parse'
@@ -115,6 +117,49 @@ test('font-data caching preserves glyph-string advances, spaces, offsets and siz
     assert.equal(result.stdout, plain.stdout)
     assert.deepEqual(await content([...result.pages, ...result.midi]), reference)
   }
+})
+
+test('glyph reuse, only when asked for, defines each glyph once per page and draws what LilyPond draws', async () => {
+  // docs/research/wasm-engine/06-output.md §3: the preview never sets lily-glyph-reuse?.
+  const binary = await locateLilyPond()
+  const rootFile = path.join(scratch, 'reuse.ly')
+  await fs.writeFile(rootFile, String.raw`\version "2.26.0"
+\paper { #(set-paper-size "a7") }
+\markup { \dynamic "sff p" \fontsize #4 \musicglyph "noteheads.s2" }
+\score { \new PianoStaff <<
+  \new Staff { \grace c''8 c''4\pp d''\sfz e''2 | \repeat unfold 12 { c''4 d'' } }
+  \new Staff { \clef bass c1 | \repeat unfold 6 { c2 d } }
+>> }
+`)
+  const glyphCache = path.resolve('../common/runtime/glyph-cache.scm')
+  const compile = async (name: string, reuse: boolean) => {
+    const args = ['--loglevel=WARNING', '--svg', '-dpoint-and-click', '-o', path.join(scratch, name)]
+    if (reuse) args.push('-e', `(begin (define lily-glyph-reuse? #t) (load ${JSON.stringify(glyphCache)}))`)
+    const { stderr } = await promisify(execFile)(binary.path, [...args, rootFile], { cwd: scratch })
+    assert.equal(stderr, '')
+    const pages = (await fs.readdir(scratch)).filter(f => f.startsWith(name) && f.endsWith('.svg')).sort()
+    return Promise.all(pages.map(page => fs.readFile(path.join(scratch, page), 'utf8')))
+  }
+  const plain = await compile('reuse-plain', false)
+  const reused = await compile('reuse-on', true)
+  assert.ok(plain.length > 1, 'a second page defines its glyphs again')
+  assert.equal(reused.length, plain.length)
+  const definition = /<defs><path id="([^"]+)" transform="scale\(([^)]*)\)" d="([^"]*)" fill="currentColor"\/><\/defs>\n/g
+  const use = /<use xlink:href="#([^"]+)"(?: transform="([^"]*)")?\/>\n/g
+  reused.forEach((page, index) => {
+    const defined = new Map<string, [string, string]>()
+    for (const [, id, scale, d] of page.matchAll(definition)) {
+      assert.ok(!defined.has(id), `${id} is defined once on page ${index + 1}`)
+      defined.set(id, [scale, d])
+    }
+    // Drawn in place again, each <use> is the <path> LilyPond writes, byte for byte.
+    const inlined = page.replace(definition, '').replace(use, (_, id: string, translate?: string) => {
+      const [scale, d] = defined.get(id) ?? assert.fail(`${id} is used before its page defines it`)
+      return `<path transform="${translate ? translate + ' ' : ''}scale(${scale})" d="${d}" fill="currentColor"/>\n`
+    })
+    assert.ok(defined.size > 0 && defined.size < [...page.matchAll(use)].length)
+    assert.equal(inlined, plain[index])
+  })
 })
 
 test('unsaved root and nested/absolute includes map links and diagnostic columns to real sources', async () => {

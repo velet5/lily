@@ -1,0 +1,4 @@
+02-shorthand.ly:2:6: error: undefined character or shorthand: &
+{ c4-
+     & d }
+fatal error: failed files: "02-shorthand.ly"

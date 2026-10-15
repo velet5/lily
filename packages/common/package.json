@@ -8,6 +8,7 @@
     "./span": "./src/span.ts",
     "./types": "./src/types.ts",
     "./textedit": "./src/textedit.ts",
+    "./definition": "./src/definition.ts",
     "./web/*": "./web/*",
     "./syntaxes/*": "./syntaxes/*",
     "./language-configuration.json": "./language-configuration.json",

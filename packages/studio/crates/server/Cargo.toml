@@ -1,0 +1,32 @@
+[package]
+name = "lily-studio-server"
+description = "Lily Studio on the web: accounts, the page, and one sandboxed worker per user."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "lily-studio-server"
+path = "src/main.rs"
+
+[dependencies]
+lily-engrave.workspace = true
+lily-session.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+futures.workspace = true
+base64.workspace = true
+sha2.workspace = true
+axum = { version = "0.8", features = ["ws"] }
+tower-http = { version = "0.6", features = ["fs", "set-header"] }
+argon2 = "0.5"
+rand_core = { version = "0.6", features = ["getrandom"] }
+clap = { version = "4", features = ["derive"] }
+rpassword = "7"
+
+[dev-dependencies]
+tempfile.workspace = true
+tokio-tungstenite = "0.26"
+base64.workspace = true

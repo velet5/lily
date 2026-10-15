@@ -12,6 +12,8 @@ import { promisify } from 'node:util'
 // the Finder's bare PATH. The app runs its own smoke test (src/renderer/smoke.ts, D42)
 // and reports it as JSON: the window, the welcome screen, LilyPond found,
 // a compile, the PDF, playback and live preview, from inside the package.
+// Given a song as LILY_E2E_SONG, the installed app separates it too (D112):
+// RoFormer MLX found from the package, uv from the Finder's PATH.
 // Runs from out/test/e2e/.
 
 const run = promisify(execFile)
@@ -79,27 +81,7 @@ describe('the macOS package', { skip: process.platform !== 'darwin' && 'the DMG 
 
   test('the installed app launches and passes its smoke test', { timeout: 120_000 }, async () => {
     assert.ok(installed, 'installed by the test before')
-    const binary = path.join(installed, 'Contents', 'MacOS', 'Lily Studio')
-    // As the Finder starts it: no Homebrew on PATH, no LILYPOND_PATH.
-    const env = { HOME: os.homedir(), USER: os.userInfo().username, TMPDIR: os.tmpdir(), PATH: '/usr/bin:/bin:/usr/sbin:/sbin' }
-    const { code, stdout, stderr } = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
-      const child = spawn(binary, ['--smoke-test'], { env })
-      let out = ''
-      let err = ''
-      child.stdout.on('data', (chunk: Buffer) => (out += chunk.toString()))
-      child.stderr.on('data', (chunk: Buffer) => (err += chunk.toString()))
-      child.on('error', reject)
-      child.on('close', (exit) => resolve({ code: exit, stdout: out, stderr: err }))
-    })
-    // The report is the JSON object printed last; WebKit may log before it.
-    const start = stdout.search(/^\{$/m)
-    assert.ok(start >= 0, `no report from the app (exit ${code}; is Lily Studio already open?)\n${stdout}\n${stderr}`)
-    const report = JSON.parse(stdout.slice(start)) as {
-      ok: boolean
-      problems: string[]
-      welcome?: { state: string; sample: boolean }
-      compile: { skipped?: string; pages?: number; pdfPages?: number; banner?: string; live?: { unsaved?: number } }
-    }
+    const { code, report } = await smokeTest(installed)
     assert.deepEqual(report.problems, [])
     assert.equal(code, 0)
     assert.equal(report.welcome?.sample, true)
@@ -114,4 +96,43 @@ describe('the macOS package', { skip: process.platform !== 'darwin' && 'the DMG 
     assert.match(report.compile.banner ?? '', /is not a LilyPond command/)
     assert.equal(report.compile.live?.unsaved, 8)
   })
+
+  test('the installed app separates a song into stems (D112)', { skip: !process.env.LILY_E2E_SONG && 'set LILY_E2E_SONG to a song to separate', timeout: 20 * 60_000 }, async () => {
+    assert.ok(installed, 'installed by the test before')
+    const { code, report } = await smokeTest(installed, { LILY_SMOKE_SONG: process.env.LILY_E2E_SONG ?? '' })
+    assert.deepEqual(report.problems, [])
+    assert.equal(code, 0)
+    const { separation } = report
+    assert.deepEqual(separation?.stems, ['vocals', 'drums', 'bass', 'guitar', 'piano', 'other'])
+    assert.equal(separation?.durations?.length, 6)
+    assert.ok(separation?.mix?.duration, 'the mix plays')
+    assert.match(separation?.score?.stem ?? '', / - bass\.wav$/)
+  })
 })
+
+interface SmokeReport {
+  ok: boolean
+  problems: string[]
+  welcome?: { state: string; sample: boolean }
+  compile: { skipped?: string; pages?: number; pdfPages?: number; banner?: string; live?: { unsaved?: number } }
+  separation?: { stems?: string[]; durations?: number[]; mix?: { duration?: number }; score?: { stem?: string } }
+}
+
+/** Runs the installed app's smoke test as the Finder starts it: no Homebrew on PATH, no LILYPOND_PATH. */
+async function smokeTest(installed: string, extra: Record<string, string> = {}): Promise<{ code: number | null; report: SmokeReport }> {
+  const binary = path.join(installed, 'Contents', 'MacOS', 'Lily Studio')
+  const env = { HOME: os.homedir(), USER: os.userInfo().username, TMPDIR: os.tmpdir(), PATH: '/usr/bin:/bin:/usr/sbin:/sbin', ...extra }
+  const { code, stdout, stderr } = await new Promise<{ code: number | null; stdout: string; stderr: string }>((resolve, reject) => {
+    const child = spawn(binary, ['--smoke-test'], { env })
+    let out = ''
+    let err = ''
+    child.stdout.on('data', (chunk: Buffer) => (out += chunk.toString()))
+    child.stderr.on('data', (chunk: Buffer) => (err += chunk.toString()))
+    child.on('error', reject)
+    child.on('close', (exit) => resolve({ code: exit, stdout: out, stderr: err }))
+  })
+  // The report is the JSON object printed last; WebKit may log before it.
+  const start = stdout.search(/^\{$/m)
+  assert.ok(start >= 0, `no report from the app (exit ${code}; is Lily Studio already open?)\n${stdout}\n${stderr}`)
+  return { code, report: JSON.parse(stdout.slice(start)) as SmokeReport }
+}

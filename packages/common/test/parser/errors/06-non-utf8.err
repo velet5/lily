@@ -1,0 +1,6 @@
+06-non-utf8.ly:2:23: warning: non-UTF-8 input
+% Latin-1, not UTF-8: 
+                      �t�
+06-non-utf8.ly:2:25: warning: non-UTF-8 input
+% Latin-1, not UTF-8: �t
+                        �

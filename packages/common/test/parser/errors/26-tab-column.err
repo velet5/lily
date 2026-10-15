@@ -1,0 +1,7 @@
+26-tab-column.ly:3:17: error: unknown command: `\foo'
+	c4	
+                \foo d
+26-tab-column.ly:3:17: error: string outside of text script or \lyricmode
+	c4	
+                \foo d
+fatal error: failed files: "26-tab-column.ly"

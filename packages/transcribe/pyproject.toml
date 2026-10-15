@@ -1,0 +1,33 @@
+[project]
+name = "lily-transcribe"
+version = "0.1.0"
+description = "Lily Studio's transcription of a stem: notes, beats, meter and key, for a LilyPond score (DECISIONS D113)"
+readme = "README.md"
+license = "MIT"
+# Basic Pitch 0.4 supports Python 3.11 and no later.
+requires-python = ">=3.11,<3.12"
+dependencies = [
+    # Notes: Spotify's Basic Pitch, Apache-2.0, a 230 KB model in the wheel (CoreML on a Mac).
+    "basic-pitch==0.4.0",
+    # Beats and downbeats: CPJKU's Beat This!, MIT code and weights; its checkpoint downloads once.
+    "beat-this==1.1.0",
+    "numpy>=1.26",
+    # Basic Pitch pins resampy below 0.4.3, which imports pkg_resources: setuptools 81 dropped it.
+    "setuptools<81",
+]
+
+[project.scripts]
+lily-transcribe = "lily_transcribe.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lily_transcribe"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

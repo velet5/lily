@@ -1,0 +1,4 @@
+08-unexpected-brace.ly:2:10: error: syntax error, unexpected '}'
+{ c4 d } 
+         }
+fatal error: failed files: "08-unexpected-brace.ly"

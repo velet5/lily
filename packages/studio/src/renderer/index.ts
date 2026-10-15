@@ -1,18 +1,24 @@
 // The renderer's entry point, bundled into dist/web/app.js: connects the
 // file list, the editor and the status line to `studio` (bridge.ts),
 // with the welcome screen and LilyPond's setup (D37), and the resizable
-// sidebar with the agents' accordion (D40).
+// sidebar with the agents' accordion (D40), and Scores | Stems at its top
+// with the Separate view (D112), whose stems lead to scores that play their
+// stem under the preview. On the web (D55) the same page, without the agents
+// or Stems, and with upload and download. The editor pane shows the source or
+// the piano view of what plays (D116).
 import type { CompileEvent, FileChange, Opened } from '../ipc'
 import { AgentPanel, SELECTION_ACTIONS } from './agents'
 import { studio, type StudioApi } from './bridge'
 import { compileStatus, DiagnosticStore, problemSummary } from './diagnostics'
 import { ScoreEditor } from './editor'
-import { button, FileList } from './files'
+import { button, FileList, stemOfScore } from './files'
 import { addMidiBlock } from './midiBlock'
 import { PdfView } from './pdfView'
-import { ScorePlayer } from './player'
+import { PianoView } from './piano'
+import { ScorePlayer, StemStrip } from './player'
 import { ScorePreview } from './preview'
-import { Sidebar } from './sidebar'
+import { SeparateView } from './separate'
+import { Sidebar, WorkspaceSwitch } from './sidebar'
 import { Welcome } from './welcome'
 
 declare global {
@@ -81,7 +87,7 @@ function report(error: unknown): void {
   console.error(error)
 }
 
-const editorBody = editorPane.querySelector<HTMLElement>('.pane-body')!
+const editorBody = editorPane.querySelector<HTMLElement>('.pane-body[data-view="source"]')!
 const editorTitle = editorPane.querySelector<HTMLElement>('.pane-title')!
 editorBody.classList.remove('placeholder')
 editorBody.replaceChildren()
@@ -115,7 +121,9 @@ const editor = new ScoreEditor({
   onChange: refreshMarkers,
   onText: (file, unsaved) => studio.edited(file, unsaved ?? null),
   diagnostics: (file) => diagnostics.for(file),
-  onSelection: () => agents.refreshContext(),
+  onSelection: () => agents?.refreshContext(),
+  read: (file) => studio.readFile(file),
+  open: (file) => open(file),
 })
 
 // The preview pane: the SVG pages (D32) or the PDF (D33), switched in its header.
@@ -136,6 +144,34 @@ const preview = new ScorePreview({
   onRender: () => player.rendered(),
   onLayout: () => player.refresh(),
 })
+// What plays, falling onto a keyboard where the source is (D116), or below
+// the score (D117). It reads the player only while shown, which it never is
+// before the player exists.
+const pianoBody = editorPane.querySelector<HTMLElement>('.pane-body[data-view="piano"]')!
+const pianoActions = editorPane.querySelector<HTMLElement>('.pane-actions[data-view="piano"]')!
+const pianoDock = previewPane.querySelector<HTMLElement>('.piano-dock')!
+const piano = new PianoView({
+  host: pianoBody,
+  actions: pianoActions,
+  source: {
+    get midi() {
+      return player.midi
+    },
+    get position() {
+      return player.position
+    },
+    get playing() {
+      return player.playing
+    },
+    get rootFile() {
+      return player.rootFile
+    },
+    get parts() {
+      return player.parts
+    },
+  },
+  onPlace: () => showPiano(piano.visible),
+})
 // The score's MIDI, with the notes marked on the pages as they play (D35).
 const player = new ScorePlayer({
   transport: previewPane.querySelector<HTMLElement>('.transport')!,
@@ -148,15 +184,64 @@ const player = new ScorePlayer({
   saveSetup: (rootFile, setup) => studio.setPlaybackSetup(rootFile, setup),
   exportMidi: (rootFile, midi, muted) => studio.exportMidi(rootFile, midi, muted),
   onExported: status,
+  onPiano: () => showPiano(!piano.visible),
+  onPlayback: () => piano.update(),
 })
+const editorTabs = (['source', 'piano'] as const).map((name) => {
+  const tab = button(name === 'source' ? 'Source' : 'Piano', () => (name === 'piano' ? showPianoOverSource() : showSource()))
+  tab.setAttribute('role', 'tab')
+  tab.dataset.view = name
+  tab.title = name === 'source' ? 'The score’s source, to edit' : 'The music falling onto a piano keyboard as it plays'
+  return tab
+})
+editorPane.querySelector('.editor-tabs')!.append(...editorTabs)
+
+/**
+ * Shows or hides the piano view where it is placed (D116, D117): over the
+ * editor, which keeps its state behind it, or below the score, with the
+ * source still there.
+ */
+function showPiano(shown: boolean): void {
+  const below = piano.place === 'score'
+  if (below && pianoDock.lastElementChild !== pianoBody) pianoDock.append(pianoActions, pianoBody)
+  if (!below && pianoBody.parentElement !== editorPane) {
+    editorPane.querySelector('.editor-tabs')!.before(pianoActions)
+    editorPane.append(pianoBody)
+  }
+  const mode = shown && !below ? 'piano' : 'source'
+  editorPane.dataset.mode = mode
+  for (const tab of editorTabs) tab.setAttribute('aria-selected', String(tab.dataset.view === mode))
+  for (const element of editorPane.querySelectorAll<HTMLElement>('[data-view]:not([role="tab"])')) {
+    element.hidden = element.dataset.view !== mode
+  }
+  pianoDock.hidden = !(shown && below)
+  if (below) pianoActions.hidden = pianoBody.hidden = false
+  piano.show(shown)
+  player.pianoShown(shown)
+}
+/** The editor's Piano tab: the view over the source, wherever it was. */
+function showPianoOverSource(): void {
+  piano.place = 'source'
+  showPiano(true)
+}
+/** The source in the editor pane: a piano view over it goes, one below the score stays. */
+function showSource(): void {
+  if (piano.place === 'source') showPiano(false)
+}
+showPiano(false)
 // Space plays or pauses when the preview has the focus; a click on the pages gives it.
 previewBody.tabIndex = -1
-previewPane.addEventListener('keydown', (event) => {
+const spacePlays = (event: KeyboardEvent) => {
   const target = event.target as HTMLElement
-  if (event.key !== ' ' || event.repeat || target.closest('button, input, select')) return
+  // Below the score the piano view is in the preview pane too: one toggle, not two.
+  if (event.key !== ' ' || event.repeat || event.defaultPrevented || target.closest('button, input, select')) return
   event.preventDefault()
   player.toggle()
-})
+}
+previewPane.addEventListener('keydown', spacePlays)
+// And in the piano view, which a click focuses.
+pianoBody.tabIndex = -1
+pianoBody.addEventListener('keydown', spacePlays)
 const pdfView = new PdfView({
   body: view('pdf').querySelector<HTMLElement>('.pane-body')!,
   actions: viewActions('pdf'),
@@ -194,7 +279,9 @@ function showBanner(event: CompileEvent): void {
     banner.hidden = false
     banner.dataset.tone = 'error'
     bannerHeading.textContent = 'LilyPond is needed to engrave the score'
-    bannerText.textContent = 'Click here to set it up. It takes a few minutes, once.'
+    bannerText.textContent = studio.hosted
+      ? 'This server cannot engrave yet. Click here to see why.'
+      : 'Click here to set it up. It takes a few minutes, once.'
     bannerAction = () => welcome.openSetup()
     return
   }
@@ -212,7 +299,8 @@ function showView(name: 'svg' | 'pdf'): void {
   previewPane.dataset.mode = name
   for (const tab of tabs) tab.setAttribute('aria-selected', String(tab.dataset.view === name))
   for (const element of previewPane.querySelectorAll<HTMLElement>('[data-view]:not([role="tab"])')) {
-    element.hidden = element.dataset.view !== name
+    // The piano view below the score stays under either.
+    if (!element.closest('.piano-dock')) element.hidden = element.dataset.view !== name
   }
   pdfView.show(name === 'pdf')
   player.refresh()
@@ -227,12 +315,13 @@ const files = new FileList({
   onNewScore: () => showTemplates(),
 })
 
-// The agents' accordion under the files (D40). A message saves unsaved edits
-// first, so the agent reads what the editor shows; a finished turn lists the
-// folder again, for the files it added. Changed files reload through D34.
+// The agents' accordion under the files (D40), in the app only. A message
+// saves unsaved edits first, so the agent reads what the editor shows; a
+// finished turn lists the folder again, for the files it added. Changed files
+// reload through D34.
 const agentsPane = pane('agents')
 const fold = (name: string) => agentsPane.querySelector<HTMLElement>(`[data-fold="${name}"] .fold-body`)!
-const agents = new AgentPanel({
+const agents = studio.hosted ? undefined : new AgentPanel({
   studio,
   chats: fold('chats'),
   setup: fold('setup'),
@@ -249,21 +338,54 @@ const agents = new AgentPanel({
   onTurnEnd: () => void studio.listFolder().then((listing) => listing && files.show(listing), report),
   onError: report,
 })
-const sidebar = new Sidebar({ studio: document.querySelector<HTMLElement>('.studio')!, sidebar: pane('sidebar'), agents: agentsPane })
-void agents.refreshSetup()
-// The selection's context menu: ask, explain or fix it with the agent (D41).
-SELECTION_ACTIONS.forEach((action, order) =>
-  editor.addSelectionAction({
-    id: action.id,
-    label: action.label,
-    order,
-    ...(action.prompt ? {} : { key: 'I' as const }),
-    run: () => {
-      sidebar.show('chats')
-      agents.ask(action.prompt)
-    },
-  }),
-)
+const studioGrid = document.querySelector<HTMLElement>('.studio')!
+const sidebar = new Sidebar({ studio: studioGrid, sidebar: pane('sidebar'), agents: agentsPane })
+// Scores | Stems (D112), where separation runs: Stems covers the files, the
+// editor and the preview, which go on as they were behind it. The Separate
+// view asks for its models when Stems is first shown, and a song dropped on
+// the window goes to it.
+const separation = studio.separationAvailable().available
+const separateView = separation
+  ? new SeparateView({ host: pane('stems'), studio, onStatus: status, onScore: (opening) => void run(opening) })
+  : undefined
+// The stem a score was written from plays above the transport (D112).
+const stemStrip = separation
+  ? new StemStrip({ host: previewPane.querySelector<HTMLElement>('.stem-strip')!, score: player, onError: status })
+  : undefined
+const workspace = separateView
+  ? new WorkspaceSwitch({
+      studio: studioGrid,
+      tabs: pane('sidebar').querySelector<HTMLElement>('.workspace-switch')!,
+      panes: { scores: [filesPane, editorPane, previewPane], stems: [pane('separations'), pane('stems')] },
+      onChange: (shown) => {
+        if (shown === 'stems') separateView.activate()
+      },
+    })
+  : undefined
+studio.onFileDrop((drop) => {
+  if (separateView?.fileDrop(drop)) workspace?.show('stems')
+})
+
+/** Back to Scores, for what opens a score or shows the files or the welcome screen. */
+function showScores(): void {
+  workspace?.show('scores')
+}
+if (agents) {
+  void agents.refreshSetup()
+  // The selection's context menu: ask, explain or fix it with the agent (D41).
+  SELECTION_ACTIONS.forEach((action, order) =>
+    editor.addSelectionAction({
+      id: action.id,
+      label: action.label,
+      order,
+      ...(action.prompt ? {} : { key: 'I' as const }),
+      run: () => {
+        sidebar.show('chats')
+        agents.ask(action.prompt)
+      },
+    }),
+  )
+}
 
 /** A path as the file list shows it, else its name. */
 function displayName(file: string): string {
@@ -344,6 +466,22 @@ async function previewFor(file: string): Promise<void> {
   banner.hidden = true
   preview.showScore(rootFile)
   pdfView.showScore(rootFile)
+  void showStem(rootFile)
+}
+
+/** The Stem strip for the score shown, when its `% Stem:` line names a stem beside it (D112). */
+async function showStem(rootFile: string | undefined): Promise<void> {
+  if (!stemStrip) return
+  stemStrip.show(undefined)
+  const name = rootFile && stemOfScore(editor.textOf(rootFile) ?? '')
+  if (!rootFile || !name) return
+  try {
+    const stem = await studio.attachStem(rootFile, name)
+    if (previewRoot === rootFile) stemStrip.show({ path: stem, url: studio.stemUrl(stem) })
+  } catch (error) {
+    // Moved or deleted since: the score is shown without it.
+    console.warn('stem:', error)
+  }
 }
 
 /**
@@ -371,6 +509,8 @@ async function addMidi(): Promise<void> {
 async function open(file: string): Promise<void> {
   try {
     const text = editor.isOpen(file) ? undefined : await studio.readFile(file)
+    showScores()
+    showSource()
     welcome.hide()
     monacoHost.hidden = false
     editor.show(file, text)
@@ -386,8 +526,9 @@ async function run(opening: Promise<Opened | undefined>): Promise<void> {
   try {
     const opened = await opening
     if (!opened) return
+    showScores()
     files.show(opened.listing)
-    void agents.folderChanged(opened.listing.folder)
+    void agents?.folderChanged(opened.listing.folder)
     refreshMarkers()
     if (opened.file) await open(opened.file)
   } catch (error) {
@@ -435,6 +576,7 @@ filesPane.querySelector('.pane-actions')!.append(newButton, openButton)
 filesPane.append(templateMenu)
 
 function showTemplates(): void {
+  showScores()
   templateMenu.hidden = false
   templateMenu.querySelector('button')?.focus()
 }
@@ -501,10 +643,17 @@ studio.onCommand((command) => {
     case 'export-midi':
       return void player.exportMidi()
     case 'welcome':
+      showScores()
+      showSource()
       monacoHost.hidden = true
       return welcome.show(!!editor.file)
     case 'setup-lilypond':
       return welcome.openSetup()
+    case 'upload':
+      return void run(studio.upload(files.folder?.folder))
+    case 'download':
+      if (!editor.file) return status('Open a score to download it')
+      return void studio.download(editor.file).catch(report)
   }
 })
 
@@ -519,5 +668,5 @@ void welcome.check(true).catch(report)
 void studio.listFolder().then((listing) => {
   if (!listing) return
   files.show(listing)
-  void agents.folderChanged(listing.folder)
+  void agents?.folderChanged(listing.folder)
 }, report)

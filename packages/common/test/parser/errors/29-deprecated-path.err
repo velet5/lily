@@ -1,0 +1,3 @@
+29-deprecated-path.ly:2:22: warning: deprecated: missing `.' in property path NoteHead.color
+{ \override NoteHead 
+                     #'color = #red c4 }

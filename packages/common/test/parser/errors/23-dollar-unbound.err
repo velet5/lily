@@ -1,0 +1,5 @@
+23-dollar-unbound.ly:2:7: error: Guile signaled an error for the expression beginning here
+{ c4 $
+      (no-such-thing) d }
+Unbound variable: no-such-thing
+fatal error: failed files: "23-dollar-unbound.ly"

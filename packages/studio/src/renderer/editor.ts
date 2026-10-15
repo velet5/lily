@@ -3,9 +3,11 @@
 // from the version last written, so undoing back to it clears the mark.
 import * as monaco from 'monaco-editor/editor'
 import 'monaco-editor/features/register.all'
+import { findDefinition, positionAt, referenceAt, type Found } from '@lily/common/definition'
 import type { LyDiagnostic } from '@lily/common/types'
 import { charToCharacter, columnToCharacter } from '@lily/common/span'
 import { toMarkers } from './diagnostics'
+import { includedFile } from './files'
 import { DARK_THEME, LIGHT_THEME, languageConfiguration, loadGrammar, theme, tokensProvider } from './grammar'
 
 export const LANGUAGE_ID = 'lilypond'
@@ -39,6 +41,10 @@ export interface ScoreEditorOptions {
   diagnostics(file: string): LyDiagnostic[]
   /** After the selection or the cursor moved, or another file was shown. */
   onSelection?(): void
+  /** `file` as it is on disk; rejects when it cannot be read. For definitions in included files (D119). */
+  read(file: string): Promise<string>
+  /** Shows `file`, as opening it from the file list does; go to definition then puts the cursor on the name. */
+  open(file: string): Promise<void>
 }
 
 /** An item of the editor's context menu, shown only while text is selected (D41). */
@@ -78,6 +84,70 @@ export class ScoreEditor {
     dark.addEventListener('change', () => monaco.editor.setTheme(dark.matches ? DARK_THEME : LIGHT_THEME))
     this.editor.onDidChangeCursorSelection(() => options.onSelection?.())
     this.editor.onDidChangeModel(() => options.onSelection?.())
+    this.addDefinitions()
+  }
+
+  /**
+   * Go to definition (⌘-click, F12) and a hover showing the definition of a
+   * `\name` (D119). A definition in an included file gets a model, so that
+   * ⌘ held over the name previews it; going there opens the file.
+   */
+  private addDefinitions(): void {
+    const lookUp = async (model: monaco.editor.ITextModel, position: monaco.Position) => {
+      const file = this.fileOf(model)
+      const reference = referenceAt(model.getLineContent(position.lineNumber), position.column - 1)
+      if (!file || !reference) return undefined
+      const offset = model.getOffsetAt({ lineNumber: position.lineNumber, column: reference.start + 1 })
+      const sources = {
+        read: (included: string) => Promise.resolve(this.textOf(included) ?? this.options.read(included)).catch(() => undefined),
+        resolve: includedFile,
+      }
+      const found = await findDefinition(sources, file, model.getValue(), reference.name, offset)
+      if (!found) return undefined
+      const origin = new monaco.Range(position.lineNumber, reference.start + 1, position.lineNumber, reference.end + 1)
+      return { found, origin }
+    }
+    const target = (found: Found) => {
+      const start = positionAt(found.text, found.offset)
+      return new monaco.Range(start.line + 1, start.character + 1, start.line + 1, start.character + found.length + 1)
+    }
+    monaco.languages.registerDefinitionProvider(LANGUAGE_ID, {
+      provideDefinition: async (model, position) => {
+        const definition = await lookUp(model, position)
+        if (!definition) return undefined
+        const { found, origin } = definition
+        if (!this.documents.has(found.file)) this.load(found.file, found.text)
+        return [{ originSelectionRange: origin, uri: monaco.Uri.file(found.file), range: target(found) }]
+      },
+    })
+    monaco.languages.registerHoverProvider(LANGUAGE_ID, {
+      provideHover: async (model, position) => {
+        const definition = await lookUp(model, position)
+        if (!definition) return undefined
+        const { found, origin } = definition
+        const where = found.file === this.fileOf(model) ? [] : [{ value: `*${found.file.split('/').pop()}:${positionAt(found.text, found.offset).line + 1}*` }]
+        return { range: origin, contents: [{ value: '```lilypond\n' + found.preview + '\n```' }, ...where] }
+      },
+    })
+    monaco.editor.registerEditorOpener({
+      openCodeEditor: async (source, resource, selection) => {
+        // Monaco moves within the shown file itself.
+        if (source.getModel()?.uri.toString() === resource.toString()) return false
+        const file = [...this.documents.keys()].find((key) => this.documents.get(key)!.model.uri.toString() === resource.toString())
+        if (!file) return false
+        await this.options.open(file)
+        if (this.current !== file || !selection) return this.current === file
+        const position = 'startLineNumber' in selection ? { lineNumber: selection.startLineNumber, column: selection.startColumn } : selection
+        this.editor.setPosition(position)
+        this.editor.revealPositionInCenterIfOutsideViewport(position)
+        return true
+      },
+    })
+  }
+
+  private fileOf(model: monaco.editor.ITextModel): string | undefined {
+    for (const [file, doc] of this.documents) if (doc.model === model) return file
+    return undefined
   }
 
   /** Adds `action` to the top of the context menu, where it shows while text is selected. */
@@ -115,14 +185,7 @@ export class ScoreEditor {
     let doc = this.documents.get(file)
     if (!doc) {
       if (text === undefined) throw new Error(`${file} is not open.`)
-      const model = monaco.editor.createModel(text, LANGUAGE_ID, monaco.Uri.file(file))
-      doc = { model, savedVersion: model.getAlternativeVersionId(), viewState: null }
-      model.onDidChangeContent(() => {
-        this.text(file)
-        this.options.onChange()
-      })
-      this.documents.set(file, doc)
-      this.mark(file)
+      doc = this.load(file, text)
     }
     if (this.current === file) return
     const previous = this.current && this.documents.get(this.current)
@@ -132,6 +195,19 @@ export class ScoreEditor {
     if (doc.viewState) this.editor.restoreViewState(doc.viewState)
     this.editor.focus()
     this.options.onChange()
+  }
+
+  /** Opens `file` with `text` without showing it. */
+  private load(file: string, text: string): Document {
+    const model = monaco.editor.createModel(text, LANGUAGE_ID, monaco.Uri.file(file))
+    const doc = { model, savedVersion: model.getAlternativeVersionId(), viewState: null }
+    model.onDidChangeContent(() => {
+      this.text(file)
+      this.options.onChange()
+    })
+    this.documents.set(file, doc)
+    this.mark(file)
+    return doc
   }
 
   /**

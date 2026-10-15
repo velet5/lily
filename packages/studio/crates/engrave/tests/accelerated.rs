@@ -199,6 +199,92 @@ async fn font_data_caching_preserves_glyph_string_advances_spaces_offsets_and_si
 }
 
 /// `encodeURI`: what lilypond leaves of a plain path.
+#[tokio::test]
+async fn glyph_reuse_only_when_asked_for_defines_each_glyph_once_per_page_and_draws_what_lilypond_draws()
+ {
+    // docs/research/wasm-engine/06-output.md §3: the preview never sets lily-glyph-reuse?.
+    let Some(binary) = common::lilypond("glyph reuse").await else {
+        return;
+    };
+    let s = Scratch::new("lily-live-");
+    let root_file = s
+        .write(
+            "reuse.ly",
+            r#"\version "2.26.0"
+\paper { #(set-paper-size "a7") }
+\markup { \dynamic "sff p" \fontsize #4 \musicglyph "noteheads.s2" }
+\score { \new PianoStaff <<
+  \new Staff { \grace c''8 c''4\pp d''\sfz e''2 | \repeat unfold 12 { c''4 d'' } }
+  \new Staff { \clef bass c1 | \repeat unfold 6 { c2 d } }
+>> }
+"#,
+        )
+        .await;
+    let glyph_cache = common::runtime().join("glyph-cache.scm");
+    let compile = async |name: &str, reuse: bool| {
+        let mut command = tokio::process::Command::new(&binary);
+        command.current_dir(&s.path).args([
+            "--loglevel=WARNING",
+            "--svg",
+            "-dpoint-and-click",
+            "-o",
+        ]);
+        command.arg(s.at(name));
+        if reuse {
+            command.arg("-e").arg(format!(
+                "(begin (define lily-glyph-reuse? #t) (load {:?}))",
+                glyph_cache.to_string_lossy()
+            ));
+        }
+        let output = command.arg(&root_file).output().await.expect("lilypond");
+        assert_eq!(String::from_utf8_lossy(&output.stderr), "");
+        let mut pages = Vec::new();
+        for page in common::listing(&s.path).await {
+            if page.starts_with(name) && page.ends_with(".svg") {
+                pages.push(tokio::fs::read_to_string(s.at(&page)).await.expect("page"));
+            }
+        }
+        pages
+    };
+    let plain = compile("reuse-plain", false).await;
+    let reused = compile("reuse-on", true).await;
+    assert!(plain.len() > 1, "a second page defines its glyphs again");
+    assert_eq!(reused.len(), plain.len());
+    let definition = regex::Regex::new(
+        r#"<defs><path id="([^"]+)" transform="scale\(([^)]*)\)" d="([^"]*)" fill="currentColor"/></defs>\n"#,
+    )
+    .unwrap();
+    let usage =
+        regex::Regex::new(r##"<use xlink:href="#([^"]+)"(?: transform="([^"]*)")?/>\n"##).unwrap();
+    for (index, page) in reused.iter().enumerate() {
+        let mut defined = std::collections::HashMap::new();
+        for c in definition.captures_iter(page) {
+            let previous = defined.insert(c[1].to_owned(), (c[2].to_owned(), c[3].to_owned()));
+            assert!(
+                previous.is_none(),
+                "{} is defined once on page {}",
+                &c[1],
+                index + 1
+            );
+        }
+        // Drawn in place again, each <use> is the <path> LilyPond writes, byte for byte.
+        let without = definition.replace_all(page, "");
+        let inlined = usage.replace_all(&without, |c: &regex::Captures| {
+            let (scale, d) = defined
+                .get(&c[1])
+                .unwrap_or_else(|| panic!("{} is used before its page defines it", &c[1]));
+            let translate = c
+                .get(2)
+                .map_or(String::new(), |t| format!("{} ", t.as_str()));
+            format!(
+                "<path transform=\"{translate}scale({scale})\" d=\"{d}\" fill=\"currentColor\"/>\n"
+            )
+        });
+        assert!(!defined.is_empty() && defined.len() < usage.find_iter(page).count());
+        assert_eq!(inlined, plain[index]);
+    }
+}
+
 fn encode_uri(path: &Path) -> String {
     let mut encoded = String::new();
     for byte in path.to_string_lossy().bytes() {

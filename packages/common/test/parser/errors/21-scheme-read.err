@@ -1,0 +1,8 @@
+21-scheme-read.ly:2:2: error: Guile signaled an error for the expression beginning here
+#
+ (define x (list 1 2)
+21-scheme-read.ly:4:1: unexpected end of input while searching for: )
+21-scheme-read.ly:2:2: error: syntax error, unexpected EVENT_IDENTIFIER
+#
+ (define x (list 1 2)
+fatal error: failed files: "21-scheme-read.ly"

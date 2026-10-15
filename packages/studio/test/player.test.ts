@@ -73,6 +73,25 @@ describe('timelineOf, shared with the extension', () => {
     assert.deepEqual(line.moments.map((m) => m.system), [0, 0, 1])
     assert.equal(line.systems.length, 2)
   })
+
+  test('pairs a variable played four times with its places as they are read, not as the SVG lists them', () => {
+    // The SVG lists bar 2 before bar 1 on the first system, and the next system before both.
+    const at = (x: number, y: number): Box => ({ page: 0, left: x - 0.01, right: x + 0.01, top: y, bottom: y + 0.01 })
+    const boxes = new Map<string, Box>([
+      ['next system, bar 4', at(0.6, 0.5)],
+      ['bar 2', at(0.6, 0.1)],
+      ['bar 1', at(0.2, 0.105)],
+      ['next system, bar 3', at(0.2, 0.5)],
+    ])
+    const links = new Map([['v', [...boxes.keys()]]])
+    const map = { events: [0, 1, 2, 3].map((at) => ({ href: 'v', at, grace: 0, length: 0.25 })), bars: [] }
+    const line = timelineOf(map, 4, links, (element) => boxes.get(element), (at, grace) => at + grace)
+    assert.deepEqual(
+      line.events.map((e) => e.element),
+      ['bar 1', 'bar 2', 'next system, bar 3', 'next system, bar 4'],
+    )
+    assert.deepEqual(line.moments.map((m) => m.system), [0, 0, 1, 1])
+  })
 })
 
 // The Rust side reads the MIDI and its map with the pages (crates/engrave's tests).

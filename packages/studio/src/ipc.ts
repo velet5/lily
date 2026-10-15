@@ -29,8 +29,21 @@ export interface Opened {
   file?: string
 }
 
-/** Commands sent from the application menu to the renderer. */
-export type Command = 'new-score' | 'open-file' | 'open-folder' | 'save' | 'save-all' | 'export-midi' | 'welcome' | 'setup-lilypond'
+/**
+ * Commands sent from the application menu to the renderer. `upload` and
+ * `download` come only from the web's menu bar (D55).
+ */
+export type Command =
+  | 'new-score'
+  | 'open-file'
+  | 'open-folder'
+  | 'save'
+  | 'save-all'
+  | 'export-midi'
+  | 'welcome'
+  | 'setup-lilypond'
+  | 'upload'
+  | 'download'
 
 /**
  * How a compile ended (D31). `no-root`: a saved include that no score in the
@@ -242,10 +255,163 @@ export interface RecentList {
   entries: RecentEntry[]
 }
 
+/**
+ * Whether stems can be separated here (D112): only in the app on a Mac.
+ * `reason` is what the page shows where the Stems workspace would be.
+ */
+export type SeparationAvailability = { available: true } | { available: false; reason: string }
+
+/** A model karaoke-mlx knows, as `karaoke-mlx --json models` lists it (crates/separate). */
+export interface SeparationModel {
+  id: string
+  title: string
+  description: string
+  /** `karaoke`: lead vocals and instrumental; `stems`: every instrument. */
+  task: 'karaoke' | 'stems'
+  /** The stems it writes, in order. */
+  stems: string[]
+  /** The checkpoint's download size, in bytes. */
+  size: number
+  /** False until its weights are downloaded, on its first separation. */
+  installed: boolean
+  default: boolean
+  /** Chunks overlapping each sample unless a request says otherwise. */
+  num_overlap: number
+}
+
+/** Where the separation's project is (D112): `KARAOKE_MLX_ROOT`, the setting, or a default. */
+export interface SeparationRoot {
+  path: string
+  source: 'variable' | 'setting' | 'default'
+}
+
+/** What the Stems setup says: the project, uv, what is missing, whether one runs. */
+export interface SeparationStatus {
+  root?: SeparationRoot
+  uv?: string
+  /** Why separating cannot start, when the project or uv was not found. */
+  problem?: string
+  running: boolean
+}
+
+/** One separation as the page asks for it; the stems go next to the song. */
+export interface SeparationRequest {
+  /** The song: an absolute path to a file. */
+  input: string
+  /** A `SeparationModel` id, such as `becruily` or `bs-roformer-sw`. */
+  model: string
+  /** Chunks overlapping each sample; the model's own when not given. */
+  overlap?: number
+  format: 'wav' | 'flac' | 'mp3'
+}
+
+/** A file karaoke-mlx wrote: a stem, or the mix. */
+export interface SeparationOutput {
+  stem: string
+  path: string
+}
+
+/** A song separated before (D114), as separations.json keeps it: its folder and stems. */
+export interface PastSeparation {
+  folder: string
+  outputs: SeparationOutput[]
+  /** How long it took; absent for a folder chosen with the panel. */
+  seconds?: number
+  /** When it was separated or opened last, in milliseconds since 1970. */
+  opened: number
+}
+
+/** An entry of the separated songs, with whether its folder is still there. */
+export interface ListedSeparation extends PastSeparation {
+  exists: boolean
+}
+
+/**
+ * What karaoke-mlx prints while it separates, one per line (D112). Every
+ * separation ends with `done` or `error`; `cancelled` is set on the `error`
+ * of one that Cancel ended.
+ */
+export type SeparationEvent =
+  | { event: 'status'; message: string }
+  | {
+      event: 'progress'
+      stage: 'download' | 'verify' | 'convert' | 'load' | 'decode' | 'separate' | 'mix' | 'write'
+      /** From 0 to 1. */
+      value: number
+    }
+  | { event: 'done'; outputs: SeparationOutput[]; folder: string; seconds: number }
+  | { event: 'error'; message: string; cancelled?: boolean }
+
+/**
+ * A stem as lily-transcribe heard it (D113): the song's tempo, meter, key
+ * and length, and the stem's notes on that grid.
+ */
+export interface Transcription {
+  stem: string
+  /** One note at a time (bass, vocals), a draft of chords (guitar, piano…), or drum hits. */
+  family: 'melody' | 'chords' | 'drums'
+  /** The stem's length. */
+  seconds: number
+  /** Quarter notes per minute, to the thousandth. */
+  bpm: number
+  /** One tempo fits the whole song, so the score's MIDI keeps time with the stem. */
+  steady: boolean
+  /** Quarter-note beats per bar. */
+  beatsPerBar: number
+  /** Seconds from the stem's start to bar 1. */
+  barOne: number
+  /** Sixteenths before bar 1: `barOne`, on the grid. */
+  pickup: number
+  /** Bars from bar 1 to the end of the stem. */
+  bars: number
+  /** The song's key; `tonic` is a pitch class, 0 for C. */
+  key: { tonic: number; mode: 'major' | 'minor'; fit: number }
+  /** `[at, length, pitches]`: sixteenths from bar 1 (negative in the pickup) and MIDI pitches, or General MIDI drums. */
+  notes: [number, number, number[]][]
+}
+
+/** What lily-transcribe prints while it works (D113); it ends with `done` or `error`. */
+export type TranscriptionEvent =
+  | { event: 'progress'; stage: 'decode' | 'beats' | 'key' | 'notes' }
+  | { event: 'done'; transcription: Transcription; seconds: number }
+  | { event: 'error'; message: string; cancelled?: boolean }
+
+/**
+ * Files dragged over the app's window (D112): their paths on `enter`, and on
+ * `drop`. The web has none.
+ */
+export type FileDrop = { kind: 'enter'; paths: string[] } | { kind: 'drop'; paths: string[] } | { kind: 'leave' }
+
 export type ChatEvent =
   | { kind: 'entry'; chatId: string; entry: ChatEntry }
   | { kind: 'running'; chatId: string; running: boolean }
   | { kind: 'ask'; chatId: string; ask: Ask }
   | { kind: 'answered'; chatId: string; askId: string }
+
+/**
+ * How bridge.ts reaches the Rust side (D42, D55): the app's Tauri commands and
+ * channel (src/renderer/transport.ts), or the web's socket to the user's
+ * worker (src/web/transport.ts), which `esbuild.mjs --site` puts in its place.
+ */
+export interface Transport {
+  /** True on the web: no agents, no LilyPond to choose, files uploaded and downloaded. */
+  readonly hosted: boolean
+  /** Whether the separation commands run here (D112); on the web they reject. */
+  readonly separation: SeparationAvailability
+  /** A command's result; rejects with what the Rust side said, as a string or an Error. */
+  call<T>(command: string, args?: Record<string, unknown>): Promise<T>
+  /** Fire and forget, in the order sent. */
+  send(command: string, args?: Record<string, unknown>): void
+  /** Delivers what the Rust side sends by itself to `onEvent`; resolves once it does. */
+  subscribe(onEvent: (event: unknown) => void): Promise<void>
+  /** Web only: asks for scores to upload into `folder` (the workspace when not given) and opens what came. */
+  upload?(folder: string | undefined): Promise<Opened | undefined>
+  /** Web only: saves `file` of the workspace in the browser's downloads. */
+  download?(file: string): Promise<void>
+  /** App only: where `<audio>` plays `path` from, through the asset protocol (D112). */
+  fileUrl?(path: string): string
+  /** App only: runs `onDrop` for files dragged over the window and dropped (D112). */
+  onFileDrop?(onDrop: (drop: FileDrop) => void): void
+}
 
 export type { PlaybackTiming, SourceLocation }

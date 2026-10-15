@@ -1,0 +1,4 @@
+09-unexpected-eof.ly:3:9: error: syntax error, unexpected end of input
+  { c4 d
+        
+fatal error: failed files: "09-unexpected-eof.ly"
