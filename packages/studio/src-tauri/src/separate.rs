@@ -7,12 +7,15 @@
 //! folder separated in this run of the app. A stem leads to a score:
 //! lily-transcribe transcribes it (D113), the page writes the score from
 //! that, and the score is written beside it. A score's stem, the file its
-//! `% Stem:` line names beside it, may be played under the preview. The web
-//! server has none of this (D55).
+//! `% Stem:` line names beside it, may be played under the preview. The
+//! songs separated before are kept (D114): a done separation, or a folder of
+//! stems chosen with the panel, goes on the list, and opening one lets its
+//! folder in as a separation would. The web server has none of this (D55).
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use lily_engrave::files::unused_name;
+use lily_separate::history::{self, History, Listed, Separation};
 use lily_separate::{
     ProjectRoot, ROOT_VARIABLE, Request, Separator, Sidecar, TRANSCRIBE_ROOT, TRANSCRIBE_VARIABLE,
     Transcriber,
@@ -29,16 +32,26 @@ use crate::smoke::Smoke;
 
 type Answer<T> = Result<T, String>;
 
-/// The one separation and the one transcription that may run, and the
-/// folders separated this run.
-#[derive(Default)]
+/// The one separation and the one transcription that may run, the folders
+/// separated or opened this run, and the songs separated before (D114).
 pub struct Stems {
     pub separator: Separator,
     pub transcriber: Transcriber,
     folders: Mutex<Vec<PathBuf>>,
+    history: History,
 }
 
 impl Stems {
+    /// The list is kept in `data`, beside recent.json.
+    pub async fn load(data: &Path) -> Stems {
+        Stems {
+            separator: Separator::default(),
+            transcriber: Transcriber::default(),
+            folders: Mutex::default(),
+            history: History::load(data.join("separations.json")).await,
+        }
+    }
+
     /// `folder` may be played from and shown from now on.
     fn allow(&self, app: &AppHandle, folder: &Path) -> Answer<()> {
         let folder = folder
@@ -171,17 +184,109 @@ pub async fn separate(
     let sidecar = sidecar(&studio)?;
     let studio = studio.inner().clone();
     let stems = stems.inner();
-    stems
+    let done = Mutex::new(None);
+    let folder = stems
         .separator
         .separate(&sidecar, &request, |event| {
-            if let Some(folder) = done_folder(&event)
-                && let Err(error) = stems.allow(&app, &folder)
-            {
-                eprintln!("separation: the stems cannot be played: {error}");
+            if let Some(folder) = done_folder(&event) {
+                if let Err(error) = stems.allow(&app, &folder) {
+                    eprintln!("separation: the stems cannot be played: {error}");
+                }
+                *lock(&done) = Separation::from_done(&event);
             }
             studio.send(StudioEvent::Separation { event });
         })
+        .await?;
+    // Kept for the next launch (D114); the stems are there even when the list is not saved.
+    let separation = lock(&done).take();
+    if let Some(separation) = separation
+        && let Err(error) = stems.history.add(separation).await
+    {
+        eprintln!("separation: {error}");
+    }
+    Ok(folder)
+}
+
+/// The songs separated before, last opened first (D114), each with whether
+/// its folder is still there.
+#[tauri::command]
+pub async fn separations(stems: State<'_, Stems>) -> Answer<Vec<Listed>> {
+    Ok(stems.history.listed().await)
+}
+
+/// Opens a song separated before: only one on the list, so the page cannot
+/// name any folder. Its stems may be played, mixed and scored from now on.
+/// Answers the stems still there, and puts it in front.
+#[tauri::command]
+pub async fn open_separation(
+    app: AppHandle,
+    stems: State<'_, Stems>,
+    folder: String,
+) -> Answer<Separation> {
+    let entry = stems
+        .history
+        .find(&folder)
         .await
+        .ok_or_else(|| format!("{folder} is not among the separated songs."))?;
+    let path = PathBuf::from(&entry.folder);
+    if !path.is_dir() {
+        return Err(format!(
+            "{} is no longer there. It was moved, renamed or deleted, or its disk is not connected.",
+            path.display()
+        ));
+    }
+    let outputs = match history::present(&entry.outputs) {
+        outputs if outputs.is_empty() => history::scan(&path)?,
+        outputs => outputs,
+    };
+    open(&app, &stems, Separation { outputs, ..entry }).await
+}
+
+/// Asks for a folder of stems separated before, by this app or RoFormer's,
+/// and opens it as `open_separation` does; None when the panel is cancelled.
+#[tauri::command]
+pub async fn choose_separation(
+    app: AppHandle,
+    stems: State<'_, Stems>,
+) -> Answer<Option<Separation>> {
+    let chosen = dialogs::open(
+        &app,
+        Open {
+            title: "Open Stems".into(),
+            message: Some("Choose a folder of stems, such as “Song (karaoke)”.".into()),
+            prompt: Some("Open".into()),
+            directories: true,
+            directory: home().map(|home| home.join("Music")),
+            ..Open::default()
+        },
+    )
+    .await?;
+    let Some(folder) = chosen else {
+        return Ok(None);
+    };
+    let outputs = history::scan(&folder)?;
+    let separation = Separation {
+        folder: folder.to_string_lossy().into_owned(),
+        outputs,
+        seconds: None,
+        opened: 0,
+    };
+    open(&app, &stems, separation).await.map(Some)
+}
+
+/// Takes a song off the list; its stems stay where they are.
+#[tauri::command]
+pub async fn forget_separation(stems: State<'_, Stems>, folder: String) -> Answer<()> {
+    stems.history.remove(&folder).await
+}
+
+/// Lets `separation`'s folder in, puts it in front of the list, and answers it.
+async fn open(app: &AppHandle, stems: &Stems, separation: Separation) -> Answer<Separation> {
+    stems.allow(app, Path::new(&separation.folder))?;
+    if let Err(error) = stems.history.add(separation.clone()).await {
+        eprintln!("separation: {error}");
+    }
+    Ok(separation)
 }
 
 /// Ends the running separation; false when none was running.

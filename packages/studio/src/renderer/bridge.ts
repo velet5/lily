@@ -26,6 +26,8 @@ import type {
   PdfOutcome,
   PlaybackSetup,
   RecentList,
+  ListedSeparation,
+  PastSeparation,
   SeparationAvailability,
   SeparationEvent,
   SeparationModel,
@@ -300,6 +302,14 @@ export const studio = {
   mixStems: (files: string[]): Promise<string | undefined> => call<string | null>('mix_stems', { files }).then(orUndefined),
   /** Shows a separated folder, or a stem in one, in the Finder. */
   revealInFinder: (path: string): Promise<void> => call('reveal_in_finder', { path }),
+  /** The songs separated before, last opened first (D114). */
+  separations: (): Promise<ListedSeparation[]> => call('separations'),
+  /** Opens a song on that list: its stems play, mix and score from now on. Rejects when its folder is gone. */
+  openSeparation: (folder: string): Promise<PastSeparation> => call('open_separation', { folder }),
+  /** Asks for a folder of stems separated before and opens it; undefined when the panel was cancelled. */
+  chooseSeparation: (): Promise<PastSeparation | undefined> => call<PastSeparation | null>('choose_separation').then(orUndefined),
+  /** Takes a song off that list; its stems stay where they are. */
+  forgetSeparation: (folder: string): Promise<void> => call('forget_separation', { folder }),
   /** Asks for a song to separate; undefined when the panel was cancelled. */
   chooseSong: (): Promise<string | undefined> => call<string | null>('choose_song').then(orUndefined),
   /**

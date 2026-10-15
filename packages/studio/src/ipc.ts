@@ -311,6 +311,21 @@ export interface SeparationOutput {
   path: string
 }
 
+/** A song separated before (D114), as separations.json keeps it: its folder and stems. */
+export interface PastSeparation {
+  folder: string
+  outputs: SeparationOutput[]
+  /** How long it took; absent for a folder chosen with the panel. */
+  seconds?: number
+  /** When it was separated or opened last, in milliseconds since 1970. */
+  opened: number
+}
+
+/** An entry of the separated songs, with whether its folder is still there. */
+export interface ListedSeparation extends PastSeparation {
+  exists: boolean
+}
+
 /**
  * What karaoke-mlx prints while it separates, one per line (D112). Every
  * separation ends with `done` or `error`; `cancelled` is set on the `error`

@@ -20,6 +20,10 @@ export const SEPARATION_COMMANDS: ReadonlySet<string> = new Set([
   'new_score_for_stem',
   'attach_stem',
   'transcribe_stem',
+  'separations',
+  'open_separation',
+  'choose_separation',
+  'forget_separation',
 ])
 
 /** Rejects a separation command as the app's Rust side rejects a failed one; undefined for any other command. */

@@ -2948,3 +2948,41 @@ chords for the hard stems and kick, snare and hi-hat for drums, 2026-10-14)
   2.24.4 and 2.26.0. With `LILY_SMOKE_SONG`, the smoke test transcribes the
   bass in the real app and checks bass.ly's tempo, notes and bars against
   the stem; on the test song: ♩ = 123, 4/4, C minor, 115 bars for 3:43.
+
+## D114 — Lily Studio: the songs separated before open again
+
+**Status:** proposed · **Refines:** D112, D49
+
+- **Why.** The operator separated the same song on every launch: the stems
+  were on disk, but the Stems view only showed those of a separation made in
+  this run of the app.
+- **What.** Under the settings of the Separate view, *Recent* lists the songs
+  separated before, last opened first: the song's name (its folder's,
+  without ` (karaoke)` or ` (stems)`), then the kind, how many stems and
+  when. A click shows the stems as a separation would: players, the mix,
+  Score… and Show in Finder. ✕, on hover, takes one off the list and leaves
+  its stems. *Open…* takes a folder of stems made earlier, by this app or
+  RoFormer's, and lists it. The song shown is marked; the list is disabled
+  while a separation runs.
+- **Kept.** `separations.json` beside recent.json (crates/separate's
+  `history`): twenty entries, each folder once, with its stems' files, how
+  long the separation took and when it was opened. A separation goes on it
+  when it is done, after its `done` event; opening one puts it in front. A
+  broken file loads what it can. A gone folder stays, dimmed and marked Not
+  found, as D49's do; opening it says it is gone.
+- **The folder is let in** as a separation's is: the asset scope and the
+  folders that mixing, Show in Finder and transcribing take
+  (`Stems::allow`). `open_separation` opens only folders on the list, and
+  `choose_separation` only the one its panel chose. A folder's stems are
+  the files the list kept that are still there, or else its
+  `<song> - <stem>.wav|flac|mp3` files, a mix (`- mix`) left out, in the
+  view's order (`history::scan`).
+- **The web** has none of it: the four commands join D112's in the stub and
+  the worker's desktop-only list.
+- **Verified.** `history` tests (from a `done` event, order and limit, a
+  folder's stems, saving, loading, gone folders); `test/separate.test.ts`:
+  `folderSong`, `folderTask`, `pastMeta`; the web tests check the command
+  lists. `npm test` in packages/studio passes, the smoke test included.
+- **Not done.** No smoke step for the list, and not yet checked by hand in
+  the app. The model a song was separated with is not kept, so a karaoke
+  folder renamed without its suffix is told by its instrumental stem.

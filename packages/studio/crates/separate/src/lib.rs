@@ -6,7 +6,8 @@
 //! command line (`Sidecar::command`). Its `Separator` runs one separation at a
 //! time; Cancel and quitting end it through its process group. Its
 //! `Transcriber` runs lily-transcribe (`packages/transcribe`, D113) the same
-//! way, to turn a stem into notes. Only src-tauri depends on it, and the web
+//! way, to turn a stem into notes. Its `history` keeps the songs separated
+//! before (D114). Only src-tauri depends on it, and the web
 //! server never links it (D55).
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
@@ -17,6 +18,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
 use tokio::process::Command;
+
+pub mod history;
 
 /// Names the project's root, ahead of the setting and the defaults.
 pub const ROOT_VARIABLE: &str = "KARAOKE_MLX_ROOT";

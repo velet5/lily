@@ -68,6 +68,7 @@ pub fn run() {
                     .or_else(|_| resolver.home_dir().map(|home| home.join("Documents")))?,
                 runtime: resolver.resource_dir()?.join("runtime"),
             };
+            let data = paths.data.clone();
             let mut options = StudioOptions::new(paths);
             if let Some(smoke) = &smoke {
                 // A stand-in for Claude Code that answers and edits without a network (D40).
@@ -84,7 +85,7 @@ pub fn run() {
             let studio = tauri::async_runtime::block_on(Studio::new(options));
             app.manage(studio.clone());
             app.manage(Smoke(smoke.clone()));
-            app.manage(Stems::default());
+            app.manage(tauri::async_runtime::block_on(Stems::load(&data)));
             app.set_menu(menu::build(&handle)?)?;
             // File › Open Recent and the welcome screen follow the recent list (D49).
             let entries = tauri::async_runtime::block_on(studio.recent.entries());
@@ -166,6 +167,10 @@ pub fn run() {
             separate::new_score_for_stem,
             separate::attach_stem,
             separate::transcribe_stem,
+            separate::separations,
+            separate::open_separation,
+            separate::choose_separation,
+            separate::forget_separation,
             smoke::smoke_folder,
             smoke::smoke_read,
             smoke::smoke_write,

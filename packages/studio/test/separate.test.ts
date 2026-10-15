@@ -9,6 +9,8 @@ import {
   DEFAULT_OVERLAP,
   droppedSong,
   elapsed,
+  folderSong,
+  folderTask,
   FORMATS,
   isSong,
   mixLabel,
@@ -16,6 +18,8 @@ import {
   modelLabel,
   modelNote,
   modelStems,
+  openedLabel,
+  pastMeta,
   progressOf,
   QUALITIES,
   runLabel,
@@ -224,5 +228,34 @@ describe('the stems', () => {
     assert.equal(songName('/Music/valeriy-meladze_-_tekila-lyubov.mp3'), 'valeriy-meladze_-_tekila-lyubov')
     assert.equal(songName('/Music/a.b.flac'), 'a.b')
     assert.equal(songName('/Music/.hidden'), '.hidden')
+  })
+})
+
+describe('the songs separated before (D114)', () => {
+  const karaoke = [
+    { stem: 'instrumental', path: '/s/tekila (karaoke)/tekila - instrumental.wav' },
+    { stem: 'vocals', path: '/s/tekila (karaoke)/tekila - vocals.wav' },
+  ]
+
+  test('a folder of stems is named after its song', () => {
+    assert.equal(folderSong('/s/tekila (karaoke)'), 'tekila')
+    assert.equal(folderSong('/s/Mr. Brightside (stems)'), 'Mr. Brightside')
+    assert.equal(folderSong('/s/elsewhere'), 'elsewhere')
+  })
+
+  test('its kind is in its name, or else in a karaoke model’s instrumental', () => {
+    assert.equal(folderTask('/s/tekila (karaoke)', []), 'karaoke')
+    assert.equal(folderTask('/s/tekila (stems)', karaoke), 'stems')
+    assert.equal(folderTask('/s/elsewhere', karaoke), 'karaoke')
+    assert.equal(folderTask('/s/elsewhere', [{ stem: 'bass', path: '/s/elsewhere/x - bass.wav' }]), 'stems')
+  })
+
+  test('a row says the kind, how many stems and when, or that the folder is gone', () => {
+    const now = new Date(2026, 9, 15, 9, 30).getTime()
+    const entry = { folder: '/s/tekila (karaoke)', outputs: karaoke, exists: true, opened: new Date(2026, 9, 15, 0, 5).getTime() }
+    assert.equal(pastMeta(entry, now), 'Karaoke · 2 stems · today')
+    assert.equal(pastMeta({ ...entry, opened: new Date(2026, 9, 14, 23, 59).getTime() }, now), 'Karaoke · 2 stems · yesterday')
+    assert.equal(pastMeta({ ...entry, exists: false }, now), 'Not found')
+    assert.notEqual(openedLabel(new Date(2026, 8, 1).getTime(), now), 'today')
   })
 })

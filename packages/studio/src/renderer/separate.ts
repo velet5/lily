@@ -6,11 +6,12 @@
 // opens the stems' folder. A stem's Score… menu transcribes it with
 // lily-transcribe (D113) and writes its score beside the stems, or writes an
 // empty one to fill in by ear, and opens it in Scores, where the stem plays
-// under the preview.
+// under the preview. Under Recent, the songs separated before open again
+// without separating (D114), as does a folder of stems chosen with Open….
 // A separation goes on in Scores, and the status line follows it. The models are asked for when Stems is first shown, not at
 // launch, since uv starts Python for them. The functions above the view are
 // pure so the tests can run them without a DOM.
-import type { FileDrop, Opened, SeparationEvent, SeparationModel, SeparationOutput, SeparationRequest, TranscriptionEvent } from '../ipc'
+import type { FileDrop, ListedSeparation, Opened, PastSeparation, SeparationEvent, SeparationModel, SeparationOutput, SeparationRequest, TranscriptionEvent } from '../ipc'
 import type { StudioApi } from './bridge'
 import { button, stemScore } from './files'
 
@@ -144,6 +145,32 @@ export function statusLine(song: string, progress: { label: string; value?: numb
   return `Stems: ${progress.label.toLowerCase()} ${song}${percent}`
 }
 
+/** The song a folder of stems holds: `tekila` for `tekila (karaoke)`. */
+export function folderSong(folder: string): string {
+  return baseName(folder).replace(/ \((karaoke|stems)\)$/, '')
+}
+
+/** The kind of model a folder was separated with: by its name, else by a karaoke model's instrumental. */
+export function folderTask(folder: string, outputs: readonly SeparationOutput[]): SeparationModel['task'] {
+  const kind = / \((karaoke|stems)\)$/.exec(baseName(folder))?.[1] as SeparationModel['task'] | undefined
+  return kind ?? (outputs.some(({ stem }) => stem === 'instrumental') ? 'karaoke' : 'stems')
+}
+
+/** When a song was opened last, for its row: today, yesterday, or the date. */
+export function openedLabel(opened: number, now: number = Date.now()): string {
+  const day = (time: number) => new Date(time).setHours(0, 0, 0, 0)
+  const days = Math.round((day(now) - day(opened)) / 86_400_000)
+  if (days === 0) return 'today'
+  if (days === 1) return 'yesterday'
+  return new Date(opened).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+}
+
+/** What a separated song's row says under its name: the kind, how many stems, and when; or that it is gone. */
+export function pastMeta(entry: Pick<ListedSeparation, 'folder' | 'outputs' | 'exists' | 'opened'>, now: number = Date.now()): string {
+  if (!entry.exists) return 'Not found'
+  return `${TASKS[folderTask(entry.folder, entry.outputs)]} · ${entry.outputs.length} stems · ${openedLabel(entry.opened, now)}`
+}
+
 /** A stem's score button: the stems whose score is a rough draft of chords say so (D113). */
 export function scoreLabel(hard: boolean): string {
   return hard ? 'Score… (draft)' : 'Score…'
@@ -200,13 +227,15 @@ export interface SeparateOptions {
   onScore(opening: Promise<Opened>): void
 }
 
-/** What a finished separation left: its stems and where they are. */
+/** What a finished or reopened separation left: its stems and where they are. */
 interface Separated {
+  /** The song's name, as its stems' scores are titled. */
   song: string
   task: SeparationModel['task'] | undefined
   folder: string
   outputs: SeparationOutput[]
-  seconds: number
+  /** How long it took; unknown for a folder chosen with Open…. */
+  seconds?: number
 }
 
 export class SeparateView {
@@ -260,6 +289,10 @@ export class SeparateView {
   private readonly mixList: HTMLElement
   private readonly selection: HTMLElement
   private readonly exportMix: HTMLButtonElement
+  /** The songs separated before (D114), and Open… for a folder of stems. */
+  private readonly pastList: HTMLElement
+  private readonly openPast: HTMLButtonElement
+  private past: ListedSeparation[] = []
 
   constructor(private readonly options: SeparateOptions) {
     const { host, studio } = options
@@ -324,6 +357,17 @@ export class SeparateView {
     this.error.setAttribute('role', 'alert')
     this.error.hidden = true
 
+    // The songs separated before (D114): a click opens their stems again.
+    this.openPast = button('Open…', () => void this.reopen(() => this.options.studio.chooseSeparation()))
+    this.openPast.className = 'separate-past-open'
+    this.openPast.title = 'Open a folder of stems separated before'
+    const pastHead = element('div', 'separate-past-head')
+    pastHead.append(element('span', 'separate-field-label', 'Recent'), this.openPast)
+    this.pastList = element('ul', 'separate-past-list')
+    const past = element('div', 'separate-field separate-past')
+    past.append(pastHead, this.pastList)
+    this.showPast()
+
     const setup = element('div', 'separate-setup')
     setup.append(
       this.drop,
@@ -335,6 +379,7 @@ export class SeparateView {
       this.run,
       this.progress,
       this.error,
+      past,
     )
 
     // The stems, once separated.
@@ -389,9 +434,10 @@ export class SeparateView {
     this.refresh()
   }
 
-  /** Stems is shown: the models are asked for the first time. */
+  /** Stems is shown: the models are asked for the first time, and the songs separated before again. */
   activate(): void {
     void this.load(false)
+    void this.refreshPast()
   }
 
   /**
@@ -496,6 +542,79 @@ export class SeparateView {
     })
     this.note.textContent = model ? modelNote(model) : ''
     this.reveal.disabled = !this.separated
+    this.openPast.disabled = this.running
+    for (const open of this.pastList.querySelectorAll<HTMLButtonElement>('.separate-past-item')) open.disabled = this.running
+  }
+
+  /** Lists the songs separated before again. */
+  private async refreshPast(): Promise<void> {
+    try {
+      this.past = await this.options.studio.separations()
+    } catch (error) {
+      console.error('separations:', error)
+      return
+    }
+    this.showPast()
+  }
+
+  private showPast(): void {
+    const rows = this.past.map((entry) => this.pastRow(entry))
+    this.pastList.replaceChildren(...(rows.length > 0 ? rows : [element('li', 'separate-past-empty', 'Songs you separate are kept here, to open again without separating.')]))
+  }
+
+  /** A song separated before: its name and what it holds, which opens it; ✕, on hover, forgets it. */
+  private pastRow(entry: ListedSeparation): HTMLElement {
+    const row = element('li')
+    if (!entry.exists) row.dataset.missing = ''
+    if (entry.folder === this.separated?.folder) row.setAttribute('aria-current', 'true')
+    const song = folderSong(entry.folder)
+    const open = element('button', 'separate-past-item')
+    open.type = 'button'
+    open.title = entry.exists
+      ? `${entry.folder}\nOpened ${new Date(entry.opened).toLocaleString()}`
+      : `${entry.folder}\nNot found: moved, renamed or deleted, or its disk is not connected`
+    open.append(element('strong', undefined, song), element('small', undefined, pastMeta(entry)))
+    open.disabled = this.running
+    open.addEventListener('click', () => void this.reopen(() => this.options.studio.openSeparation(entry.folder)))
+    const remove = button('✕', () => void this.forget(entry.folder))
+    remove.className = 'separate-past-remove'
+    remove.title = 'Remove from Recent; the stems stay where they are'
+    remove.setAttribute('aria-label', `Remove ${song} from Recent`)
+    row.append(open, remove)
+    return row
+  }
+
+  /** Shows the stems of a song separated before, as `load` answers them; nothing when it answers none. */
+  private async reopen(load: () => Promise<PastSeparation | undefined>): Promise<void> {
+    if (this.running) return
+    this.error.hidden = true
+    try {
+      const past = await load()
+      if (!past || this.running) return
+      this.separated = {
+        song: folderSong(past.folder),
+        task: folderTask(past.folder, past.outputs),
+        folder: past.folder,
+        outputs: past.outputs,
+        seconds: past.seconds,
+      }
+      this.showResults(this.separated)
+      this.refresh()
+      this.options.onStatus(`Opened the stems of ${this.separated.song}`)
+    } catch (error) {
+      this.showError(String(error))
+    } finally {
+      await this.refreshPast()
+    }
+  }
+
+  private async forget(folder: string): Promise<void> {
+    try {
+      await this.options.studio.forgetSeparation(folder)
+    } catch (error) {
+      this.showError(String(error))
+    }
+    await this.refreshPast()
   }
 
   private async start(): Promise<void> {
@@ -535,6 +654,8 @@ export class SeparateView {
       this.refresh()
       // A first separation downloads its model: the note no longer says so.
       void this.load(true)
+      // A finished one is on the list by now.
+      void this.refreshPast()
     }
   }
 
@@ -559,7 +680,7 @@ export class SeparateView {
     } else if (event.event === 'done') {
       this.awaiting = false
       this.separated = {
-        song: this.started.song,
+        song: songName(this.started.song),
         task: this.started.task,
         folder: event.folder,
         outputs: event.outputs,
@@ -567,7 +688,7 @@ export class SeparateView {
       }
       this.showResults(this.separated)
       this.refresh()
-      this.options.onStatus(`Separated ${baseName(this.separated.song)} in ${elapsed(event.seconds)}`)
+      this.options.onStatus(`Separated ${baseName(this.started.song)} in ${elapsed(event.seconds)}`)
     } else if (event.event === 'error') {
       this.awaiting = false
       if (!event.cancelled) this.showError(event.message)
@@ -601,7 +722,8 @@ export class SeparateView {
     this.resultsTitle.textContent = baseName(separated.folder)
     this.resultsTitle.title = separated.folder
     const format = FORMATS.find(({ format }) => separated.outputs[0]?.path.toLowerCase().endsWith(`.${format}`))?.label
-    this.resultsMeta.textContent = `${separated.outputs.length} stems${format ? ` · ${format}` : ''} · separated in ${elapsed(separated.seconds)}`
+    const took = separated.seconds === undefined ? '' : ` · separated in ${elapsed(separated.seconds)}`
+    this.resultsMeta.textContent = `${separated.outputs.length} stems${format ? ` · ${format}` : ''}${took}`
     for (const { stem, path } of separated.outputs) {
       const { title, hint } = stemTitle(stem, separated.task)
       this.stemList.append(this.stemRow({ stem, path, title, hint, tick: true }))
@@ -640,7 +762,7 @@ export class SeparateView {
     row.append(name, player)
     // A stem leads to a score; the mix does not.
     const separated = this.separated
-    if (tick && separated) row.append(this.scoreButton({ stem, path, title, song: songName(separated.song) }))
+    if (tick && separated) row.append(this.scoreButton({ stem, path, title, song: separated.song }))
     return row
   }
 

@@ -30,7 +30,10 @@ LilyPond installed in the same way.
   Best and WAV, FLAC or MP3, and press *Make karaoke* or *Separate
   instruments*. Each stem gets a player. Ticked stems export as one mix, and
   *Show in Finder* opens the stems' folder, `<song> (stems)` or
-  `<song> (karaoke)` next to the song. A stem's *Score… › New score for
+  `<song> (karaoke)` next to the song. Songs separated before are listed
+  under *Recent*, below the settings: a click shows their stems again
+  without separating, and *Open…* takes a folder of stems made earlier, by
+  this app or RoFormer's. A stem's *Score… › New score for
   bass* transcribes it: `bass.ly`, beside the stems, has the bass line's
   notes in the song's key, tempo and meter, from the first bar to the last,
   and opens in Scores. Vocals get their tune; guitar, piano and the rest a

@@ -720,6 +720,114 @@ button:focus-visible,
   height: 28px;
 }
 
+/* Recent (D114): the songs separated before, last opened first, as the
+   welcome screen's Recent; the one shown is marked, a gone one dimmed. */
+.separate-past {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.separate-past-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+}
+
+.separate-past-open {
+  border: none;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+
+.separate-past-open:hover:not(:disabled) {
+  color: var(--fg);
+  background: none;
+}
+
+.separate-past-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.separate-past-list li {
+  position: relative;
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+
+.separate-past-list li:hover {
+  background: var(--hover);
+}
+
+.separate-past-list li[aria-current] {
+  background: var(--selected);
+}
+
+.separate-past-empty {
+  padding: 2px 0;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.separate-past-list li.separate-past-empty:hover {
+  background: none;
+}
+
+.separate-past-item {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+  padding: 5px 30px 5px 8px;
+  border: none;
+  text-align: left;
+}
+
+.separate-past-item:hover {
+  background: none;
+}
+
+.separate-past-item strong {
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.separate-past-item small {
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.separate-past-list li[data-missing] .separate-past-item {
+  opacity: 0.5;
+}
+
+.separate-past-remove {
+  position: absolute;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  font-size: 11px;
+  color: var(--fg-muted);
+  opacity: 0;
+}
+
+.separate-past-list li:hover .separate-past-remove,
+.separate-past-remove:focus-visible {
+  opacity: 1;
+}
+
+.separate-past-remove:hover {
+  color: var(--fg);
+}
+
 .separate-progress {
   display: grid;
   gap: 4px;

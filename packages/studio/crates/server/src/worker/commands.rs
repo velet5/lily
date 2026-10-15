@@ -51,6 +51,10 @@ const DESKTOP_ONLY: &[&str] = &[
     "new_score_for_stem",
     "attach_stem",
     "transcribe_stem",
+    "separations",
+    "open_separation",
+    "choose_separation",
+    "forget_separation",
 ];
 
 pub struct Worker {
