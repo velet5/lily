@@ -239,6 +239,36 @@
   }
 
   /**
+   * How far below the one above it, in its own heights, an element is on the
+   * next system. A notehead is a staff space high; the same staff on the next
+   * system is at least eight further down (D118).
+   */
+  const ROW_STEP = 3
+
+  /**
+   * `elements` in the order they are read: by page, by system, then from left
+   * to right. The SVG lists a system's elements in no order of their own (bar
+   * 5's notehead may come before bar 1's), so pairing an href's places with
+   * the times it plays in page order would send the cursor back (D118). Kept
+   * as it is when one of them has no box.
+   */
+  function readingOrder(elements, box) {
+    const items = elements.map((element) => ({ element, b: box(element), row: 0 }))
+    if (items.some(({ b }) => !b)) return elements
+    const middle = (b) => (b.top + b.bottom) / 2
+    items.sort((p, q) => p.b.page - q.b.page || middle(p.b) - middle(q.b))
+    for (let i = 1; i < items.length; i++) {
+      const { b } = items[i]
+      const above = items[i - 1].b
+      const step = ROW_STEP * Math.max(b.bottom - b.top, above.bottom - above.top)
+      const newRow = b.page !== above.page || middle(b) - middle(above) > step
+      items[i].row = items[i - 1].row + (newRow ? 1 : 0)
+    }
+    items.sort((p, q) => p.row - q.row || p.b.left - q.b.left)
+    return items.map(({ element }) => element)
+  }
+
+  /**
    * The timing map resolved against the pages (D26), so that a frame is a
    * binary search and a few style properties. `sourceLinks` maps an href to
    * the elements that carry it, in page order; `box(element)` is its
@@ -250,11 +280,13 @@
   function timelineOf(timing, duration, sourceLinks, box, time) {
     // An href used as often as it is drawn (`\repeat unfold`, a variable used
     // twice) is paired up in order: the k-th time it is played is the k-th
-    // place it is drawn. Drawn once, it is that place every time (a repeat
-    // unfolded in the MIDI only). Anything else is settled once the systems are known.
+    // place it is drawn, in reading order (D118). Drawn once, it is that
+    // place every time (a repeat unfolded in the MIDI only). Anything else is
+    // settled once the systems are known.
     const uses = new Map()
     for (const event of timing.events) uses.set(event.href, (uses.get(event.href) ?? 0) + 1)
     const seen = new Map()
+    const read = new Map()
     const ordered = [...timing.events].sort((a, b) => a.at - b.at || a.grace - b.grace)
     const events = []
     for (const { href, at, grace, length } of ordered) {
@@ -262,8 +294,10 @@
       if (candidates.length === 0) continue // a skip, or point-and-click switched off
       const rank = seen.get(href) ?? 0
       seen.set(href, rank + 1)
+      const paired = candidates.length === uses.get(href)
+      if (paired && !read.has(href)) read.set(href, readingOrder(candidates, box))
       const element =
-        candidates.length === uses.get(href) ? candidates[rank]
+        paired ? read.get(href)[rank]
         : candidates.length === 1 ? candidates[0]
         : undefined
       events.push({

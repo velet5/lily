@@ -1224,10 +1224,10 @@ D16 and page-replacement rule in D17 · **Refines:** D1, D5, D19, D24
   render; an element's box is cached per page node as fractions of the page,
   which survive zoom, so a reused page (D25) is not measured again. An href
   drawn as often as it is played (`\repeat unfold`, a variable used twice) is
-  paired up in order; drawn once, it is that place every time (a repeat
-  unfolded in the MIDI only); anything else takes the place on the system
-  playing then. A *moment* is the events that begin together: its x is the
-  leftmost centre of their elements, its extent their union. A *system* ends
+  paired up in reading order (D118); drawn once, it is that place every time
+  (a repeat unfolded in the MIDI only); anything else takes the place on the
+  system playing then. A *moment* is the events that begin together: its x is
+  the leftmost centre of their elements, its extent their union. A *system* ends
   where the next moment lies on another page or more than 1 % of the page
   width to the left; its band is the union of its moments plus a margin. The
   cursor interpolates between a moment and the next of the same system and
@@ -3076,3 +3076,31 @@ chords for the hard stems and kick, snare and hi-hat for drums, 2026-10-14)
   editor, unticking the one track empties the fall, and *Over the source*
   brings the view back over the editor. The pause was not clicked by a
   mouse in a test: the smoke test's `click()` has no press and release.
+
+---
+
+## D118 — Playback position: a variable's places in reading order
+
+**Status:** accepted · **Refines:** D26
+
+- **The fault.** D26 pairs an href drawn as often as it is played with its
+  places in order, taking the order of `sourceLinks`, which is the order the
+  SVG lists its elements. Between systems that is the reading order; within
+  one it is not: in *Join Me in Death* the SVG lists the first note of
+  `\pE` in bar 5 before the one in bar 1 of the same system. Bar 1's time
+  went to bar 5's place and bar 5's time to bar 1's, so the playhead ran back
+  to the start of the line at bar 5 and then jumped on, and each jump back
+  also split the system in two (the score had 24 systems for its 19).
+- **Decision.** `timelineOf` pairs such an href with its places in reading
+  order (`readingOrder` in `web/preview.js`): by page, then by row, then from
+  left to right. Sorted by vertical centre, a place begins a new row when it
+  lies more than three heights (its own or the one above's, the larger)
+  below the one above: a notehead is about a staff space high, the same
+  staff on the next system at least eight further down, and noteheads of one
+  chord or a transposed use stay within the row. If a place has no box the
+  SVG's order is kept.
+- **Verified.** `player.test.ts` pairs a variable played four times whose
+  places the SVG lists out of order; it fails without the change. Run over
+  *Join Me in Death*'s pages and map (boxes from the SVG's translations),
+  the cursor no longer moves left within a system and the score has its 19
+  systems.
