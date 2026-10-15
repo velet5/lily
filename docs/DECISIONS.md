@@ -2986,3 +2986,23 @@ chords for the hard stems and kick, snare and hi-hat for drums, 2026-10-14)
 - **Not done.** No smoke step for the list, and not yet checked by hand in
   the app. The model a song was separated with is not kept, so a karaoke
   folder renamed without its suffix is told by its instrumental stem.
+
+## D115 — Lily Studio: `npm start` without Tauri's dev server
+
+**Status:** accepted · **Refines:** D42
+
+- **Why.** `npm start` opened no window: Lily Studio sat in the Dock, its
+  window hidden. With no `devUrl`, `tauri dev` (CLI 2.12) serves
+  `frontendDist` from a server of its own on `127.0.0.1:1430` and points the
+  webview there. The window's `on_navigation` lets in only `tauri://` and
+  `tauri.localhost`, so the first navigation was refused, the page never
+  loaded, and the window, shown when the page has loaded, never was. The
+  smoke test runs through `cargo run`, which loads the embedded pages, so it
+  passed.
+- **What.** `npm start` runs `tauri dev --no-dev-server`: the dev build loads
+  `dist/web` from the `tauri://` protocol, as the smoke test and the
+  release do. The page still never navigates. There is no live reload of the
+  page; esbuild did not watch it anyway, so a change to the renderer is seen
+  by running `npm start` again.
+- **Verified.** By hand: `npm start` shows the window and the score last
+  open. Nothing in the tests runs `tauri dev`.

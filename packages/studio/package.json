@@ -7,7 +7,7 @@
   "license": "MIT",
   "scripts": {
     "build": "node esbuild.mjs && node esbuild.mjs --site && cargo build -p lily-studio -p lily-studio-server",
-    "start": "node esbuild.mjs && tauri dev",
+    "start": "node esbuild.mjs && tauri dev --no-dev-server",
     "build:site": "node esbuild.mjs --site --production && cargo build --release -p lily-studio-server",
     "serve": "node esbuild.mjs --site && cargo run -p lily-studio-server -- serve --sandbox none --signup",
     "check-types": "tsc --noEmit -p .",
