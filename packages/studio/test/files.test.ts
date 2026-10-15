@@ -5,7 +5,7 @@ import * as path from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { parseMidi } from '@lily/common/web/midi.js'
 import type { Transcription } from '../src/ipc'
-import { fileRows, songTitle, stemOfScore, stemScore } from '../src/renderer/files'
+import { fileRows, includedFile, songTitle, stemOfScore, stemScore } from '../src/renderer/files'
 import { realOutcome } from './outcome'
 
 // Runs under `node --test` from out/test/ (npm run test:unit in packages/studio/). The
@@ -203,5 +203,13 @@ describe('a score for a stem (D112, D113)', () => {
       const starts = parseMidi(outcome.midiData).notes.map((note) => Math.round(note.time * 1000) / 1000)
       assert.deepEqual(starts, [0, 0.2, 0.95, 2.2, 4.2])
     })
+  })
+})
+
+describe('includedFile', () => {
+  test('beside the including file, with .. and . resolved', () => {
+    assert.equal(includedFile('/songs/main.ly', 'figures.ily'), '/songs/figures.ily')
+    assert.equal(includedFile('/songs/parts/piano.ily', '../common/./global.ily'), '/songs/common/global.ily')
+    assert.equal(includedFile('/songs/main.ly', '/lib/x.ily'), '/lib/x.ily')
   })
 })

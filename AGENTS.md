@@ -9,9 +9,9 @@ extension.
 
 An npm workspace of three packages (DECISIONS D53):
 
-- `packages/common` (`@lily/common`): what both apps use. `src/span.ts` and
-  `src/types.ts` import neither `vscode` nor Node (Lily Studio's renderer
-  bundles them); `src/textedit.ts` may use Node. `web/preview.js` and
+- `packages/common` (`@lily/common`): what both apps use. `src/span.ts`,
+  `src/types.ts` and `src/definition.ts` import neither `vscode` nor Node
+  (Lily Studio's renderer bundles them); `src/textedit.ts` may use Node. `web/preview.js` and
   `web/midi.js` are plain scripts with `.d.ts` files beside them. Also the
   TextMate grammar, the language configuration and lilypond's `runtime/`
   files. No build step: the apps bundle or copy what they import.

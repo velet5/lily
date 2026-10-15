@@ -404,3 +404,13 @@ export function stemOfScore(text: string): string | undefined {
   const name = line?.[1]
   return name && !/[\\/]/.test(name) && name !== '.' && name !== '..' ? name : undefined
 }
+
+/** The file `\include "target"` in `from` reads: beside `from`, `..` and `.` resolved (D119). */
+export function includedFile(from: string, target: string): string {
+  const parts = target.startsWith('/') ? [] : from.split('/').slice(0, -1)
+  for (const part of target.split('/')) {
+    if (part === '..' && parts.length > 1) parts.pop()
+    else if (part !== '.' && part !== '..' && part !== '') parts.push(part)
+  }
+  return `${target.startsWith('/') ? '/' : ''}${parts.join('/')}`
+}

@@ -122,6 +122,8 @@ const editor = new ScoreEditor({
   onText: (file, unsaved) => studio.edited(file, unsaved ?? null),
   diagnostics: (file) => diagnostics.for(file),
   onSelection: () => agents?.refreshContext(),
+  read: (file) => studio.readFile(file),
+  open: (file) => open(file),
 })
 
 // The preview pane: the SVG pages (D32) or the PDF (D33), switched in its header.

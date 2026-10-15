@@ -3104,3 +3104,38 @@ chords for the hard stems and kick, snare and hi-hat for drums, 2026-10-14)
   *Join Me in Death*'s pages and map (boxes from the SVG's translations),
   the cursor no longer moves left within a system and the score has its 19
   systems.
+
+---
+
+## D119 — Go to definition, and the definition on hover
+
+**Status:** proposed · **Refines:** D21, D29
+
+- **What.** ⌘-click or F12 on a `\name` the score defines (`pCis = { … }`)
+  goes to its definition, in both apps; ⌘ held over it underlines it and
+  previews the definition. Hovering over it shows the definition as code, up
+  to the line where its braces, `<< >>` or Scheme parentheses close (twelve
+  lines at most), with the file and line when that is another file. A
+  score's own definition is shown before the built-in documentation of the
+  same name (D21), since it is the one lilypond uses.
+- **Which definition.** The one in effect where the name is used: the
+  nearest before it, going into each `\include`d file on the way (relative to
+  the including file, eight levels deep at most, which also stops a file that
+  includes itself). When none comes before, the first one after it in the
+  same file. A definition is `name = …` or `"name" = …` at the start of a
+  line, or Scheme's `(define name …)` / `(define (name …) …)`, outside
+  comments and strings; `\set name = …` is not one.
+- **How.** `@lily/common/definition` finds it, given a way to read and
+  resolve included files: the extension reads an open editor's text, else
+  the disk; Lily Studio an open model's text, else `read_file`. In Studio a
+  definition in another file gets a Monaco model when it is found, so that
+  ⌘ held previews it, and going there opens the file as the file list does
+  (`registerEditorOpener`).
+- **Not done.** A file the score includes does not see the score's
+  definitions: in `piano.ily` a name defined in the `main.ly` that includes
+  it is not found. lilypond's include path (`-I`) is not searched. Find All
+  References and Rename are not offered.
+- **Verified.** `test/intellisense/definition.test.ts` in the extension
+  covers the name under the cursor, definitions, previews, includes and the
+  choice among several; Studio's `files.test.ts` the included file's path.
+  Neither app's providers were exercised in a running editor by a test.
