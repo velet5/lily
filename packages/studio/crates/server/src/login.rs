@@ -90,6 +90,9 @@ pub fn render(page: &LoginPage) -> String {
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Lily">
+<link rel="apple-touch-icon" href="/icon.png">
 <title>Sign In — Lily Studio</title>
 <style>{STYLE}</style>
 </head>

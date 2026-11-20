@@ -173,7 +173,13 @@ function copyEngine(from, to) {
 function sitePage(html, fonts = existsSync('../engine/dist/engine/manifest.json')) {
   const app = '<script src="app.js" defer></script>'
   if (!html.includes(app)) throw new Error(`renderer/index.html has no ${app}`)
-  const page = html.replace(app, `<script src="engine.js" defer></script>\n    ${app}`)
+  const viewport = '<meta name="viewport" content="width=device-width, initial-scale=1" />'
+  if (!html.includes(viewport)) throw new Error(`renderer/index.html has no ${viewport}`)
+  // Opens full screen from the iPad's Home Screen, as an app.
+  const homeScreen = '<meta name="apple-mobile-web-app-capable" content="yes" />\n    <meta name="apple-mobile-web-app-title" content="Lily" />\n    <link rel="apple-touch-icon" href="icon.png" />'
+  const page = html
+    .replace(viewport, `${viewport}\n    ${homeScreen}`)
+    .replace(app, `<script src="engine.js" defer></script>\n    ${app}`)
   const css = '<link rel="stylesheet" href="layout.css" />'
   if (!fonts) return page
   if (!page.includes(css)) throw new Error(`renderer/index.html has no ${css}`)
@@ -199,6 +205,7 @@ if (!tests && !e2e) {
   const page = site ? 'dist/site' : 'dist/web'
   mkdirSync(page, { recursive: true })
   cpSync('renderer/layout.css', `${page}/layout.css`)
+  if (site) cpSync('build/icon.png', `${page}/icon.png`)
   writeFileSync(`${page}/index.html`, site ? sitePage(readFileSync('renderer/index.html', 'utf8')) : readFileSync('renderer/index.html'))
 }
 
