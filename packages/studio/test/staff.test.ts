@@ -101,6 +101,17 @@ describe('Karaoke’s staff (D156)', () => {
     assert.ok(Math.abs(lengths.get(half)! - 0.5) < 1e-6)
   })
 
+  test('a voice at its sung times is measured through its map, so its notes keep their written lengths (D276)', () => {
+    const seconds = (at: number) => at * 2
+    // A quarter at 1 s sung 100 ms late, and the half after it on the grid: the quarter is held to it.
+    const map = (time: number) => (time <= 1 ? time + 0.1 * time : time < 1.5 ? 1.1 + ((time - 1) * 0.4) / 0.5 : time)
+    const quarter = note(60, 1.1, 0.4)
+    const half = note(62, 1.5, 1, 2)
+    const lengths = noteLengths([quarter, half], (at, n) => (n.track === 1 ? map(seconds(at)) : seconds(at)))
+    assert.ok(Math.abs(lengths.get(quarter)! - 0.25) < 1e-6)
+    assert.ok(Math.abs(lengths.get(half)! - 0.5) < 1e-6)
+  })
+
   test('gives each staff’s track the score’s clef', () => {
     const staff = (clef: string, clefTransposition: number, voices: string[]): TimedStaff => ({ id: '', name: '', shortName: '', group: '', groupIndex: -1, clef, clefTransposition, voices })
     const tracks = [

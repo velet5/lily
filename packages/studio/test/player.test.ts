@@ -85,6 +85,30 @@ describe('timelineOf, shared with the extension', () => {
     assert.equal(line.systems.length, 2)
   })
 
+  test('each event\'s time is asked with its href, so a voice at its sung times is placed at them; a bar\'s has none (D276)', () => {
+    const at = (x: number): Box => ({ page: 0, left: x - 0.01, right: x + 0.01, top: 0.1, bottom: 0.15 })
+    const boxes = new Map<string, Box>([['lead', at(0.5)], ['bass', at(0.5)], ['next', at(0.7)]])
+    const links = new Map([...boxes.keys()].map((href) => [href, [href]]))
+    const map = {
+      events: [
+        { href: 'lead', at: 0.25, grace: 0, length: 0.25 },
+        { href: 'bass', at: 0.25, grace: 0, length: 0.25 },
+        { href: 'next', at: 0.5, grace: 0, length: 0.25 },
+      ],
+      bars: [{ at: 0.25, number: 2 }],
+    }
+    const asked: (string | undefined)[] = []
+    // The lead sung 100 ms late.
+    const line = timelineOf(map, 2, links, (element) => boxes.get(element), (at, grace, href) => {
+      asked.push(href)
+      return 2 * (at + grace) + (href === 'lead' ? 0.1 : 0)
+    })
+    assert.deepEqual(line.events.map((e) => [e.element, e.time, e.end]), [['bass', 0.5, 1], ['lead', 0.6, 1.1], ['next', 1, 1.5]])
+    assert.deepEqual(line.moments.map((m) => m.time), [0.5, 0.6, 1])
+    assert.deepEqual(line.bars, [{ time: 0.5, number: 2 }])
+    assert.ok(asked.includes(undefined) && asked.includes('lead'))
+  })
+
   test('an empty syllable has no place: its system keeps its own band', () => {
     // Bar 37 of *Song K*: the tenors' `""` begins with the
     // altos' next word, on the last of three systems. Its `<a>` draws nothing and

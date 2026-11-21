@@ -122,25 +122,30 @@ export function staffTracks(staves: readonly TimedStaff[] | undefined, tracks: r
  * (`_`, which lilypond hands on as a space) ends the syllable before it and
  * is not shown. The text is as the score prints it: a bare
  * word's `_` is a space by now, so one still here was written in quotes and
- * stays, and a `~` is the tie between two vowels on a note.
+ * stays, and a `~` is the tie between two vowels on a note. A line sung on
+ * a track of `sung` is at that voice's sung times (D276): its grid seconds
+ * through the voice's time map, as its notes in `notes` are already moved.
  */
 export function syllablesOf(
   lyrics: readonly TimedLyric[],
   seconds: (at: number) => number,
   notes: readonly Note[],
   voices: ReadonlyMap<string, number> = new Map(),
+  sung: ReadonlyMap<number, (seconds: number) => number> = new Map(),
 ): Syllable[] {
-  const sorted = lyrics
+  const grid = lyrics
     .map((lyric) => ({ lyric, start: seconds(lyric.at) }))
     .sort((a, b) => a.lyric.line - b.lyric.line || a.start - b.start)
   const tracks = new Map<number, number>()
-  for (const line of new Set(sorted.map(({ lyric }) => lyric.line))) {
-    const own = sorted.filter(({ lyric }) => lyric.line === line)
+  for (const line of new Set(grid.map(({ lyric }) => lyric.line))) {
+    const own = grid.filter(({ lyric }) => lyric.line === line)
     const { voice } = own[0]!.lyric
     // A voice the staves do not list played no notes: a NullVoice, its words said to none.
     const track = voice ? (voices.get(voice) ?? (voices.size > 0 && !GENERATED_NAME.test(voice) ? -1 : undefined)) : undefined
     tracks.set(line, track ?? trackOf(own.map(({ start }) => start), notes, new Set(tracks.values())))
   }
+  // A map keeps the order of a line's syllables: it rises with the grid.
+  const sorted = grid.map(({ lyric, start }) => ({ lyric, start: sung.get(tracks.get(lyric.line) ?? -1)?.(start) ?? start }))
   const syllables = sorted.map(({ lyric, start }, i) => {
     const next = sorted[i + 1]?.lyric.line === lyric.line ? sorted[i + 1]!.start : Infinity
     const track = tracks.get(lyric.line) ?? -1
@@ -299,11 +304,20 @@ function placedRows(phrases: readonly Phrase[]): Placed[] | undefined {
   return placed
 }
 
-/** How much of `syllable` is sung at `now`, 0 to 1. */
+/**
+ * How far ahead of its note a syllable is lit, in seconds: at its consonant,
+ * which a singer starts before the vowel the note is on (D276). The grid
+ * moved this much earlier had 61 % of consonants within 50 ms against the
+ * grid's own 28 %; a constant for the ear to set.
+ */
+export const CONSONANT_LEAD = 0.06
+
+/** How much of `syllable` is sung at `now`, 0 to 1: lit from its consonant, CONSONANT_LEAD before its note, to as long before its end. */
 export function sung(syllable: Syllable, now: number): number {
-  if (now <= syllable.start) return 0
-  if (now >= syllable.end) return 1
-  return (now - syllable.start) / (syllable.end - syllable.start)
+  const at = now + CONSONANT_LEAD
+  if (at <= syllable.start) return 0
+  if (at >= syllable.end) return 1
+  return (at - syllable.start) / (syllable.end - syllable.start)
 }
 
 /** The lowest and highest key of `notes`, a semitone of room each side; around middle C without notes. */

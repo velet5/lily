@@ -42,6 +42,11 @@ export interface PianoSource {
   readonly parts: readonly Part[]
   /** The tracks the Parts fold mutes: still shown, and named in the view's notice. */
   readonly muted: ReadonlySet<number>
+  /**
+   * The time map of each voice `score` has at its sung times, by track
+   * (D276): its words and its staff's lengths go through it.
+   */
+  readonly voiceTimes?: ReadonlyMap<number, (seconds: number) => number>
 }
 
 /** A note's name, with the flats and the F♯ a piano video gives them. */
@@ -680,7 +685,7 @@ export class PianoView {
     if (!this.phrasesFor || this.phrasesFor.timing !== timing || this.phrasesFor.notes !== this.notes) {
       this.phrasesFor = { timing, notes: this.notes }
       const syllables = midi
-        ? syllablesOf(timing?.lyrics ?? [], (at) => momentTime(midi, at), this.allNotes, voiceTracks(timing?.staves, midi.tracks))
+        ? syllablesOf(timing?.lyrics ?? [], (at) => momentTime(midi, at), this.allNotes, voiceTracks(timing?.staves, midi.tracks), this.options.source.voiceTimes)
         : []
       const shown = syllables.filter(({ track }) => !this.hidden.has(track))
       this.phrases = phrasesOf(shown)
@@ -706,11 +711,17 @@ export class PianoView {
     const { timing } = this.options.source
     if (this.staffFor?.midi !== midi || this.staffFor.timing !== timing) {
       const seconds = (at: number) => momentTime(midi, at)
+      // A voice at its sung times has its written lengths through its map (D276).
+      const voices = this.options.source.voiceTimes
+      const sung = (at: number, note: Note) => {
+        const map = voices?.get(note.track)
+        return map ? map(seconds(at)) : seconds(at)
+      }
       this.staffFor = {
         midi,
         timing,
         staff: {
-          lengths: noteLengths(this.allNotes, seconds),
+          lengths: noteLengths(this.allNotes, sung),
           bars: (timing?.bars ?? []).map(({ at, number }) => ({ time: seconds(at), number })),
           clefs: trackClefs(staffTracks(timing?.staves, midi.tracks)),
           key: keyOf(this.allNotes),

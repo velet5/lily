@@ -1,7 +1,7 @@
 [project]
 name = "lily-transcribe"
 version = "0.1.0"
-description = "Lily Studio's transcription of a stem: notes, beats, meter and key, for a LilyPond score (DECISIONS D113)"
+description = "Lily Studio's transcription of a stem: notes, beats, meter and key, for a LilyPond score, and a voice's sung times (DECISIONS D113, D276)"
 readme = "README.md"
 license = "MIT"
 # Basic Pitch 0.4 supports Python 3.11 and no later.
@@ -11,6 +11,8 @@ dependencies = [
     "basic-pitch==0.4.0",
     # Beats and downbeats: CPJKU's Beat This!, MIT code and weights; its checkpoint downloads once.
     "beat-this==1.1.0",
+    # The sung times (D276): pYIN's f0, ISC, no model.
+    "librosa==0.11.0",
     # Words: Whisper on MLX, MIT code and weights; its model downloads once.
     "mlx-whisper==0.4.3",
     "numpy>=1.26",
@@ -18,6 +20,10 @@ dependencies = [
     # Syllables: hyphenation dictionaries (GPL/LGPL/MPL, the LGPL taken).
     "pyphen==0.18.1",
     "setuptools<81",
+    # The sung times (D276): the MMS_FA pipeline, BSD-2; MMS_FA's weights
+    # (CC BY-NC 4.0, 1.18 GB) download on the first `sung` (D169). Pinned, as
+    # torchaudio is dropping parts of itself from 2.9 on.
+    "torchaudio==2.11.0",
 ]
 
 [project.scripts]

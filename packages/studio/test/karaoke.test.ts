@@ -5,7 +5,7 @@ import * as path from 'node:path'
 import { describe, test } from 'node:test'
 import { momentTime, parseMidi, type Note } from '@lily/common/web/midi.js'
 import type { TimedLyric, TimedStaff } from '@lily/common/types'
-import { countIn, drawKaraoke, emptyWords, laneRange, leadLine, mixed, phrasesOf, rowOf, sectionRows, sectionsOf, shownPhrases, sung, syllablesOf, voiceTracks, wrapSyllables, balancedLines, type Syllable } from '../src/renderer/karaoke'
+import { CONSONANT_LEAD, countIn, drawKaraoke, emptyWords, laneRange, leadLine, mixed, phrasesOf, rowOf, sectionRows, sectionsOf, shownPhrases, sung, syllablesOf, voiceTracks, wrapSyllables, balancedLines, type Syllable } from '../src/renderer/karaoke'
 import { realOutcome } from './outcome'
 
 // Runs under `node --test` from out/test/ (npm run test:unit).
@@ -395,9 +395,25 @@ describe('karaoke (D133)', () => {
     assert.deepEqual(texts(8.5), [undefined, 'Ahh. '])
   })
 
-  test('colours a syllable as it is sung', () => {
+  test('colours a syllable as it is sung, from its consonant, 60 ms before its note (D276)', () => {
     const s = syllable(1, 3, 'glow ')
-    assert.deepEqual([0, 1, 2, 3, 4].map((now) => sung(s, now)), [0, 0, 0.5, 1, 1])
+    assert.equal(CONSONANT_LEAD, 0.06)
+    assert.deepEqual([0, 0.94, 1.94, 2.94, 4].map((now) => Math.round(sung(s, now) * 1e9) / 1e9), [0, 0, 0.5, 1, 1])
+    assert.ok(sung(s, 0.95) > 0, 'lit before its note')
+  })
+
+  test('a voice at its sung times has its words through its map; the others keep the grid (D276)', () => {
+    // The lead's second note sung 100 ms late, as the player moved it; the bass on the grid.
+    const notes = [note(60, 0, 0.6), note(48, 0, 0.5, 2), note(50, 0.5, 0.5, 2), note(62, 0.6, 0.4)]
+    const lyrics = [lyric(0, 'Lan', { hyphen: true, voice: 'lead' }), lyric(0.25, 'tern', { voice: 'lead' }), lyric(0, 'Oh', { voice: 'bass', line: 1 }), lyric(0.25, 'no', { voice: 'bass', line: 1 })]
+    const lead = (time: number) => (time === 0.5 ? 0.6 : time)
+    const syllables = syllablesOf(lyrics, seconds, notes, new Map([['lead', 1], ['bass', 2]]), new Map([[1, lead]]))
+    assert.deepEqual(syllables, [
+      syllable(0, 0.6, 'Lan'),
+      syllable(0.6, 1, 'tern '),
+      syllable(0, 0.5, 'Oh ', { track: 2, line: 1 }),
+      syllable(0.5, 1, 'no ', { track: 2, line: 1 }),
+    ])
   })
 
   test('words not yet sung are their singer’s colour dimmed towards the sky (D148)', () => {

@@ -2,7 +2,7 @@
 // can be given, the music as the setup plays it, and the bars playback can
 // start from, and the parts Export MIDI may leave out (D54). player.ts shows
 // it; the Rust side keeps it per score.
-import { trackInstruments, type Midi } from '@lily/common/web/midi.js'
+import { trackInstruments, type Midi, type Note } from '@lily/common/web/midi.js'
 import type { Moment, System } from '@lily/common/web/preview.js'
 import type { TimedStaff } from '@lily/common/types'
 import type { MutedPart, PlaybackSetup } from '../ipc'
@@ -444,6 +444,115 @@ export function tempoStretch(midi: Midi, bpm: number | undefined): number {
 /** midi.js's tempo map, which momentTime reads: `{ tick, seconds, tempo }`, tempo in µs a quarter. */
 function tempoMap(midi: Midi): { tick: number; seconds: number; tempo: number }[] {
   return (midi as Midi & { tempos?: { tick: number; seconds: number; tempo: number }[] }).tempos ?? []
+}
+
+// ---- A singer's own timing (DECISIONS D276) ----
+// After atTempo (or atBars, once audio-tempo §4's bar map exists), a voice
+// whose `% Audio sung` lines still fit its notes has them moved by their
+// shifts, and gets a time map of its own, from the grid's seconds to the sung
+// ones, which carries its other moments: its note heads and the playhead in
+// the preview, and Karaoke's syllables and staff. Every other part, the bars
+// and the beat keep the grid.
+
+/** A voice's sung times: its MIDI track, and each note's shift from the grid in ms, in the order played. */
+export interface SungShifts {
+  track: number
+  shifts: readonly number[]
+}
+
+/** A voice's time map: the seconds its moment at `seconds` on the grid is sung at. */
+export type TimeMap = (seconds: number) => number
+
+/** Notes of a voice that start this close together are a chord, which moves as one, in seconds (sung.py's TOGETHER). */
+const CHORD = 0.001
+/** How far after the note before it a note is put at the earliest, in seconds: the order never changes (D276). */
+const AFTER = 0.001
+/** A voice's map goes from the grid to its first shift over this long before its first note, and back after its last, in seconds. */
+const RAMP = 1
+
+/**
+ * `midi` with the notes of each of `voices` moved by their shifts (D276),
+ * and each moved voice's time map, by track. The notes are the track's in
+ * the order played (by time, a chord's from its lowest, as sungMismatch's
+ * `voiceNotes`), matched to the shifts in order; a chord moves by its first
+ * note's. A note put at or before the one before it is put 1 ms after it,
+ * and never before 0. A note that ran into the next one (legato) ends where
+ * the next now starts; another keeps its length, cut at the next one's
+ * start. The map runs through every note's start and the last one's end,
+ * and is the identity from a second (RAMP) before the first note and after
+ * the last, so it is continuous and rises: a grace note before the first
+ * note is not thrown behind it. A voice whose shifts do not number its
+ * notes, or are all 0, keeps the grid and has no map.
+ */
+export function withSung(midi: Midi, voices: readonly SungShifts[]): { midi: Midi; maps: Map<number, TimeMap> } {
+  const maps = new Map<number, TimeMap>()
+  const moved = new Map<Note, Note>()
+  for (const { track, shifts } of voices) {
+    const notes = midi.notes.filter((note) => note.track === track).sort((a, b) => a.time - b.time || a.key - b.key)
+    if (notes.length === 0 || notes.length !== shifts.length || shifts.every((shift) => shift === 0)) continue
+    // The chords, each with its notes, its grid start and its sung one.
+    const onsets: { notes: Note[]; grid: number; sung: number }[] = []
+    notes.forEach((note, i) => {
+      const last = onsets.at(-1)
+      if (last && note.time - last.grid <= CHORD) {
+        last.notes.push(note)
+        return
+      }
+      const sung = Math.max(note.time + shifts[i]! / 1000, last ? last.sung + AFTER : 0)
+      onsets.push({ notes: [note], grid: note.time, sung })
+    })
+    onsets.forEach(({ notes: chord, grid, sung }, k) => {
+      const next = onsets[k + 1]
+      for (const note of chord) {
+        const legato = next !== undefined && grid + note.duration >= next.grid - CHORD
+        const end = legato ? next.sung : Math.min(sung + note.duration, next?.sung ?? Infinity)
+        moved.set(note, { ...note, time: sung, duration: Math.max(end - sung, AFTER) })
+      }
+    })
+    const first = onsets[0]!
+    const last = onsets.at(-1)!
+    const end = last.grid + Math.max(...last.notes.map(({ duration }) => duration))
+    // From the grid to the first shift and back after the last, over a ramp: the map is continuous and rises.
+    const before = Math.max(RAMP, 2 * Math.abs(first.sung - first.grid))
+    const after = Math.max(RAMP, 2 * Math.abs(last.sung - last.grid))
+    maps.set(
+      track,
+      timeMap([
+        [first.grid - before, first.grid - before],
+        ...onsets.map(({ grid, sung }) => [grid, sung] as const),
+        [end, end + last.sung - last.grid],
+        [end + after, end + after],
+      ]),
+    )
+  }
+  if (moved.size === 0) return { midi, maps }
+  const notes = midi.notes.map((note) => moved.get(note) ?? note).sort((a, b) => a.time - b.time)
+  const duration = Math.max(midi.duration, ...[...moved.values()].map(({ time, duration }) => time + duration))
+  return { midi: { ...midi, notes, duration }, maps }
+}
+
+/**
+ * The piecewise-linear map through `points` (`[grid, sung]`, by grid time,
+ * the sung times rising with them), and the identity before the first and
+ * after the last (D276).
+ */
+export function timeMap(points: readonly (readonly [number, number])[]): TimeMap {
+  return (seconds) => {
+    if (points.length === 0 || seconds < points[0]![0] || seconds > points.at(-1)![0]) return seconds
+    let low = 0
+    let high = points.length - 1
+    // The last point at or before `seconds`.
+    while (low < high) {
+      const middle = (low + high + 1) >> 1
+      if (points[middle]![0] <= seconds) low = middle
+      else high = middle - 1
+    }
+    const [x0, y0] = points[low]!
+    const following = points[low + 1]
+    if (!following || following[0] === x0) return y0 + (seconds - x0)
+    const [x1, y1] = following
+    return y0 + ((y1 - y0) * (seconds - x0)) / (x1 - x0)
+  }
 }
 
 /** `setup` with `startBar` set, or dropped when undefined. */

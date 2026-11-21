@@ -178,7 +178,7 @@ export function scoreLabel(hard: boolean): string {
 
 /** The status line while lily-transcribe works on a stem (D113). */
 export function transcriptionStatus(title: string, stage: (TranscriptionEvent & { event: 'progress' })['stage']): string {
-  const doing = { decode: 'reading the song', beats: 'finding the beats', key: 'finding the key', notes: 'hearing the notes', words: 'hearing the words' }[stage]
+  const doing = { decode: 'reading the song', beats: 'finding the beats', key: 'finding the key', notes: 'hearing the notes', words: 'hearing the words', pitch: 'hearing the pitches', separate: 'separating it' }[stage]
   return `Transcribing the ${title.toLowerCase()}: ${doing}…`
 }
 

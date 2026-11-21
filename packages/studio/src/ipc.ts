@@ -474,8 +474,51 @@ export interface TempoFound {
 }
 
 /** What lily-transcribe prints while it works (D113); it ends with `done` or `error`. Its `tempo` (D159) reports `decode` and `beats`. */
+/**
+ * From the singer (D276): a voice's notes as `lily-transcribe sung` reads them
+ * (voice.json), in the order played, each with its grid start and length in
+ * seconds on the recording's timeline, its MIDI pitch, and the syllable that
+ * starts on it, with the full stop that ends a phrase.
+ */
+export interface SungVoice {
+  /** The tempo the MIDI plays at, in quarter notes a minute: τ is a 16th of it. */
+  bpm: number
+  notes: { start: number; length: number; pitch: number; syllable?: string }[]
+}
+
+/** What `sung` found for one note of the voice (D276). */
+export interface SungNote {
+  /** Whole ms from the grid the note may move by: 0 unless the evidence is sure, more than 50 ms and at most τ. */
+  shift: number
+  /** When the note is sung, in seconds of the recording; null where the evidence is not sure. */
+  arrival: number | null
+  consonant: number | null
+  vowel: number | null
+  /** MMS_FA's confidence in the note's syllable; null without one. */
+  score: number | null
+  /** Sung at the written pitch, not, or null when too little was voiced to say. */
+  asWritten: boolean | null
+  /** The pitch heard, in the score's octave, or null. */
+  heard: number | null
+}
+
+/** `sung`'s answer (D276): per note, per phrase (note indexes, inclusive), and its constants, in seconds. */
+export interface SungFound {
+  voice: string
+  notes: SungNote[]
+  phrases: { first: number; last: number; sung: boolean }[]
+  /** MMS_FA's measured lag, taken off the vowels. */
+  lag: number
+  /** A 16th at the voice's tempo. */
+  tau: number
+  /** The singer's octave against the score, in semitones. */
+  octave: number
+  took: number
+  warnings?: string[]
+}
+
 export type TranscriptionEvent =
-  | { event: 'progress'; stage: 'decode' | 'beats' | 'key' | 'notes' | 'words' }
+  | { event: 'progress'; stage: 'decode' | 'beats' | 'key' | 'notes' | 'words' | 'pitch' | 'separate'; value?: number }
   | { event: 'warning'; message: string }
   | { event: 'done'; transcription: Transcription; seconds: number }
   | { event: 'error'; message: string; cancelled?: boolean }

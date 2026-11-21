@@ -6,13 +6,15 @@
 //! command line (`Sidecar::command`). Its `Separator` runs one separation at a
 //! time; Cancel and quitting end it through its process group. Its
 //! `Transcriber` runs lily-transcribe (`packages/transcribe`, D113) the same
-//! way, to turn a stem into notes, and to find a score's tempo and bar 1 in
-//! its recording (D159). Its `history` keeps the songs separated
-//! before (D114). Only src-tauri depends on it, and the web
+//! way, to turn a stem into notes, to find a score's tempo and bar 1 in
+//! its recording (D159), and to find where the singer of that recording sings
+//! a voice's notes, from its lead vocals stem (D276). Its `history` keeps the
+//! songs separated before (D114). Only src-tauri depends on it, and the web
 //! server never links it (D55).
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Mutex, MutexGuard};
 
 use serde::{Deserialize, Serialize};
@@ -244,10 +246,19 @@ const TRANSCRIPTION: Kind = Kind {
     failed: "The transcription failed.",
 };
 
+/// What a run of lily-transcribe says when one is running already.
+pub const LISTENING: &str = "Lily Studio is already transcribing or listening to a recording.";
+
 const TEMPO: Kind = Kind {
     program: TRANSCRIBE_PROGRAM,
-    busy: "Lily Studio is already transcribing or listening to a recording.",
+    busy: LISTENING,
     failed: "The tempo could not be found.",
+};
+
+const SUNG: Kind = Kind {
+    program: TRANSCRIBE_PROGRAM,
+    busy: LISTENING,
+    failed: "The sung times could not be found.",
 };
 
 /// One run of a CLI at a time, in its own process group, which Cancel and
@@ -523,8 +534,130 @@ pub fn tempo_args(recording: &Path, meter: &ScoreMeter) -> Result<Vec<OsString>,
     Ok(args)
 }
 
-/// One transcription, or one tempo found, at a time: both run lily-transcribe
-/// and its models.
+// ---- From the singer (D276) ----
+// lily-transcribe's `sung` aligns a voice of the score with the lead vocals
+// stem of the score's recording. The stem is the one karaoke-mlx's karaoke
+// model writes beside the recording; the page writes the voice's notes, which
+// go to the CLI as a voice.json of their own.
+
+/// The karaoke model that separates the lead vocals stem used by `sung`.
+pub const SUNG_MODEL: &str = "becruily";
+
+/// What karaoke-mlx may have written a stem as, the first found first.
+const STEM_FORMATS: &[&str] = &["wav", "flac", "mp3"];
+
+/// The lead vocals stem of `recording`, as karaoke-mlx's karaoke models write
+/// it beside the recording: `<song> (karaoke)/<song> - vocals.wav`, or `.flac`
+/// or `.mp3`. None when there is none yet.
+pub fn vocals_stem(recording: &Path) -> Option<PathBuf> {
+    let song = recording.file_stem()?.to_string_lossy();
+    let folder = recording.parent()?.join(format!("{song} (karaoke)"));
+    STEM_FORMATS
+        .iter()
+        .map(|format| folder.join(format!("{song} - vocals.{format}")))
+        .find(|stem| stem.is_file())
+}
+
+/// The separation that writes `recording`'s lead vocals stem where
+/// `vocals_stem` finds it: SUNG_MODEL, into WAV, with the model's own overlap.
+pub fn vocals_request(recording: &Path) -> Request {
+    Request {
+        input: recording.to_path_buf(),
+        model: SUNG_MODEL.into(),
+        overlap: None,
+        format: "wav".into(),
+    }
+}
+
+/// A separation's event as the `sung` job hands it on, as one of lily-transcribe's:
+/// its progress as the stage `separate`, with a `value` while it separates,
+/// and its warnings. Its `done` and `error` are not passed on, since the job
+/// goes on, or answers its error, after it.
+pub fn separating(event: &Value) -> Option<Value> {
+    match event["event"].as_str()? {
+        "progress" => {
+            let mut progress = json!({ "event": "progress", "stage": "separate" });
+            if event["stage"] == "separate"
+                && let Some(value) = event["value"].as_f64()
+            {
+                progress["value"] = value.into();
+            }
+            Some(progress)
+        }
+        "warning" => Some(event.clone()),
+        _ => None,
+    }
+}
+
+/// Whether the page's voice can be sent to `sung`, before a stem is separated
+/// for it: a name for `--voice`, and a voice.json with the score's tempo and
+/// at least one note. lily-transcribe checks each note.
+pub fn check_sung(voice: &str, notes: &Value) -> Result<(), String> {
+    voice_name(voice)?;
+    if !notes["bpm"]
+        .as_f64()
+        .is_some_and(|bpm| bpm.is_finite() && bpm > 0.0)
+    {
+        return Err(format!("The score has no tempo to compare {voice} on."));
+    }
+    if !notes["notes"]
+        .as_array()
+        .is_some_and(|notes| !notes.is_empty())
+    {
+        return Err(format!("{voice} has no notes to compare."));
+    }
+    Ok(())
+}
+
+/// A voice's name, as the score's `Voice` has it: any text but blank or a control character.
+fn voice_name(voice: &str) -> Result<&str, String> {
+    if voice.trim().is_empty() || voice.chars().any(char::is_control) {
+        return Err(format!("{voice:?} cannot name a voice."));
+    }
+    Ok(voice)
+}
+
+/// `sung <stem> <voice.json> --voice=<name>`: both paths absolute files, and
+/// the name in the option's own word, so a name that starts with `-` is not
+/// read as an option.
+pub fn sung_args(stem: &Path, notes: &Path, voice: &str) -> Result<Vec<OsString>, String> {
+    if !stem.is_absolute() || !stem.is_file() {
+        return Err(format!("{} is not a stem.", stem.display()));
+    }
+    if !notes.is_absolute() || !notes.is_file() {
+        return Err(format!("{} is not a voice's notes.", notes.display()));
+    }
+    let mut option = OsString::from("--voice=");
+    option.push(voice_name(voice)?);
+    Ok(vec!["sung".into(), stem.into(), notes.into(), option])
+}
+
+/// A voice.json in the temp folder, deleted when it is dropped.
+struct VoiceFile(PathBuf);
+
+impl VoiceFile {
+    async fn write(notes: &Value) -> Result<VoiceFile, String> {
+        static NEXT: AtomicU32 = AtomicU32::new(0);
+        let number = NEXT.fetch_add(1, Ordering::Relaxed);
+        let path =
+            std::env::temp_dir().join(format!("lily-sung-{}-{number}.json", std::process::id()));
+        let text = serde_json::to_vec(notes).map_err(|error| error.to_string())?;
+        let file = VoiceFile(path);
+        tokio::fs::write(&file.0, text)
+            .await
+            .map_err(|error| format!("The voice's notes could not be written: {error}"))?;
+        Ok(file)
+    }
+}
+
+impl Drop for VoiceFile {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+/// One transcription, one tempo found, or one voice's sung times found, at a
+/// time: all run lily-transcribe and its models.
 #[derive(Default)]
 pub struct Transcriber {
     job: Job,
@@ -585,6 +718,37 @@ impl Transcriber {
             .await?;
         if !done["bpm"].is_number() || !done["barOne"].is_number() {
             return Err("lily-transcribe finished without the tempo.".into());
+        }
+        if let Value::Object(fields) = &mut done {
+            fields.remove("event");
+        }
+        Ok(done)
+    }
+
+    /// From the singer (D276): where the singer of `stem`, a score's lead
+    /// vocals stem, sings each note of `voice`, whose notes the page gives as
+    /// voice.json's `notes` (with the score's `bpm`), handing each event to
+    /// `on_event`. It answers the `done` event's fields: `voice`, `notes`,
+    /// `phrases`, `lag`, `tau`, `octave` and `took`, and `warnings` when the
+    /// CLI gave any. The notes are written to a file of their own for the run.
+    pub async fn sung(
+        &self,
+        sidecar: &Sidecar,
+        stem: &Path,
+        voice: &str,
+        notes: &Value,
+        on_event: impl Fn(Value) + Send + Sync,
+    ) -> Result<Value, String> {
+        check_sung(voice, notes)?;
+        let file = VoiceFile::write(notes).await?;
+        let args = sung_args(stem, &file.0, voice)?;
+        let mut done = self
+            .job
+            .run(&SUNG, sidecar.program(TRANSCRIBE_PROGRAM, &args), on_event)
+            .await?;
+        drop(file);
+        if !done["notes"].is_array() {
+            return Err("lily-transcribe finished without the sung times.".into());
         }
         if let Value::Object(fields) = &mut done {
             fields.remove("event");

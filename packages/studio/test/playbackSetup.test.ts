@@ -5,7 +5,7 @@ import * as path from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { momentTime, parseMidi, type Midi } from '@lily/common/web/midi.js'
 import type { TimedStaff } from '@lily/common/types'
-import { atTempo, audioVolume, barTime, mixMidi, momentAt, mutedParts, partNames, partsOf, partVolume, scoreBpm, withAudio, withPart, withPrograms, withStartBar } from '../src/renderer/playbackSetup'
+import { atTempo, audioVolume, barTime, mixMidi, momentAt, mutedParts, partNames, partsOf, partVolume, scoreBpm, timeMap, withAudio, withPart, withPrograms, withStartBar, withSung } from '../src/renderer/playbackSetup'
 import { realOutcome } from './outcome'
 
 // Runs under `node --test` from out/test/, in packages/studio/ (npm run test:unit).
@@ -369,5 +369,86 @@ describe('the audio track and the tempo (D155)', () => {
     assert.deepEqual(withAudio(quiet, { volume: 100 }), { startBar: 3 })
     assert.deepEqual(withAudio({}, { volume: 150 }), {})
     assert.deepEqual(withAudio({ audio: { muted: true } }, { muted: false }), {})
+  })
+})
+
+describe('a voice at its sung times (D276)', () => {
+  /** A voice on track 1, at ♩ = 120: three legato quarters, a rest, a quarter and a chord; a bass on track 2 in the same rhythm. */
+  function sungNote(track: number, time: number, duration: number, key = 60) {
+    return { ...note(track, track - 1, 0, time), duration, key }
+  }
+  const VOICE = [sungNote(1, 0.5, 0.5, 60), sungNote(1, 1, 0.5, 62), sungNote(1, 1.5, 0.25, 64), sungNote(1, 2.5, 0.5, 65), sungNote(1, 3, 1, 67), sungNote(1, 3, 1, 64)]
+  const BASS = VOICE.map((n) => ({ ...n, track: 2, channel: 1, key: n.key - 24 }))
+  const SONG: Midi = {
+    title: '',
+    duration: 4,
+    division: 384,
+    tracks: [
+      { name: 'control track', channels: [], programs: [], notes: 0 },
+      { name: '', channels: [0], programs: [0], notes: VOICE.length },
+      { name: '', channels: [1], programs: [0], notes: BASS.length },
+    ],
+    notes: [...VOICE, ...BASS].sort((a, b) => a.time - b.time),
+  }
+  const of = (midi: Midi, track: number) => midi.notes.filter((n) => n.track === track).map(({ time, duration, key }) => [round(time), round(duration), key])
+  const round = (seconds: number) => Math.round(seconds * 1e6) / 1e6
+
+  test('its notes move by their shifts in order; the other parts keep the grid', () => {
+    // A chord moves by its first note's (its lowest's) shift.
+    const { midi, maps } = withSung(SONG, [{ track: 1, shifts: [0, 62, -40, 0, 100, 0] }])
+    assert.deepEqual(of(midi, 1), [
+      // Legato: it ends where the next one now starts.
+      [0.5, 0.562, 60],
+      [1.062, 0.398, 62],
+      // Not legato: it keeps its length.
+      [1.46, 0.25, 64],
+      [2.5, 0.6, 65],
+      [3.1, 1, 67],
+      [3.1, 1, 64],
+    ])
+    assert.deepEqual(of(midi, 2), of(SONG, 2))
+    assert.deepEqual([...maps.keys()], [1])
+    assert.ok(midi.notes.every((n, i) => i === 0 || midi.notes[i - 1]!.time <= n.time), 'the notes are by time')
+    assert.equal(of(SONG, 1)[1]![0], 1, 'the music given is left as it was')
+  })
+
+  test('a note is never put at or before the one before it, nor before 0', () => {
+    const { midi } = withSung(SONG, [{ track: 1, shifts: [-900, -600, 0, -1200, 0, 0] }])
+    assert.deepEqual(
+      of(midi, 1).map(([time]) => time),
+      [0, 0.4, 1.5, 1.501, 3, 3],
+    )
+  })
+
+  test('its map runs through its notes\' starts, and goes back to the grid around them', () => {
+    const { maps } = withSung(SONG, [{ track: 1, shifts: [0, 62, -40, 0, 100, 0] }])
+    const map = maps.get(1)!
+    assert.equal(round(map(1)), 1.062)
+    assert.equal(round(map(1.25)), round(1.062 + (0.25 * (1.46 - 1.062)) / 0.5))
+    assert.equal(round(map(3)), 3.1)
+    // The last note's end keeps its shift; then a second's ramp back to the grid.
+    assert.equal(round(map(4)), 4.1)
+    assert.equal(round(map(4.5)), 4.55)
+    assert.equal(map(5), 5)
+    assert.equal(map(-0.5), -0.5)
+    assert.equal(map(0), 0)
+    // It rises everywhere, so what comes after another stays after it.
+    const times = Array.from({ length: 700 }, (_, i) => map(i / 100 - 1))
+    assert.ok(times.every((time, i) => i === 0 || time >= times[i - 1]!))
+  })
+
+  test('shifts that do not number its notes, or are all the grid, leave the music as it is', () => {
+    for (const shifts of [[0, 0, 0, 0, 0, 0], [62], []]) {
+      const { midi, maps } = withSung(SONG, [{ track: 1, shifts }])
+      assert.equal(midi, SONG)
+      assert.equal(maps.size, 0)
+    }
+    assert.equal(withSung(SONG, []).midi, SONG)
+  })
+
+  test('the map is linear between its points and the identity outside them', () => {
+    const map = timeMap([[1, 1], [2, 2.5], [3, 3]])
+    assert.deepEqual([0, 1, 1.5, 2, 2.5, 3, 4].map(map), [0, 1, 1.75, 2.5, 2.75, 3, 4])
+    assert.equal(timeMap([])(7), 7)
   })
 })

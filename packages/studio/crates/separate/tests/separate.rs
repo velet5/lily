@@ -6,9 +6,10 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use lily_separate::{
-    ROOT_VARIABLE, Request, RootSource, ScoreMeter, Separator, Sidecar, TRANSCRIBE_VARIABLE,
-    Transcriber, find_uv, mix, models, project_root, tempo_args, transcribe_args, transcribe_root,
-    uv_candidates,
+    LISTENING, ROOT_VARIABLE, Request, RootSource, SUNG_MODEL, ScoreMeter, Separator, Sidecar,
+    TRANSCRIBE_VARIABLE, Transcriber, check_sung, find_uv, mix, models, project_root, separating,
+    sung_args, tempo_args, transcribe_args, transcribe_root, uv_candidates, vocals_request,
+    vocals_stem,
 };
 use serde_json::{Value, json};
 use tempfile::TempDir;
@@ -839,6 +840,287 @@ echo '{"event": "done", "transcription": {"stem": "bass", "notes": []}, "seconds
         error,
         "Lily Studio is already transcribing or listening to a recording."
     );
+    assert!(transcriber.cancel());
+    assert!(running.await.expect("joined").is_err());
+}
+
+// A voice's sung times, from the lead vocals stem of the score's recording (D276)
+
+fn strings(args: Vec<std::ffi::OsString>) -> Vec<String> {
+    args.into_iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect()
+}
+
+fn voice() -> Value {
+    json!({ "bpm": 113.76, "notes": [
+        { "start": 9.81, "length": 0.26, "pitch": 57, "syllable": "Ba" },
+        { "start": 10.07, "length": 0.53, "pitch": 59, "syllable": "by." },
+    ]})
+}
+
+#[test]
+fn a_recordings_vocals_stem_is_the_karaoke_models_beside_it() {
+    let (_dir, dir) = scratch();
+    let recording = song(&dir);
+    assert_eq!(vocals_stem(&recording), None, "not separated yet");
+
+    let folder = dir.join("song (karaoke)");
+    std::fs::create_dir_all(&folder).unwrap();
+    std::fs::write(folder.join("song - instrumental.wav"), b"RIFF").unwrap();
+    assert_eq!(vocals_stem(&recording), None, "only the instrumental");
+    // A separation into another format is found too, WAV first.
+    std::fs::write(folder.join("song - vocals.mp3"), b"ID3").unwrap();
+    assert_eq!(
+        vocals_stem(&recording),
+        Some(folder.join("song - vocals.mp3"))
+    );
+    std::fs::write(folder.join("song - vocals.wav"), b"RIFF").unwrap();
+    assert_eq!(
+        vocals_stem(&recording),
+        Some(folder.join("song - vocals.wav"))
+    );
+    // A stems model's folder is not the lead's.
+    let (_other, other) = scratch();
+    let recording = song(&other);
+    std::fs::create_dir_all(other.join("song (stems)")).unwrap();
+    std::fs::write(other.join("song (stems)/song - vocals.wav"), b"RIFF").unwrap();
+    assert_eq!(vocals_stem(&recording), None);
+
+    // What separates it is the karaoke model, into WAV, beside the recording.
+    let request = vocals_request(&recording);
+    assert_eq!(request.model, SUNG_MODEL);
+    assert_eq!(
+        strings(request.args().expect("args")),
+        [
+            "separate",
+            &recording.to_string_lossy(),
+            "--model",
+            "becruily",
+            "--format",
+            "wav"
+        ]
+    );
+}
+
+#[test]
+fn a_separation_for_the_sung_times_is_heard_as_their_progress() {
+    assert_eq!(
+        separating(&json!({ "event": "progress", "stage": "load", "value": 0.0 })),
+        Some(json!({ "event": "progress", "stage": "separate" }))
+    );
+    assert_eq!(
+        separating(&json!({ "event": "progress", "stage": "separate", "value": 0.25 })),
+        Some(json!({ "event": "progress", "stage": "separate", "value": 0.25 }))
+    );
+    let warning = json!({ "event": "warning", "message": "slow" });
+    assert_eq!(separating(&warning), Some(warning));
+    // The job goes on after the separation, or fails with its error.
+    for event in [
+        json!({ "event": "done", "folder": "/s/song (karaoke)", "outputs": [] }),
+        json!({ "event": "error", "message": "no ffmpeg" }),
+        json!({ "event": "status", "message": "separating" }),
+        json!({}),
+    ] {
+        assert_eq!(separating(&event), None, "{event}");
+    }
+}
+
+#[test]
+fn a_sung_request_names_the_stem_the_notes_and_the_voice() {
+    let (_dir, dir) = scratch();
+    let stem = song(&dir);
+    let notes = dir.join("voice.json");
+    std::fs::write(&notes, "{}").unwrap();
+    let path = |path: &Path| path.to_string_lossy().into_owned();
+    assert_eq!(
+        strings(sung_args(&stem, &notes, "lead").expect("args")),
+        ["sung", &path(&stem), &path(&notes), "--voice=lead"]
+    );
+    // A name the score allows, though it looks like an option, stays the option's.
+    assert_eq!(
+        strings(sung_args(&stem, &notes, "-x Соло").expect("args"))[3],
+        "--voice=-x Соло"
+    );
+    for name in ["", "  ", "le\nad", "a\tb"] {
+        assert!(sung_args(&stem, &notes, name).is_err(), "{name:?}");
+    }
+    assert!(
+        sung_args(Path::new("song.mp3"), &notes, "lead").is_err(),
+        "relative"
+    );
+    assert!(
+        sung_args(&dir.join("missing.wav"), &notes, "lead").is_err(),
+        "missing"
+    );
+    assert!(sung_args(&stem, &dir, "lead").is_err(), "a folder");
+}
+
+#[test]
+fn a_voice_with_no_tempo_or_notes_is_not_sent() {
+    assert_eq!(check_sung("lead", &voice()), Ok(()));
+    assert!(check_sung("", &voice()).is_err());
+    for notes in [
+        json!({ "bpm": 114, "notes": [] }),
+        json!({ "bpm": 114 }),
+        json!({ "bpm": 0, "notes": [{}] }),
+        json!({ "bpm": "114", "notes": [{}] }),
+        json!({ "notes": [{}] }),
+        json!([]),
+    ] {
+        assert!(check_sung("lead", &notes).is_err(), "{notes}");
+    }
+}
+
+#[tokio::test]
+async fn sung_times_hand_on_each_event_and_answer_what_was_found() {
+    let (_dir, dir) = scratch();
+    // The stand-in keeps the voice.json it was given, which is gone after the run.
+    let sidecar = fake_uv(
+        &dir,
+        r#"cp "$9" "$(dirname "$0")/voice.json"
+echo '{"event": "progress", "stage": "decode"}'
+echo '{"event": "progress", "stage": "pitch"}'
+echo '{"event": "warning", "message": "Words with no Latin letters are not aligned yet."}'
+echo '{"event": "progress", "stage": "words"}'
+echo '{"event": "done", "voice": "lead", "notes": [{"shift": 62, "arrival": 9.872, "consonant": 9.75, "vowel": 9.944, "score": 0.41, "asWritten": true, "heard": 57}, {"shift": 0, "arrival": null, "consonant": null, "vowel": null, "score": null, "asWritten": null, "heard": null}], "phrases": [{"first": 0, "last": 1, "sung": true}], "lag": 0.072, "tau": 0.132, "octave": 0, "took": 2.1}'"#,
+    );
+    let stem = song(&dir);
+    let heard = Heard::default();
+    let transcriber = Transcriber::default();
+    let found = transcriber
+        .sung(&sidecar, &stem, "lead", &voice(), heard.sink())
+        .await
+        .expect("found");
+    assert_eq!(found["voice"], "lead");
+    assert_eq!(found["notes"][0]["shift"], 62);
+    assert_eq!(found["notes"][1]["arrival"], Value::Null);
+    assert_eq!(
+        found["phrases"],
+        json!([{ "first": 0, "last": 1, "sung": true }])
+    );
+    assert_eq!(found["tau"], 0.132);
+    assert_eq!(
+        found["warnings"],
+        json!(["Words with no Latin letters are not aligned yet."])
+    );
+    assert_eq!(found.get("event"), None);
+    let stages: Vec<_> = heard
+        .events()
+        .iter()
+        .map(|event| {
+            event["stage"]
+                .as_str()
+                .unwrap_or(event["event"].as_str().unwrap_or_default())
+                .to_owned()
+        })
+        .collect();
+    assert_eq!(stages, ["decode", "pitch", "warning", "words", "done"]);
+
+    let args = recorded_args(&dir);
+    let notes = PathBuf::from(&args[8]);
+    assert_eq!(
+        args,
+        [
+            "run",
+            "--quiet",
+            "--project",
+            &sidecar.root.to_string_lossy(),
+            "lily-transcribe",
+            "--json",
+            "sung",
+            &stem.to_string_lossy(),
+            &notes.to_string_lossy(),
+            "--voice=lead"
+        ]
+    );
+    // The page's notes, as they were sent, in a file of the run's own.
+    let sent: Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("voice.json")).unwrap()).unwrap();
+    assert_eq!(sent, voice());
+    assert!(notes.is_absolute());
+    assert!(!notes.exists(), "the voice.json is deleted after the run");
+    assert!(!transcriber.is_running());
+}
+
+#[tokio::test]
+async fn sung_times_not_found_say_why() {
+    let (_dir, dir) = scratch();
+    let sidecar = fake_uv(
+        &dir,
+        r#"echo '{"event": "error", "message": "The stem has no voice in it."}'
+exit 1"#,
+    );
+    let heard = Heard::default();
+    let error = Transcriber::default()
+        .sung(&sidecar, &song(&dir), "lead", &voice(), heard.sink())
+        .await
+        .expect_err("failed");
+    assert_eq!(error, "The stem has no voice in it.");
+    assert_eq!(heard.events().len(), 1);
+
+    let silent = fake_uv(&dir, "exit 3");
+    let error = Transcriber::default()
+        .sung(&silent, &song(&dir), "lead", &voice(), |_| {})
+        .await
+        .expect_err("died");
+    assert!(
+        error.starts_with("lily-transcribe ended without a result"),
+        "{error}"
+    );
+
+    let empty = fake_uv(&dir, r#"echo '{"event": "done", "took": 1}'"#);
+    let error = Transcriber::default()
+        .sung(&empty, &song(&dir), "lead", &voice(), |_| {})
+        .await
+        .expect_err("no times");
+    assert_eq!(error, "lily-transcribe finished without the sung times.");
+
+    // A voice with nothing to align never starts the CLI.
+    let (_unrun, unrun) = scratch();
+    let never = fake_uv(&unrun, "exit 0");
+    let error = Transcriber::default()
+        .sung(
+            &never,
+            &song(&unrun),
+            "lead",
+            &json!({ "bpm": 114, "notes": [] }),
+            |_| {},
+        )
+        .await
+        .expect_err("no notes");
+    assert_eq!(error, "lead has no notes to compare.");
+    assert!(!unrun.join("uv.args").exists());
+}
+
+#[tokio::test]
+async fn sung_times_wait_for_no_tempo_and_say_so() {
+    let (_dir, dir) = scratch();
+    let sidecar = fake_uv(
+        &dir,
+        r#"sleep 5
+echo '{"event": "done", "bpm": 114, "barOne": 0.3}'"#,
+    );
+    let transcriber = Arc::new(Transcriber::default());
+    let running = {
+        let transcriber = transcriber.clone();
+        let sidecar = sidecar.clone();
+        let recording = song(&dir);
+        tokio::spawn(async move {
+            transcriber
+                .detect_tempo(&sidecar, &recording, &ScoreMeter::default(), |_| {})
+                .await
+        })
+    };
+    let started = std::time::Instant::now();
+    while !transcriber.is_running() && started.elapsed() < Duration::from_secs(5) {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    let error = transcriber
+        .sung(&sidecar, &song(&dir), "lead", &voice(), |_| {})
+        .await
+        .expect_err("busy");
+    assert_eq!(error, LISTENING);
     assert!(transcriber.cancel());
     assert!(running.await.expect("joined").is_err());
 }

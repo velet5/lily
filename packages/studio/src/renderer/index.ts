@@ -6,12 +6,12 @@
 // stem under the preview. On the web (D55) the same page, without the agents
 // or Stems, and with upload and download. The editor pane shows the source or
 // the piano view of what plays (D116).
-import type { CompileEvent, FileChange, Opened, ScoreMeter, TempoFound } from '../ipc'
+import type { CompileEvent, FileChange, Opened, ScoreMeter, SungFound, SungVoice, TempoFound } from '../ipc'
 import { AgentPanel, SELECTION_ACTIONS } from './agents'
 import { studio, type StudioApi } from './bridge'
 import { compileStatus, DiagnosticStore, problemSummary } from './diagnostics'
 import { ScoreEditor } from './editor'
-import { audioOffsetOfScore, audioOfScore, backingOfScore, bpmOfScore, button, FileList, musicOfScore, startOfScore, stemOfScore, withScoreLines } from './files'
+import { audioOffsetOfScore, audioOfScore, backingOfScore, bpmOfScore, button, FileList, musicOfScore, startOfScore, stemOfScore, sungOfScore, withScoreLines } from './files'
 import { garageBandAudio } from './garageBandPlan'
 import { droppedGuitarPro } from './guitarPro'
 import { addMidiBlock } from './midiBlock'
@@ -19,6 +19,7 @@ import { PdfView } from './pdfView'
 import { PianoView, type VideoSound } from './piano'
 import { ScorePlayer, StemStrip, type StripAudio } from './player'
 import { ScorePreview } from './preview'
+import { sungProgress } from './sungMismatch'
 import { tempoProgress } from './tempo'
 import { SeparateView } from './separate'
 import { Sidebar, WorkspaceSwitch } from './sidebar'
@@ -194,6 +195,9 @@ const piano = new PianoView({
     get muted() {
       return player.muted
     },
+    get voiceTimes() {
+      return player.voiceTimes
+    },
   },
   onPlace: () => showPiano(piano.visible),
   onStyle: () => karaokeSilence?.(),
@@ -235,6 +239,9 @@ const player = new ScorePlayer({
   detectTempo: studio.hosted ? undefined : (meter) => detectTempo(meter),
   onStatus: status,
   onPlaying: (on) => studio.playing(on),
+  // From the singer (D276), on the Mac alone as From the recording is.
+  detectSung: studio.hosted ? undefined : (voice, notes) => detectSung(voice, notes),
+  scoreText: (rootFile) => editor.textOf(rootFile),
 })
 /** The shown score's `% Start:`, as its text has it now (D149). */
 function scoreStart(): number | undefined {
@@ -655,6 +662,8 @@ let attachedAudio: AttachedAudio | undefined
 async function showScoreAudio(rootFile: string): Promise<void> {
   const text = editor.textOf(rootFile) ?? ''
   player.bpm = bpmOfScore(text)
+  // The web plays no audio track, so no voice follows its singer (D276).
+  player.sung = studio.hosted ? new Map() : sungOfScore(text)
   const name = studio.hosted ? undefined : audioOfScore(text)
   if (!name) {
     attachedAudio = undefined
@@ -711,6 +720,25 @@ async function detectTempo(meter: ScoreMeter): Promise<TempoFound> {
   status(`Listening to ${audio.name}…`)
   try {
     return await studio.detectTempo(rootFile, audio.name, meter)
+  } finally {
+    stop()
+  }
+}
+
+/**
+ * From the singer (D276): lily-transcribe hears the shown score's audio
+ * track's lead vocals stem sing `voice`, and the status line names its stage.
+ */
+async function detectSung(voice: string, notes: SungVoice): Promise<SungFound> {
+  const rootFile = previewRoot
+  const audio = attachedAudio
+  if (!rootFile || audio?.rootFile !== rootFile || !audio.path) throw new Error('The score has no audio track to listen to.')
+  const stop = studio.onTranscription((event) => {
+    if (event.event === 'progress') status(sungProgress(audio.name, event.stage, event.value))
+  })
+  status(`From the singer: listening to ${voice} in ${audio.name}…`)
+  try {
+    return await studio.detectSung(rootFile, audio.name, voice, notes)
   } finally {
     stop()
   }

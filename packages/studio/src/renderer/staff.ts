@@ -213,20 +213,24 @@ export function noteValue(length: number): NoteValue {
   return { head, flags, dots }
 }
 
-/** Each note's length in whole notes, by `seconds`, which puts a moment in whole notes at its time (`momentTime`). */
-export function noteLengths(notes: readonly Note[], seconds: (at: number) => number): Map<Note, number> {
-  const momentAt = (time: number) => {
+/**
+ * Each note's length in whole notes, by `seconds`, which puts a moment in
+ * whole notes at its time for that note (`momentTime`, and for a voice at
+ * its sung times its time map after it, D276).
+ */
+export function noteLengths(notes: readonly Note[], seconds: (at: number, note: Note) => number): Map<Note, number> {
+  const momentAt = (time: number, note: Note) => {
     let low = 0
     let high = 4
-    while (seconds(high) < time && high < 1e6) high *= 2
+    while (seconds(high, note) < time && high < 1e6) high *= 2
     for (let i = 0; i < 40; i++) {
       const middle = (low + high) / 2
-      if (seconds(middle) < time) low = middle
+      if (seconds(middle, note) < time) low = middle
       else high = middle
     }
     return (low + high) / 2
   }
-  return new Map(notes.map((note) => [note, momentAt(note.time + note.duration) - momentAt(note.time)]))
+  return new Map(notes.map((note) => [note, momentAt(note.time + note.duration, note) - momentAt(note.time, note)]))
 }
 
 /** The track most of a section's words are sung on, or most of its notes are on. */
