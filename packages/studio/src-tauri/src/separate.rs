@@ -11,16 +11,17 @@
 //! songs separated before are kept (D114): a done separation, or a folder of
 //! stems chosen with the panel, goes on the list, and opening one lets its
 //! folder in as a separation would. A score's recording, the file its
-//! `% Audio:` line names, gives the score its tempo and bar 1 (D159). The web
-//! server has none of this (D55).
+//! `% Audio:` line names, gives the score its tempo and bar 1 (D159), and its
+//! lead vocals stem, separated beside it the first time, where its singer
+//! sings a voice's notes (D276). The web server has none of this (D55).
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use lily_engrave::files::unused_name;
 use lily_separate::history::{self, History, Listed, Separation};
 use lily_separate::{
-    ProjectRoot, ROOT_VARIABLE, Request, ScoreMeter, Separator, Sidecar, TRANSCRIBE_ROOT,
-    TRANSCRIBE_VARIABLE, Transcriber,
+    LISTENING, ProjectRoot, ROOT_VARIABLE, Request, ScoreMeter, Separator, Sidecar,
+    TRANSCRIBE_ROOT, TRANSCRIBE_VARIABLE, Transcriber,
 };
 use lily_session::{Opened, Studio, StudioEvent, lock};
 use serde::Serialize;
@@ -185,18 +186,33 @@ pub async fn separate(
 ) -> Answer<PathBuf> {
     let sidecar = sidecar(&studio)?;
     let studio = studio.inner().clone();
-    let stems = stems.inner();
+    separate_and_keep(&app, stems.inner(), &sidecar, &request, |event| {
+        studio.send(StudioEvent::Separation { event });
+    })
+    .await
+}
+
+/// Runs `request`, handing each event to `send`. Once it is done, its stems
+/// may be played, and the song is kept on the list for the next launch
+/// (D114). Answers the folder the stems went to.
+async fn separate_and_keep(
+    app: &AppHandle,
+    stems: &Stems,
+    sidecar: &Sidecar,
+    request: &Request,
+    send: impl Fn(Value) + Send + Sync,
+) -> Answer<PathBuf> {
     let done = Mutex::new(None);
     let folder = stems
         .separator
-        .separate(&sidecar, &request, |event| {
+        .separate(sidecar, request, |event| {
             if let Some(folder) = done_folder(&event) {
-                if let Err(error) = stems.allow(&app, &folder) {
+                if let Err(error) = stems.allow(app, &folder) {
                     eprintln!("separation: the stems cannot be played: {error}");
                 }
                 *lock(&done) = Separation::from_done(&event);
             }
-            studio.send(StudioEvent::Separation { event });
+            send(event);
         })
         .await?;
     // Kept for the next launch (D114); the stems are there even when the list is not saved.
@@ -438,6 +454,92 @@ fn smoke_tempo(send: impl Fn(Value)) -> Value {
     let found = serde_json::json!({
         "bpm": 113.76, "heardBpm": 113.76, "steady": true, "share": 0.99, "residualMs": 19.2,
         "beatsPerBar": 4, "heardBeatsPerBar": 4, "barOne": 0.322, "seconds": 216.7,
+    });
+    let mut done = found.clone();
+    done["event"] = "done".into();
+    send(done);
+    found
+}
+
+/// From the singer (D276): where the singer of `audio`, the recording the
+/// `% Audio:` line of `score` names beside it, sings each note of `voice`,
+/// whose notes the page gives as `notes` (voice.json: the score's `bpm` and
+/// the voice's notes on the recording's timeline). It is run on the
+/// recording's lead vocals stem, `<song> (karaoke)/<song> - vocals.wav`
+/// beside it; when there is none yet, karaoke-mlx's karaoke model separates
+/// it there first (about 90 s), and the song goes on the list of songs
+/// separated (D114). Only a recording already let into the asset scope, as
+/// `detect_tempo` asks, is listened to. Each event, the separation's progress
+/// as the stage `separate`, goes to the page as a `transcription` event. It
+/// answers lily-transcribe's `done` (`voice`, `notes`, `phrases`, `lag`,
+/// `tau`, `octave`, `took`, and `warnings`) and writes nothing to the score.
+/// The smoke test's stand-in answers without running either CLI.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)] // A Tauri command takes its state and its arguments as these.
+pub async fn detect_sung(
+    app: AppHandle,
+    studio: State<'_, Arc<Studio>>,
+    stems: State<'_, Stems>,
+    smoke: State<'_, Smoke>,
+    score: Value,
+    audio: String,
+    voice: String,
+    notes: Value,
+) -> Answer<Value> {
+    let score = studio.check(&score)?;
+    let recording = stem_beside(&score, &audio)?;
+    if !app.asset_protocol_scope().is_allowed(&recording) {
+        return Err(format!(
+            "{audio} is not the score's audio track: add it with Add audio… first."
+        ));
+    }
+    // Before a separation that would be of no use.
+    lily_separate::check_sung(&voice, &notes)?;
+    let studio = studio.inner().clone();
+    let send = |event: Value| studio.send(StudioEvent::Transcription { event });
+    if smoke.0.is_some() {
+        return Ok(smoke_sung(&voice, &notes, send));
+    }
+    let transcriber = transcriber(&studio)?;
+    if stems.transcriber.is_running() {
+        return Err(LISTENING.into());
+    }
+    let stem = match lily_separate::vocals_stem(&recording) {
+        Some(stem) => stem,
+        None => {
+            let request = lily_separate::vocals_request(&recording);
+            separate_and_keep(&app, &stems, &sidecar(&studio)?, &request, |event| {
+                if let Some(event) = lily_separate::separating(&event) {
+                    send(event);
+                }
+            })
+            .await?;
+            lily_separate::vocals_stem(&recording)
+                .ok_or_else(|| format!("The separation of {audio} wrote no lead vocals stem."))?
+        }
+    };
+    stems
+        .transcriber
+        .sung(&transcriber, &stem, &voice, &notes, send)
+        .await
+}
+
+/// What the smoke test hears for any voice: a singer who keeps to the grid,
+/// each note on its written time and pitch, in one phrase that is sung.
+fn smoke_sung(voice: &str, notes: &Value, send: impl Fn(Value)) -> Value {
+    send(serde_json::json!({ "event": "progress", "stage": "words" }));
+    let notes = notes["notes"]
+        .as_array()
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let found = serde_json::json!({
+        "voice": voice,
+        "notes": notes.iter().map(|note| serde_json::json!({
+            "shift": 0, "arrival": note["start"], "consonant": null, "vowel": null,
+            "score": 0.5, "asWritten": true, "heard": note["pitch"],
+        })).collect::<Vec<_>>(),
+        "phrases": [{ "first": 0, "last": notes.len().saturating_sub(1), "sung": true }],
+        "lag": 0.072, "tau": 0.132, "octave": 0, "took": 0.0,
     });
     let mut done = found.clone();
     done["event"] = "done".into();
@@ -770,6 +872,31 @@ mod tests {
                 "a link out of the folder"
             );
         }
+    }
+
+    #[test]
+    fn the_smoke_tests_singer_keeps_to_the_grid() {
+        let heard = Mutex::new(Vec::new());
+        let notes = json!({ "bpm": 114, "notes": [
+            { "start": 1.0, "length": 0.5, "pitch": 57, "syllable": "Ba" },
+            { "start": 1.5, "length": 0.5, "pitch": 59, "syllable": "by." },
+        ]});
+        let found = smoke_sung("lead", &notes, |event| lock(&heard).push(event));
+        assert_eq!(found["voice"], "lead");
+        assert_eq!(
+            found["notes"],
+            json!([
+                { "shift": 0, "arrival": 1.0, "consonant": null, "vowel": null, "score": 0.5, "asWritten": true, "heard": 57 },
+                { "shift": 0, "arrival": 1.5, "consonant": null, "vowel": null, "score": 0.5, "asWritten": true, "heard": 59 },
+            ])
+        );
+        assert_eq!(
+            found["phrases"],
+            json!([{ "first": 0, "last": 1, "sung": true }])
+        );
+        let events = lock(&heard).clone();
+        assert_eq!(events.last().unwrap()["event"], "done");
+        assert_eq!(events.last().unwrap()["notes"], found["notes"]);
     }
 
     #[test]

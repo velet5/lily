@@ -196,6 +196,7 @@ pub fn run() {
             separate::choose_audio,
             separate::transcribe_stem,
             separate::detect_tempo,
+            separate::detect_sung,
             separate::separations,
             separate::open_separation,
             separate::choose_separation,

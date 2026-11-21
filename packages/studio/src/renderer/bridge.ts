@@ -37,6 +37,8 @@ import type {
   SeparationRequest,
   SeparationStatus,
   ScoreMeter,
+  SungFound,
+  SungVoice,
   TempoFound,
   Transcription,
   TranscriptionEvent,
@@ -409,7 +411,18 @@ export const studio = {
     await subscribed
     return call('detect_tempo', { score, audio, meter })
   },
-  /** Runs `listener` for each event of the running transcription, or of detectTempo: progress and warnings, then `done` or `error`. */
+  /**
+   * From the singer (D276): where the singer of `audio`, the recording the
+   * `% Audio:` line of `score` names, once attached (attachStem), sings each
+   * of `voice`'s `notes`, from the recording's lead vocals stem, which is
+   * separated beside it first when there is none. Its progress arrives on
+   * onTranscription. It writes nothing.
+   */
+  detectSung: async (score: string, audio: string, voice: string, notes: SungVoice): Promise<SungFound> => {
+    await subscribed
+    return call('detect_sung', { score, audio, voice, notes })
+  },
+  /** Runs `listener` for each event of the running transcription, or of detectTempo or detectSung: progress and warnings, then `done` or `error`. */
   onTranscription: (listener: Listener<TranscriptionEvent>): (() => void) => subscribe(listeners.transcription, listener),
   /** Where `<audio>` plays a stem from: one of a separation finished in this run, or an attached one. */
   stemUrl: (path: string): string => transport.fileUrl?.(path) ?? '',

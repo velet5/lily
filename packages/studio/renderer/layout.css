@@ -1774,6 +1774,27 @@ button:focus-visible,
   flex: none;
 }
 
+/* From the singer (D276): at the voice's part row's end, with what takes
+   its marks off. The notes where the singer parts from the score are drawn
+   in a colour of their own in the preview, those of a phrase the stem does
+   not sing faded, and their titles say how. */
+.playback-setup .part-from-singer,
+.playback-setup .part-singer-clear {
+  flex: none;
+}
+
+.preview {
+  --lily-sung-differs: #7048e8;
+}
+
+.preview-page a.sung-differs:not(.playing) {
+  color: var(--lily-sung-differs);
+}
+
+.preview-page a.sung-differs[data-sung~='unsung']:not(.playing) {
+  opacity: 0.55;
+}
+
 /* From the recording (D159): at the tempo row's far end, after its hint. */
 .playback-setup .part-from-recording {
   flex: none;

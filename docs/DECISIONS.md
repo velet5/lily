@@ -12513,3 +12513,12 @@ D132, D130 · **Changes:** `crates/core/src/compile.rs` (`processing`, `laid`, t
     before it and the engine's own call.
   - No score of the corpus nor Y01–Y90 throws in its layout: every output as before.
   - LilyPond's `ice-9/eval.scm:155:9:` frame before a `\book` block's text is still left out (D132).
+
+## D276 — From the singer aligns a voice to the recording
+
+In the Mac app, Parts offers **From the singer** on an eligible lyric voice
+when the score has a recording. Studio separates the lead vocals, aligns
+the syllables with MMS_FA, checks the pitch with pYIN, and marks differences
+in the score. The singer's timing applies to that voice during playback and
+karaoke. Other parts keep the score's timing. Low-confidence notes keep their
+written timing. The model weights download on first use under D169.

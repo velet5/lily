@@ -2,6 +2,7 @@
 
     lily-transcribe --json transcribe <stem> --instrument bass
     lily-transcribe --json tempo <recording> [--score-bpm 114] [--beats-per-bar 4] [--beat 1]
+    lily-transcribe --json sung <stem> <voice.json> --voice lead
 
 With ``--json`` every line on stdout is one JSON event, which is how Lily
 Studio drives it, as it drives karaoke-mlx:
@@ -29,6 +30,20 @@ taken (`--beats-per-bar`, or the downbeats' vote) and the downbeats' own,
 the first bar line at or after the start in seconds, and the recording's
 length in seconds; `took` is how long the run took. A recording without a
 beat to find ends in `error`.
+
+`sung` compares a voice of the score with the vocals stem of its recording
+(D276), for Lily Studio's *From the singer*; `voice.json` is the voice's
+notes as the studio plays them (`sung.py` says how). Its stages are
+`decode`, `pitch` and `words`, and its `done` has `{voice, notes, phrases,
+lag, tau, octave, took}`: per note, in voice.json's order, `shift` (whole
+milliseconds from the grid, 0 for the grid), `arrival` (seconds, or null
+without confident evidence), the syllable's `consonant` and `vowel`
+(seconds, or null) and `score`, `asWritten` (true, false, or null when it
+cannot be told) and `heard` (the MIDI pitch sung, in the score's octave, or
+null); per phrase its `first` and `last` note and whether it is `sung`
+(null when none of its syllables could be aligned); MMS_FA's `lag` and the
+16th `tau` in seconds, and the singer's `octave` from the score in
+semitones. A stem with no voice in it ends in `error`.
 """
 
 from __future__ import annotations
@@ -46,7 +61,7 @@ from pathlib import Path
 
 import numpy as np
 
-from . import audio, drums, grid, key, lyrics, quantize, tempo
+from . import audio, drums, grid, key, lyrics, quantize, sung, tempo
 from .instruments import instrument
 
 SAMPLE_RATE = 22050
@@ -289,15 +304,22 @@ def main(argv: list[str] | None = None) -> None:
     beat.add_argument("--score-bpm", type=float, help="the score's tempo in quarter notes a minute, which chooses the metrical level (120)")
     beat.add_argument("--beats-per-bar", type=int, help="the score's meter, which groups the beats into bars (the downbeats' vote)")
     beat.add_argument("--beat", type=float, default=1.0, help="the score's beat in quarter notes: 1.5 for 6/8's dotted quarter (1)")
+    sing = commands.add_parser("sung", help="a voice's sung times from its vocals stem")
+    sing.add_argument("stem", type=Path, help="the lead vocals stem of the score's recording")
+    sing.add_argument("notes", type=Path, metavar="voice.json", help="the voice's notes, as the studio plays them")
+    sing.add_argument("--voice", required=True, help="the voice's name, as the score's Voice has it")
     args = parser.parse_args(argv)
     out = Reporter(args.json)
     began = time.monotonic()
     try:
-        path = args.stem if args.command == "transcribe" else args.recording
-        if not path.is_file():
-            raise RuntimeError(f"{path} is not a file.")
+        paths = [args.recording] if args.command == "tempo" else [args.stem, args.notes] if args.command == "sung" else [args.stem]
+        for path in paths:
+            if not path.is_file():
+                raise RuntimeError(f"{path} is not a file.")
         if args.command == "transcribe":
             result = transcribe(args.stem, args.instrument, out)
+        elif args.command == "sung":
+            result = sung.sung(args.stem, args.notes, args.voice, cache_dir(), out)
         else:
             if not args.beat > 0:
                 raise RuntimeError("--beat must be more than 0.")
@@ -307,7 +329,7 @@ def main(argv: list[str] | None = None) -> None:
             raise
         out.emit("error", message=str(error) or type(error).__name__)
         sys.exit(1)
-    if args.json and args.command == "tempo":
+    if args.json and args.command in ("tempo", "sung"):
         out.emit("done", **result, took=round(time.monotonic() - began, 2))
     elif args.json:
         out.emit("done", transcription=result, seconds=round(time.monotonic() - began, 2))

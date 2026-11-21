@@ -382,7 +382,8 @@
    * binary search and a few style properties. `sourceLinks` maps an href to
    * the elements that carry it, in page order; `box(element)` is its
    * `{ page, left, right, top, bottom }` in fractions of its page, or
-   * undefined; `time(at, grace)` is when a moment is heard, in seconds, and
+   * undefined; `time(at, grace, href)` is when a moment of the event that
+   * links to `href` is heard, in seconds (a bar's has no href), and
    * `duration` the length of the music. Returns the events with their
    * elements, the moments that were placed, their systems and the bars.
    */
@@ -417,8 +418,8 @@
         : candidates.length === 1 ? candidates[0]
         : undefined
       events.push({
-        time: time(at, grace),
-        end: grace === 0 ? time(at + length, 0) : time(at, grace + length),
+        time: time(at, grace, href),
+        end: grace === 0 ? time(at + length, 0, href) : time(at, grace + length, href),
         element,
         candidates,
       })

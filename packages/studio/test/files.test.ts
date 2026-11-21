@@ -5,7 +5,25 @@ import * as path from 'node:path'
 import { after, before, describe, test } from 'node:test'
 import { parseMidi } from '@lily/common/web/midi.js'
 import type { Transcription } from '../src/ipc'
-import { audioOffsetOfScore, audioOfScore, backingOfScore, bpmOfScore, fileRows, includedFile, musicOfScore, songTitle, startOfScore, stemOfScore, stemScore, withScoreLines } from '../src/renderer/files'
+import {
+  audioOffsetOfScore,
+  audioOfScore,
+  backingOfScore,
+  bpmOfScore,
+  fileRows,
+  includedFile,
+  musicOfScore,
+  songTitle,
+  startOfScore,
+  stemOfScore,
+  stemScore,
+  sungGuard,
+  sungLines,
+  sungOfScore,
+  sungTimesFor,
+  withScoreLines,
+  withSungLines,
+} from '../src/renderer/files'
 import type { TextEdit } from '../src/renderer/midiBlock'
 import { realOutcome } from './outcome'
 
@@ -310,5 +328,104 @@ describe('the audio track\'s lines (D155)', () => {
     // Taking out one line and adding another: the new one goes after a line that stays.
     assert.equal(applied(text, withScoreLines(text, { BPM: undefined, Start: '4' })), '\\version "2.24.0"\r\n% Audio: a.mp3\r\n% Audio offset: 2\r\n% Start: 4\r\n{ c }\r\n')
     assert.deepEqual(withScoreLines('{ c }\n', { BPM: undefined }), [])
+  })
+})
+
+describe('a voice\'s sung times, `% Audio sung` (D276)', () => {
+  /** `text` with `edits` applied, as the editor applies them. */
+  const applied = (text: string, edits: TextEdit[]) =>
+    [...edits].sort((a, b) => b.offset - a.offset).reduce((result, { offset, length, text: put }) => result.slice(0, offset) + put + result.slice(offset + length), text)
+  const notes = [
+    { start: 0, length: 480 },
+    { start: 480, length: 240 },
+    { start: 720, length: 240 },
+  ]
+
+  test('the guard is the note count and the FNV-1a hash of their rhythm in ticks', () => {
+    // FNV-1a's offset basis, for no notes.
+    assert.deepEqual(sungGuard([]), { count: 0, hash: '811c9dc5' })
+    const guard = sungGuard(notes)
+    assert.equal(guard.count, 3)
+    assert.match(guard.hash, /^[0-9a-f]{8}$/)
+    assert.deepEqual(sungGuard(notes.map((note) => ({ ...note }))), guard, 'the same rhythm, the same hash')
+    assert.notEqual(sungGuard([notes[0]!, { start: 480, length: 480 }, notes[2]!]).hash, guard.hash, 'a length changed')
+    assert.notEqual(sungGuard([notes[1]!, notes[0]!, notes[2]!]).hash, guard.hash, 'the order changed')
+    assert.notEqual(sungGuard(notes.slice(0, 2)).hash, guard.hash)
+  })
+
+  test('the lines are the guard, then the shifts, 16 a line, signed, and . for the grid', () => {
+    const shifts = Array.from({ length: 18 }, (_, i) => (i === 2 ? 62 : i === 4 ? -71 : i === 17 ? 55.4 : 0))
+    const lines = sungLines('lead', { count: 18, hash: '5e0c41a7' }, shifts)
+    assert.deepEqual(lines, [
+      '% Audio sung lead: 18 5e0c41a7',
+      '% Audio sung lead: . . +62 . -71 . . . . . . . . . . .',
+      '% Audio sung lead: . +55',
+    ])
+    assert.deepEqual(sungLines('lead', { count: 2, hash: '00000000' }, [0, -0.2]), ['% Audio sung lead: 2 00000000', '% Audio sung lead: . .'], 'a voice on the grid is dots')
+    assert.throws(() => sungLines('lead', { count: 3, hash: '00000000' }, [0]), /3 notes, not 1/)
+    assert.throws(() => sungLines('a: b', { count: 0, hash: '00000000' }, []), /cannot name a voice/)
+  })
+
+  test('each voice\'s lines are read, wherever they are, and what does not read so is its problem', () => {
+    const text = [
+      '\\version "2.24.0"',
+      '% Audio: song.mp3',
+      '% Audio sung lead: 3 5E0C41A7',
+      '% Audio sung lead: . +62',
+      '% Audio sung alto: 1 00000000',
+      '{ c }',
+      '%   Audio sung lead :  -71  ',
+      '% Audio sung bass: soon',
+      '% Audio sung tenor: 2 00000000',
+      '% Audio sung tenor: . 6.5',
+      '% Audio sung baritone: 2 00000000',
+      '% Audio sung baritone: .',
+    ].join('\r\n')
+    const read = sungOfScore(text)
+    assert.deepEqual(read.get('lead'), { count: 3, hash: '5e0c41a7', shifts: [0, 62, -71] })
+    assert.deepEqual(read.get('alto'), { problem: 'it has 0 shifts for 1 notes' })
+    assert.deepEqual(read.get('bass'), { problem: 'its first line is not its note count and hash' })
+    assert.deepEqual(read.get('tenor'), { problem: '6.5 is not a shift in ms' })
+    assert.deepEqual(read.get('baritone'), { problem: 'it has 1 shifts for 2 notes' })
+    // Not the audio track's lines, nor theirs these.
+    assert.equal(audioOfScore(text), 'song.mp3')
+    assert.equal(sungOfScore('% Audio: song.mp3\n% Audio offset: 1\n').size, 0)
+    assert.deepEqual(sungOfScore(sungLines('lead', sungGuard(notes), [0, 62, -71]).join('\n')).get('lead'), { ...sungGuard(notes), shifts: [0, 62, -71] }, 'what is written reads back')
+  })
+
+  test('times for other notes are not used, and the status line says why', () => {
+    const guard = sungGuard(notes)
+    assert.deepEqual(sungTimesFor({ ...guard, shifts: [0, 62, 0] }, 'lead', guard), { shifts: [0, 62, 0] })
+    assert.equal(sungTimesFor(undefined, 'lead', guard), undefined)
+    const stale = { stale: 'lead\'s sung times are for an earlier rhythm; it plays as written' }
+    assert.deepEqual(sungTimesFor({ ...guard, shifts: [0, 62, 0] }, 'lead', sungGuard([...notes, { start: 960, length: 480 }])), stale, 'a note added')
+    assert.deepEqual(sungTimesFor({ ...guard, shifts: [0, 62, 0] }, 'lead', sungGuard([notes[0]!, { start: 480, length: 480 }, notes[2]!])), stale, 'a rhythm changed')
+    assert.deepEqual(sungTimesFor({ problem: 'its first line is not its note count and hash' }, 'lead', guard), {
+      stale: 'lead\'s % Audio sung lines cannot be read (its first line is not its note count and hash); it plays as written',
+    })
+  })
+
+  test('a voice\'s lines are replaced together where its first was, and the others are kept', () => {
+    const text = '\\version "2.24.0"\n% Audio: a.mp3\n% Audio sung lead: 2 00000000\n% Audio sung alto: 1 11111111\n% Audio sung alto: .\n% Audio sung lead: . .\n{ c }\n'
+    const lines = ['% Audio sung lead: 2 22222222', '% Audio sung lead: +5 .']
+    assert.equal(
+      applied(text, withSungLines(text, 'lead', lines)),
+      '\\version "2.24.0"\n% Audio: a.mp3\n% Audio sung lead: 2 22222222\n% Audio sung lead: +5 .\n% Audio sung alto: 1 11111111\n% Audio sung alto: .\n{ c }\n',
+    )
+    assert.equal(applied(text, withSungLines(text, 'lead', undefined)), '\\version "2.24.0"\n% Audio: a.mp3\n% Audio sung alto: 1 11111111\n% Audio sung alto: .\n{ c }\n')
+    assert.deepEqual(withSungLines(text, 'bass', undefined), [], 'nothing to take out')
+  })
+
+  test('a voice\'s first lines go after the score\'s own and the other voices\' sung ones, else after \\version, else first', () => {
+    const own = '\\version "2.24.0"\n% Audio: a.mp3\n% BPM: 113.76\n{ c }\n'
+    const lines = ['% Audio sung lead: 1 22222222', '% Audio sung lead: .']
+    assert.equal(applied(own, withSungLines(own, 'lead', lines)), '\\version "2.24.0"\n% Audio: a.mp3\n% BPM: 113.76\n% Audio sung lead: 1 22222222\n% Audio sung lead: .\n{ c }\n')
+    const others = '% Audio: a.mp3\n% Audio sung alto: 1 11111111\n% Audio sung alto: .\n{ c }\n'
+    assert.equal(applied(others, withSungLines(others, 'lead', lines)), '% Audio: a.mp3\n% Audio sung alto: 1 11111111\n% Audio sung alto: .\n% Audio sung lead: 1 22222222\n% Audio sung lead: .\n{ c }\n')
+    assert.equal(applied('\\version "2.24.0"\r\n{ c }\r\n', withSungLines('\\version "2.24.0"\r\n{ c }\r\n', 'lead', lines)), '\\version "2.24.0"\r\n% Audio sung lead: 1 22222222\r\n% Audio sung lead: .\r\n{ c }\r\n')
+    assert.equal(applied('{ c }', withSungLines('{ c }', 'lead', lines)), '% Audio sung lead: 1 22222222\n% Audio sung lead: .\n{ c }')
+    // The last line, with no line break after it.
+    const last = '% Audio: a.mp3'
+    assert.equal(applied(last, withSungLines(last, 'lead', lines)), '% Audio: a.mp3\n% Audio sung lead: 1 22222222\n% Audio sung lead: .')
   })
 })

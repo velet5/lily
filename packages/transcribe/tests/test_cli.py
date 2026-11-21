@@ -253,3 +253,51 @@ def test_a_missing_recording_is_an_error_event(tmp_path, capsys):
 def test_the_beats_of_a_recording_are_not_a_songs_analysis(recording, folder):
     path, _ = recording
     assert cli.beats_key(path) != cli.song_key([path])
+
+
+# ---- sung (D276) ----
+
+
+def test_a_voices_sung_times_are_one_done_event_and_kept(tmp_path, monkeypatch, capsys):
+    from test_sung import make_singer
+
+    stem, notes, calls = make_singer(tmp_path, monkeypatch)
+    events = run(capsys, "sung", str(stem), str(notes), "--voice", "lead")
+    assert [event.get("stage") for event in events[:-1]] == ["decode", "pitch", "words"]
+    done = events[-1]
+    assert done["event"] == "done"
+    assert done["voice"] == "lead"
+    assert len(done["notes"]) == 9
+    assert set(done["notes"][0]) == {"shift", "arrival", "consonant", "vowel", "score", "asWritten", "heard"}
+    assert [phrase["sung"] for phrase in done["phrases"]] == [False, True, True]
+    assert (done["lag"], done["tau"], done["octave"]) == (0.072, 0.125, 12)
+    assert "took" in done
+    # From the cache the second time: no stage, no model.
+    again = run(capsys, "sung", str(stem), str(notes), "--voice", "lead")
+    assert [event["event"] for event in again] == ["done"]
+    assert calls == {"load": 1, "words": 3, "pitch": 1}
+
+
+def test_a_stem_with_no_voice_is_an_error_event(tmp_path, monkeypatch, capsys):
+    from test_sung import make_singer
+
+    stem, notes, _ = make_singer(tmp_path, monkeypatch, pitch=[])
+    events = run(capsys, "sung", str(stem), str(notes), "--voice", "lead", "--fail")
+    assert events[-1] == {"event": "error", "message": "There is no voice in song - vocals.wav: pYIN hears a pitch in 0% of it."}
+
+
+def test_a_missing_voice_is_an_error_event(tmp_path, monkeypatch, capsys):
+    from test_sung import make_singer
+
+    stem, notes, _ = make_singer(tmp_path, monkeypatch)
+    notes.unlink()
+    events = run(capsys, "sung", str(stem), str(notes), "--voice", "lead", "--fail")
+    assert events == [{"event": "error", "message": f"{notes} is not a file."}]
+
+
+def test_the_sung_times_go_to_stdout_without_json(tmp_path, monkeypatch, capsys):
+    from test_sung import make_singer
+
+    stem, notes, _ = make_singer(tmp_path, monkeypatch)
+    cli.main(["sung", str(stem), str(notes), "--voice", "lead"])
+    assert json.loads(capsys.readouterr().out)["voice"] == "lead"

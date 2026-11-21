@@ -66,7 +66,8 @@ export function timelineOf<E>(
   duration: number,
   sourceLinks: Map<string, E[]>,
   box: (element: E) => Box | undefined,
-  time: (at: number, grace: number) => number,
+  /** When a moment of the event linking to `href` is heard; a bar's has none. */
+  time: (at: number, grace: number, href?: string) => number,
 ): Timeline<E>
 export function cursorAt(moments: Moment[], time: number): { index: number; x: number } | undefined
 export function barAt(bars: { time: number; number: number }[], time: number): number | undefined

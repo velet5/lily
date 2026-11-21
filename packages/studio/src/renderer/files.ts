@@ -611,3 +611,169 @@ export function includedFile(from: string, target: string): string {
   }
   return `${target.startsWith('/') ? '/' : ''}${parts.join('/')}`
 }
+
+// ---- A singer's own timing (DECISIONS D276) ----
+// *Keep the sung times* writes a voice's shifts from the grid into the score,
+// with D155's lines: a guard line first, the voice's note count as played and
+// a hash of their rhythm, then the shifts, 16 notes a line.
+//
+//   % Audio sung lead: 239 5e0c41a7
+//   % Audio sung lead: . . +62 . -71 . . . . +55 . . . . . .
+//
+// The times belong to the notes they were measured on: when the count or the
+// hash no longer match the voice's notes, the voice plays as written and the
+// status line says so, so old times are never put on new notes.
+
+/** A voice's note in the guard's terms: its start and length in MIDI ticks. */
+export interface GuardNote {
+  start: number
+  length: number
+}
+
+/** The guard of a voice's sung times: its note count as played, and the hash of their rhythm. */
+export interface SungGuard {
+  count: number
+  /** 8 lower-case hex digits. */
+  hash: string
+}
+
+/** A voice's `% Audio sung` lines as read: its guard, and each note's shift from the grid in whole ms, 0 for `.`. */
+export interface SungLines extends SungGuard {
+  shifts: number[]
+}
+
+/** A voice's lines that cannot be read, and what is wrong with them. */
+export interface SungUnreadable {
+  problem: string
+}
+
+/** Shifts on a line, as Keep the sung times writes them. */
+export const SUNG_PER_LINE = 16
+
+/** The furthest a stored shift may move a note, in ms: a minute, far past any a 16th allows. */
+const MAX_SHIFT = 60_000
+
+/**
+ * The guard of `notes`, in the order played: their count, and the 32-bit
+ * FNV-1a hash of the ASCII text `<start>,<length>;` of each, in ticks. It
+ * hashes the rhythm and not the pitches: correcting a pitch the comparison
+ * found keeps the times (D276).
+ */
+export function sungGuard(notes: readonly GuardNote[]): SungGuard {
+  let hash = 0x811c9dc5
+  for (const { start, length } of notes) {
+    for (const char of `${Math.round(start)},${Math.round(length)};`) {
+      hash ^= char.charCodeAt(0)
+      hash = Math.imul(hash, 0x01000193) >>> 0
+    }
+  }
+  return { count: notes.length, hash: hash.toString(16).padStart(8, '0') }
+}
+
+/** Whether `voice` can name a voice in a `% Audio sung` line: not blank, without a colon or a line break. */
+export function sungVoiceName(voice: string): boolean {
+  return voice.trim() === voice && voice !== '' && !/[:\p{Cc}]/u.test(voice)
+}
+
+/** `% Audio sung <voice>:` lines, each with its voice and the text after the colon, in order. */
+const SUNG_LINE = /^%[ \t]*Audio sung[ \t]+([^:\r\n]+?)[ \t]*:[ \t]*(.*?)[ \t]*\r?$/gm
+
+/**
+ * Each voice's `% Audio sung` lines in `text` (D276), read in order wherever
+ * they are: the first is the guard, `<count> <hash>`, and the rest the
+ * shifts, signed whole ms (`+62`, `-71`) or `.` for the grid, one for each
+ * note. Lines that do not read so are a voice's problem, not a shift of 0.
+ */
+export function sungOfScore(text: string): Map<string, SungLines | SungUnreadable> {
+  const lines = new Map<string, string[]>()
+  for (const [, voice, rest] of text.matchAll(SUNG_LINE)) lines.set(voice!, [...(lines.get(voice!) ?? []), rest!])
+  const result = new Map<string, SungLines | SungUnreadable>()
+  for (const [voice, [guard, ...rest]] of lines) {
+    const found = /^(\d+)[ \t]+([0-9a-fA-F]{8})$/.exec(guard!)
+    if (!found) {
+      result.set(voice, { problem: 'its first line is not its note count and hash' })
+      continue
+    }
+    const count = Number(found[1])
+    const shifts: number[] = []
+    let problem: string | undefined
+    for (const token of rest.flatMap((line) => line.split(/[ \t]+/)).filter((token) => token !== '')) {
+      const shift = token === '.' ? 0 : /^[+-]\d+$/.test(token) ? Number(token) : NaN
+      if (!(Math.abs(shift) <= MAX_SHIFT)) {
+        problem = `${token} is not a shift in ms`
+        break
+      }
+      shifts.push(shift || 0)
+    }
+    if (!problem && shifts.length !== count) problem = `it has ${shifts.length} shifts for ${count} notes`
+    result.set(voice, problem ? { problem } : { count, hash: found[2]!.toLowerCase(), shifts })
+  }
+  return result
+}
+
+/**
+ * The lines `voice` keeps its sung times in: the guard, then the shifts, 16
+ * a line, each in whole ms from the grid, signed, and `.` for the grid. A
+ * voice whose singer keeps to the grid has lines of dots.
+ */
+export function sungLines(voice: string, guard: SungGuard, shifts: readonly number[]): string[] {
+  if (!sungVoiceName(voice)) throw new Error(`${JSON.stringify(voice)} cannot name a voice in a % Audio sung line.`)
+  if (shifts.length !== guard.count) throw new Error(`${voice} has ${guard.count} notes, not ${shifts.length}.`)
+  const tokens = shifts.map((shift) => {
+    const ms = Math.round(Math.min(Math.max(shift, -MAX_SHIFT), MAX_SHIFT)) || 0
+    return ms === 0 ? '.' : ms > 0 ? `+${ms}` : String(ms)
+  })
+  const lines = [`% Audio sung ${voice}: ${guard.count} ${guard.hash}`]
+  for (let i = 0; i < tokens.length; i += SUNG_PER_LINE) lines.push(`% Audio sung ${voice}: ${tokens.slice(i, i + SUNG_PER_LINE).join(' ')}`)
+  return lines
+}
+
+/**
+ * The edits that replace all of `voice`'s `% Audio sung` lines in `text` with
+ * `lines`, or take them out when undefined, as one edit (D276). The new lines
+ * go where the voice's first one was; a voice without any gets them after
+ * the score's own lines and the other voices' sung ones, else after
+ * `\version`, else first.
+ */
+export function withSungLines(text: string, voice: string, lines: readonly string[] | undefined): TextEdit[] {
+  const eol = text.includes('\r\n') ? '\r\n' : '\n'
+  const own: { start: number; next: number }[] = []
+  let after = -1
+  for (const match of text.matchAll(SUNG_LINE)) {
+    const next = lineEnd(text, match.index + match[0].length)
+    if (match[1] === voice) own.push({ start: match.index, next })
+    else after = Math.max(after, next)
+  }
+  const edits: TextEdit[] = own.map(({ start, next }) => ({ offset: start, length: next - start, text: '' }))
+  if (lines && lines.length > 0) {
+    const block = lines.join(eol)
+    if (own.length > 0) {
+      // Where the first was, with the line break it had.
+      const first = own[0]!
+      edits[0] = { ...edits[0]!, text: block + (text.slice(first.start, first.next).endsWith('\n') ? eol : '') }
+    } else {
+      for (const label of SCORE_LINES) after = Math.max(after, lineOf(text, label)?.next ?? -1)
+      const version = /^[ \t]*\\version\b.*$/m.exec(text)
+      const offset = after >= 0 ? after : version ? lineEnd(text, version.index + version[0].length) : 0
+      const atEnd = offset === text.length && offset > 0 && !text.endsWith('\n')
+      edits.push({ offset, length: 0, text: (atEnd ? eol : '') + block + (atEnd ? '' : eol) })
+    }
+  }
+  return edits.sort((a, b) => a.offset - b.offset)
+}
+
+/**
+ * The shifts of `voice`'s lines for its notes now, whose guard is `guard`;
+ * or, when they belong to other notes or cannot be read, what the status line
+ * says, and the voice plays as written. Undefined when it has no lines.
+ */
+export function sungTimesFor(
+  read: SungLines | SungUnreadable | undefined,
+  voice: string,
+  guard: SungGuard,
+): { shifts: number[] } | { stale: string } | undefined {
+  if (!read) return undefined
+  if ('problem' in read) return { stale: `${voice}'s % Audio sung lines cannot be read (${read.problem}); it plays as written` }
+  if (read.count !== guard.count || read.hash !== guard.hash) return { stale: `${voice}'s sung times are for an earlier rhythm; it plays as written` }
+  return { shifts: read.shifts }
+}

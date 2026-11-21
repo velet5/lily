@@ -54,6 +54,7 @@ const DESKTOP_ONLY: &[&str] = &[
     "choose_audio",
     "transcribe_stem",
     "detect_tempo",
+    "detect_sung",
     "separations",
     "open_separation",
     "choose_separation",

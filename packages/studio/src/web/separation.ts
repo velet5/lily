@@ -22,6 +22,7 @@ export const SEPARATION_COMMANDS: ReadonlySet<string> = new Set([
   'choose_audio',
   'transcribe_stem',
   'detect_tempo',
+  'detect_sung',
   'separations',
   'open_separation',
   'choose_separation',

@@ -11,16 +11,20 @@
 // as karaoke, with the words (D133). A score's audio track plays along with
 // the MIDI, from its offset, at a volume of its own, and the MIDI at the
 // score's `% BPM:` to keep with it (D155), which From the recording finds
-// with its offset (D159).
+// with its offset (D159). From the singer marks where a voice's singer in the
+// recording parts from the score (D276).
 import { formatTime, instrumentName, momentTime, parseMidi, Player, type Midi } from '@lily/common/web/midi.js'
 import { barAt, cursorAt, scrollToShow, soundingAt, timelineOf, type Box, type Timeline } from '@lily/common/web/preview.js'
 import type { CompileEvent, CompileOutcome, ExportedGarageBand, ExportedMidi, GarageBandPlan, MutedPart, PlaybackSetup, PlaybackTiming } from '../ipc'
 import { AudioTrack, DRIFT, SETTLE_MS, type TrackAudio } from './audioTrack'
 import { garageBandExported, garageBandPlan, withoutMuted } from './garageBandPlan'
-import { hundredths, lineNumber, MAX_AUDIO_OFFSET, MAX_BPM, MIN_BPM } from './files'
-import type { ScoreMeter, TempoFound } from '../ipc'
+import { hundredths, lineNumber, MAX_AUDIO_OFFSET, MAX_BPM, MIN_BPM, sungTimesFor, type SungLines, type SungUnreadable } from './files'
+import type { ScoreMeter, SungFound, SungVoice, TempoFound } from '../ipc'
+import { keyOf } from './staff'
+import { singerVoices, sungElements, sungMarks, sungStatus, voiceGuard, voiceJson, voiceLinks, voiceNotes, voiceSignature, type SingerVoice, type SungMark } from './sungMismatch'
+import { voiceTracks } from './karaoke'
 import { barOneAt, barOneTime, bpmAt, scoreMeter, tempoLines, tempoStatus, timeSignatureOf } from './tempo'
-import { atTempo, audioVolume, barTime, INSTRUMENT_GROUPS, mixMidi, momentAt, mutedParts, partsOf, partVolume, scoreBpm, withAudio, withEnd, withPart, withPrograms, withStartBar, type Part } from './playbackSetup'
+import { atTempo, audioVolume, barTime, INSTRUMENT_GROUPS, mixMidi, momentAt, mutedParts, partsOf, partVolume, scoreBpm, withAudio, withEnd, withPart, withPrograms, withStartBar, withSung, type Part, type TimeMap } from './playbackSetup'
 
 /** The music the player has: the score, the MIDI bytes and their map. */
 export interface Loaded {
@@ -114,7 +118,28 @@ export interface ScorePlayerOptions {
   onStatus?(message: string): void
   /** Whether the music plays, each time that changes (on the web the engine performs at once while it does, D264). */
   onPlaying?(on: boolean): void
+  /**
+   * From the singer (D276): where the singer of the score's audio track sings
+   * `voice`'s notes, from the recording's lead vocals stem; absent where it
+   * cannot be heard.
+   */
+  detectSung?(voice: string, notes: SungVoice): Promise<SungFound>
+  /** The score's text as the editor has it, where From the singer finds a voice's music to mark it (D276). */
+  scoreText?(rootFile: string): string | undefined
 }
+
+/** A comparison of a voice with its singer (D276), kept while the voice's notes are the same. */
+interface SingerRun {
+  rootFile: string
+  voice: string
+  track: number
+  /** voiceSignature's: the voice's rhythm and pitches when it was compared. */
+  signature: string
+  marks: SungMark[]
+  found: SungFound
+}
+
+const SVG = 'http://www.w3.org/2000/svg'
 
 /** The score's audio track as its lines name it (D155). */
 export interface ScoreAudio extends TrackAudio {
@@ -157,12 +182,30 @@ export class ScorePlayer {
   private silent = false
   /** The MIDI as parsed, at the score's own tempo. */
   private raw: Midi | undefined
-  /** The MIDI at the score's `% BPM:`, before the setup mutes or changes its parts (D155). */
+  /** The MIDI at the score's `% BPM:`, on the grid: what From the singer compares (D155, D276). */
+  private timed: Midi | undefined
+  /**
+   * The MIDI at the score's `% BPM:` with each voice at its sung times,
+   * before the setup mutes or changes its parts (D155, D276).
+   */
   private parsed: Midi | undefined
+  /** The time map of each voice at its sung times, by track (D276); the other parts keep the grid. */
+  private voiceMaps = new Map<number, TimeMap>()
+  /** The sung times `parsed` has, as `sungKey` puts them. */
+  private sungPlayed = ''
   /** The score's `% BPM:`, undefined to play the MIDI as written (D155). */
   private tempo: number | undefined
   /** From the recording is listening (D159). */
   private detecting = false
+  /** The voice From the singer is listening to (D276). */
+  private singing: string | undefined
+  /** The last comparison with a singer, while its voice is unchanged (D276). */
+  private singer: SingerRun | undefined
+  /** The elements of the preview it marked, with the title each was given. */
+  private readonly sungMarked = new Map<Element, Element | undefined>()
+  /** The score's `% Audio sung` lines (D276), and what the status line last said of them. */
+  private sungRead = new Map<string, SungLines | SungUnreadable>()
+  private sungSaid = ''
   /** The score's audio track (D155). */
   private readonly track = new AudioTrack({
     onError: (message) => this.options.onError(message),
@@ -274,7 +317,10 @@ export class ScorePlayer {
     if (change.kind === 'remap') {
       this.loaded = { ...this.loaded!, timing: change.timing }
       this.timeline = null
+      // Another map can pair the voices with other tracks.
+      if (this.sungChanged()) this.resung()
       this.showPlayback()
+      this.checkSung()
       return
     }
     this.loaded = { rootFile, midi: change.midi, timing: change.timing }
@@ -287,7 +333,7 @@ export class ScorePlayer {
       this.unplayable = error instanceof Error ? error.message : String(error)
     }
     this.raw = midi
-    this.parsed = midi && atTempo(midi, this.tempo)
+    this.retime()
     if (this.setupFor !== rootFile) {
       // Another score: its own setup, once the Rust side has it.
       this.setup = {}
@@ -303,6 +349,7 @@ export class ScorePlayer {
     }
     this.player.load(this.played())
     this.applyVolumes()
+    this.checkSung()
     this.fillPanel()
   }
 
@@ -331,7 +378,7 @@ export class ScorePlayer {
     if (bpm === this.tempo) return
     const before = this.parsed?.duration ?? 0
     this.tempo = bpm
-    this.parsed = this.raw && atTempo(this.raw, bpm)
+    this.retime()
     const after = this.parsed?.duration ?? 0
     this.remix(before > 0 ? after / before : 1)
   }
@@ -351,6 +398,181 @@ export class ScorePlayer {
     // Playback that ends with the recording ends elsewhere now.
     if (this.setup.audio?.end === 'audio') this.remix()
     else this.fillPanel()
+  }
+
+  /**
+   * The score's `% Audio sung` lines (D276), from its text. A voice whose
+   * lines are for other notes plays as written, and the status line says so,
+   * once for each thing it has to say.
+   */
+  set sung(read: Map<string, SungLines | SungUnreadable>) {
+    this.sungRead = read
+    // Set again on each edit of the score's text: only a change is played.
+    if (this.sungChanged()) this.resung()
+    this.checkSung()
+  }
+
+  /**
+   * Each voice's sung times for its notes now, by name, or what is wrong with
+   * them; the voices with times play at them (D276).
+   */
+  sungTimes(): Map<string, { track: number; shifts: number[] } | { stale: string }> {
+    const result = new Map<string, { track: number; shifts: number[] } | { stale: string }>()
+    const raw = this.raw
+    if (!raw || this.sungRead.size === 0) return result
+    const tracks = voiceTracks(this.loaded?.timing?.staves, raw.tracks)
+    for (const [voice, read] of this.sungRead) {
+      const track = tracks.get(voice)
+      if (track === undefined) {
+        result.set(voice, { stale: `the score has no voice ${voice} for its % Audio sung lines` })
+        continue
+      }
+      const times = sungTimesFor(read, voice, voiceGuard(raw, track))
+      if (times) result.set(voice, 'stale' in times ? times : { track, shifts: times.shifts })
+    }
+    return result
+  }
+
+  /** The sung times the voices have now, as one string to tell a change by. */
+  private sungKey(): string {
+    return JSON.stringify([...this.sungTimes().values()].flatMap((times) => ('shifts' in times ? [[times.track, times.shifts]] : [])))
+  }
+
+  private sungChanged(): boolean {
+    return this.raw !== undefined && this.sungKey() !== this.sungPlayed
+  }
+
+  /**
+   * The music at the score's `% BPM:` (D155), and then each voice whose sung
+   * times fit its notes moved to them, with its own time map (D276).
+   */
+  private retime(): void {
+    this.timed = this.raw && atTempo(this.raw, this.tempo)
+    const voices = [...this.sungTimes().values()].flatMap((times) => ('shifts' in times ? [times] : []))
+    const sung = this.timed && withSung(this.timed, voices)
+    this.parsed = sung?.midi
+    this.voiceMaps = sung?.maps ?? new Map()
+    this.sungPlayed = this.sungKey()
+    this.timeline = null
+  }
+
+  /** Plays the voices at their sung times as they are now, from where the music is. */
+  private resung(): void {
+    this.retime()
+    this.remix()
+  }
+
+  /** Says what is wrong with the sung lines, when that changed; and drops a comparison whose voice's notes changed. */
+  private checkSung(): void {
+    const stale = [...this.sungTimes().values()].flatMap((times) => ('stale' in times ? [times.stale] : []))
+    const said = stale.join('; ')
+    if (said !== this.sungSaid) {
+      this.sungSaid = said
+      if (said) this.options.onStatus?.(`${said.charAt(0).toUpperCase()}${said.slice(1)}.`)
+    }
+    const singer = this.singer
+    if (singer && (singer.rootFile !== this.setupFor || !this.raw || voiceSignature(this.raw, singer.track) !== singer.signature)) {
+      this.singer = undefined
+    }
+    this.markSinger()
+  }
+
+  /** From the singer's button on a voice's part row, and the one that takes its marks off (D276). */
+  private singerButtons(track: number, singers: readonly SingerVoice[]): HTMLElement[] {
+    const singer = singers.find((candidate) => candidate.track === track)
+    if (!singer) return []
+    const { voice } = singer
+    const button = document.createElement('button')
+    button.type = 'button'
+    button.className = 'part-from-singer'
+    button.textContent = this.singing === voice ? 'Listening…' : 'From the singer'
+    button.title = singer.shares
+      ? `${voice} shares its MIDI track with ${singer.shares}, which has words too: their notes cannot be told apart yet`
+      : `Compare ${voice} with its singer in the recording’s vocals stem and mark the notes where they differ. Nothing is written to the score.`
+    button.disabled = this.singing !== undefined
+    button.addEventListener('click', () => void this.fromSinger(singer))
+    if (this.singer?.voice !== voice || this.singer.marks.length === 0) return [button]
+    const clear = document.createElement('button')
+    clear.type = 'button'
+    clear.className = 'part-singer-clear'
+    clear.textContent = '✕'
+    clear.title = `Take the marks of ${voice}’s singer off the preview`
+    clear.setAttribute('aria-label', clear.title)
+    clear.addEventListener('click', () => {
+      this.singer = undefined
+      this.markSinger()
+      this.fillPanel()
+    })
+    return [button, clear]
+  }
+
+  /**
+   * From the singer (D276): compares `voice` with its singer in the audio
+   * track's vocals stem and marks the notes where they part; the status line
+   * counts them. Nothing is written to the score.
+   */
+  private async fromSinger({ voice, track, shares }: SingerVoice): Promise<void> {
+    const { detectSung, onStatus } = this.options
+    // The grid, not the sung times kept: `sung` measures from it.
+    const { raw, timed } = this
+    const rootFile = this.setupFor
+    if (!detectSung || !raw || !timed || !rootFile || this.singing !== undefined) return
+    if (shares) {
+      onStatus?.(`${voice} was not compared with its singer: it shares its MIDI track with ${shares}, which has words too, and their notes cannot be told apart yet.`)
+      return
+    }
+    const notes = voiceJson(timed, this.loaded?.timing, voice, track, this.tempo ?? scoreBpm(raw), this.track.offset)
+    const signature = voiceSignature(raw, track)
+    this.singing = voice
+    this.fillPanel()
+    try {
+      const found = await detectSung(voice, notes)
+      if (this.setupFor !== rootFile || !this.raw || voiceSignature(this.raw, track) !== signature) {
+        onStatus?.(`${voice}'s singer was heard, but nothing is marked: ${this.setupFor === rootFile ? `${voice}'s notes changed meanwhile` : 'another score is shown now'}.`)
+        return
+      }
+      const marks = sungMarks(notes, found, keyOf(voiceNotes(raw, track)))
+      this.singer = { rootFile, voice, track, signature, marks, found }
+      onStatus?.(sungStatus(voice, marks, found, this.markSinger()))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      onStatus?.(`${voice} was not compared with its singer: ${message.replace(/\.?$/, '.')}`)
+    } finally {
+      this.singing = undefined
+      this.fillPanel()
+    }
+  }
+
+  /**
+   * Puts the comparison's marks on the preview's notes of its voice, each
+   * with a title that says what differs, and takes the last ones off.
+   * Answers how many elements it marked.
+   */
+  private markSinger(): number {
+    for (const [element, title] of this.sungMarked) {
+      element.classList.remove('sung-differs')
+      element.removeAttribute('data-sung')
+      title?.remove()
+    }
+    this.sungMarked.clear()
+    const singer = this.singer
+    const timing = this.loaded?.timing
+    const text = singer && this.options.scoreText?.(singer.rootFile)
+    if (!singer || !timing || !this.timed || text === undefined) return 0
+    const { preview } = this.options
+    const elements = sungElements(timing, this.timed, singer.track, singer.voice, singer.marks, singer.rootFile, text, preview.sourceLinks)
+    for (const [element, mark] of elements) {
+      element.classList.add('sung-differs')
+      element.setAttribute('data-sung', mark.kinds.join(' '))
+      // An SVG element's tooltip is its <title>.
+      const title = typeof document.createElementNS === 'function' ? document.createElementNS(SVG, 'title') : undefined
+      if (title) {
+        title.textContent = mark.title
+        element.prepend(title)
+      }
+      this.sungMarked.set(element, title)
+    }
+    return elements.size
   }
 
   /** The score's audio track as it plays, while it has one (D155). */
@@ -419,9 +641,14 @@ export class ScorePlayer {
     return this.player.midi
   }
 
-  /** The music with its muted parts, as the score has it. */
+  /** The music with its muted parts, as the score has it, and its voices at their sung times (D276). */
   get score(): Midi | undefined {
     return this.parsed
+  }
+
+  /** The time map of each voice that plays at its sung times, by track (D276). */
+  get voiceTimes(): ReadonlyMap<number, TimeMap> {
+    return this.voiceMaps
   }
 
   /** The tracks the Parts fold mutes, which the piano view still shows (D153). */
@@ -499,6 +726,7 @@ export class ScorePlayer {
   rendered(): void {
     this.timeline = null
     this.refresh()
+    this.markSinger()
   }
 
   /** Draws the playhead and the start mark again after the pages moved or were shown, unless a frame will. */
@@ -650,7 +878,30 @@ export class ScorePlayer {
       }
       return found
     }
-    return timelineOf(timing, midi.duration, this.options.preview.sourceLinks, box, (at, grace) => momentTime(midi, at, grace))
+    const sung = this.sungLinks(timing)
+    return timelineOf(timing, midi.duration, this.options.preview.sourceLinks, box, (at, grace, href) => {
+      const time = momentTime(midi, at, grace)
+      const map = href === undefined ? undefined : sung.find(({ inVoice }) => inVoice(href))?.map
+      return map ? map(time) : time
+    })
+  }
+
+  /**
+   * Each voice at its sung times with its time map and whether an event of
+   * the map is its (D276): its note heads light, and the playhead passes
+   * them, when it sings them. A voice whose music is in another file is not
+   * found, and its note heads keep the grid; its sound and words do not.
+   */
+  private sungLinks(timing: PlaybackTiming): { map: TimeMap; inVoice: (href: string) => boolean }[] {
+    const rootFile = this.loaded?.rootFile
+    const text = rootFile === undefined || this.voiceMaps.size === 0 ? undefined : this.options.scoreText?.(rootFile)
+    if (text === undefined || !rootFile) return []
+    const tracks = this.raw ? voiceTracks(timing.staves, this.raw.tracks) : new Map<string, number>()
+    return [...this.sungRead.keys()].flatMap((voice) => {
+      const map = this.voiceMaps.get(tracks.get(voice) ?? -1)
+      const inVoice = map && voiceLinks(timing, voice, rootFile, text)
+      return map && inVoice ? [{ map, inVoice }] : []
+    })
   }
 
   /** Marks what sounds now and puts the playhead through it; clears both when stopped. */
@@ -784,6 +1035,7 @@ export class ScorePlayer {
       panel.replaceChildren(paragraph('The score has no MIDI to play.'))
       return
     }
+    const singers = this.track.file && this.options.detectSung ? singerVoices(this.loaded?.timing, midi) : []
     const rows = partsOf(midi, this.loaded?.timing?.staves).map((part) => {
       const setting = this.setup.parts?.[part.track] ?? {}
       const row = document.createElement('div')
@@ -855,6 +1107,7 @@ export class ScorePlayer {
         saveVolume()
       })
       row.append(mute, label, select, volume, percent)
+      row.append(...this.singerButtons(part.track, singers))
       return row
     })
 
