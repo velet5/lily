@@ -6,7 +6,7 @@ resolver = "3"
 members = ["crates/engrave", "crates/agents", "crates/session", "crates/server", "crates/separate", "crates/guitarpro", "src-tauri"]
 
 [workspace.package]
-version = "0.7.1"
+version = "0.8.0"
 edition = "2024"
 license = "MIT"
 authors = ["Oleg Arshinskii <velet592@gmail.com>"]

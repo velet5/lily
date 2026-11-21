@@ -2,7 +2,7 @@
   "name": "lily-studio",
   "productName": "Lily Studio",
   "description": "A small desktop studio for LilyPond scores: files, editor and preview in one fixed window.",
-  "version": "0.7.1",
+  "version": "0.8.0",
   "private": true,
   "license": "MIT",
   "scripts": {

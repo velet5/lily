@@ -2329,7 +2329,7 @@ dependencies = [
 
 [[package]]
 name = "lily-agents"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "base64 0.22.1",
  "futures",
@@ -2344,7 +2344,7 @@ dependencies = [
 
 [[package]]
 name = "lily-engrave"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "base64 0.22.1",
  "futures",
@@ -2360,7 +2360,7 @@ dependencies = [
 
 [[package]]
 name = "lily-guitarpro"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "roxmltree",
  "serde",
@@ -2368,7 +2368,7 @@ dependencies = [
 
 [[package]]
 name = "lily-separate"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "libc",
  "serde",
@@ -2379,7 +2379,7 @@ dependencies = [
 
 [[package]]
 name = "lily-session"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "futures",
  "lily-agents",
@@ -2393,7 +2393,7 @@ dependencies = [
 
 [[package]]
 name = "lily-studio"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "base64 0.22.1",
  "futures",
@@ -2417,7 +2417,7 @@ dependencies = [
 
 [[package]]
 name = "lily-studio-server"
-version = "0.7.1"
+version = "0.8.0"
 dependencies = [
  "argon2",
  "axum",
